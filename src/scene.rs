@@ -7,7 +7,8 @@
 //! except derived state that is recomputed after an insert (computed layout,
 //! text layout, visibility, measured port anchors, edge geometry and visuals).
 //! Serialize it with [`DynamicWorld::serialize`] (Bevy's `serialize` feature).
-//! References to entities outside the snapshot are not kept.
+//! References to entities outside the snapshot are not kept. Mark UI the app
+//! rebuilds from its own data, such as controls inside nodes, [`Transient`].
 
 use bevy::camera::visibility::{InheritedVisibility, ViewVisibility};
 use bevy::ecs::entity::{EntityHashMap, EntityHashSet};
@@ -21,6 +22,12 @@ use bevy::ui::{
 use bevy::world_serialization::{DynamicWorld, DynamicWorldBuilder, WorldInstanceSpawnError};
 
 use crate::components::*;
+
+/// Left out of snapshots, with its descendants: UI the app rebuilds from its
+/// own reflected data, such as a slider or text field inside a node (their
+/// observers and text state would not survive a restore).
+#[derive(Component, Default, Clone, Copy, Debug)]
+pub struct Transient;
 
 /// Capture the whole graph of `canvas`. `None` if it has no [`CanvasContent`].
 pub fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
@@ -66,6 +73,16 @@ pub fn insert(
         if parent.is_none_or(|p| world.get_entity(p).is_err()) {
             world.entity_mut(content).add_child(entity);
         }
+        // Children left out (`Transient`) are still listed: relink the rest.
+        let children = world.get::<Children>(entity).map(|c| c.to_vec());
+        let kept = children.iter().flatten().copied();
+        let kept: Vec<_> = kept.filter(|c| world.get_entity(*c).is_ok()).collect();
+        if children.is_some_and(|c| c.len() != kept.len()) {
+            world
+                .entity_mut(entity)
+                .remove::<Children>()
+                .add_children(&kept);
+        }
         // Writing skips relationship hooks; reinserting links edges to ports.
         let ends = world
             .get::<EdgeSource>(entity)
@@ -90,7 +107,8 @@ pub fn restore(
     insert(world, canvas, snapshot)
 }
 
-/// `roots` and their descendants, minus visuals and wires being dragged.
+/// `roots` and their descendants, minus visuals, wires being dragged and
+/// [`Transient`] UI.
 fn subtrees(world: &World, roots: &[Entity]) -> Vec<Entity> {
     let mut entities = Vec::new();
     let mut stack: Vec<_> = roots.iter().rev().copied().collect();
@@ -99,7 +117,7 @@ fn subtrees(world: &World, roots: &[Entity]) -> Vec<Entity> {
         if world.get::<crate::style::DrawsEdge>(entity).is_some() {
             continue;
         }
-        if world.get::<PendingWire>(entity).is_some() {
+        if world.get::<PendingWire>(entity).is_some() || world.get::<Transient>(entity).is_some() {
             continue;
         }
         entities.push(entity);

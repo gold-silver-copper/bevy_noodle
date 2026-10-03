@@ -33,7 +33,7 @@ bevy = { version = "0.19", default-features = false, features = [
 opt-level = 3
 
 [dev-dependencies]
-bevy = "0.19"
+bevy = { version = "0.19", features = ["bevy_feathers"] }
 # Reading saved graphs in the save_load example.
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }

@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- Controls inside nodes: a press or drag that starts in a focusable control
+  (anything with a `TabIndex`) belongs to the control, so sliders, text
+  fields, color pickers and menus no longer select, raise or move the node.
+- `scene::Transient`: snapshots leave out entities marked with it (and their
+  descendants), for UI the app rebuilds from its own data.
 - Connection rules observers can override: `EditRequested::refused` carries
   the built-in verdict (types, already connected, full port), and observers
   may `allow()` or `reject()` it. `EditRequested::preview` and
@@ -22,10 +27,18 @@
 ### Fixed
 - Edges of an outer graph are pickable where they pass over a nested canvas.
 - New wires and selection boxes show in the frame they appear, not the next.
+- Restoring or inserting a snapshot no longer leaves children it left out
+  listed in their parent's `Children`.
 
 ### Changed
 - `save_load` also saves and opens the graph model alone (a few hundred
   bytes instead of a full snapshot).
+
+### Examples
+- styled, editor, save_load, subgraph, scene_builder_3d, type_conversion,
+  keyboard and comment_frames edit every value in the node, with Bevy's
+  feathers controls (number fields, sliders, color pickers, a dropdown) or
+  `EditableText`, and show results live.
 
 ## 0.3.0
 

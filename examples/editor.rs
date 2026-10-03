@@ -7,13 +7,24 @@
 //!   the edges between them, Ctrl/Cmd+V inserts a copy, Ctrl/Cmd+D does both.
 //! - Click an edge to select it; Delete removes selected nodes and edges.
 //!   Right-click adds a node on empty canvas, or removes the edge under it.
+//! - Type into a Number's field: Add shows the sum live, and the finished
+//!   edit (Enter or leaving the field) is recorded for undo too. Fields are
+//!   [`scene::Transient`]: snapshots keep the reflected `Value`, and a field
+//!   is rebuilt for every node that gets one.
 //!
 //! ```sh
 //! cargo run --example editor --features default_style,scene
 //! ```
 
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue, UpdateNumberInput};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::UiTheme;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy::text::EditableText;
 use bevy::ui::Selected;
+use bevy::ui_widgets::ValueChange;
 use bevy::world_serialization::DynamicWorld;
 use bevy_noodle::prelude::*;
 use bevy_noodle::scene;
@@ -24,7 +35,9 @@ const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .init_resource::<History>()
         .init_resource::<Clipboard>()
@@ -33,12 +46,14 @@ fn main() {
             Update,
             (
                 record_edits,
-                shortcuts,
-                delete_selection,
+                add_fields,
+                show_sums,
+                (shortcuts, delete_selection).run_if(not_typing),
                 show_history.run_if(resource_changed::<History>),
             ),
         )
         .add_observer(add_on_right_click)
+        .add_observer(edit_number)
         .run();
 }
 
@@ -60,13 +75,23 @@ struct Graph(Entity);
 #[derive(Component)]
 struct HistoryText;
 
+/// A Number node's value: reflected, so snapshots keep it.
+#[derive(Component, Reflect, Clone, Copy)]
+#[reflect(Component)]
+struct Value(f32);
+
+/// The text where an Add node shows its sum.
+#[derive(Component, Reflect, Default)]
+#[reflect(Component)]
+struct Sum;
+
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
-    let a = spawn_number(&mut commands, content, Vec2::new(80.0, 120.0));
-    let b = spawn_number(&mut commands, content, Vec2::new(80.0, 300.0));
+    let a = spawn_number(&mut commands, content, Vec2::new(80.0, 120.0), 2.0);
+    let b = spawn_number(&mut commands, content, Vec2::new(80.0, 300.0), 3.5);
     let add = commands
         .spawn((
             kit::node(Vec2::new(380.0, 190.0)),
@@ -76,6 +101,15 @@ fn setup(mut commands: Commands) {
                 kit::input("a", NUMBER, BLUE),
                 kit::input("b", NUMBER, BLUE),
                 kit::output("sum", NUMBER, BLUE),
+                (
+                    Sum,
+                    Text::default(),
+                    TextFont::from_font_size(15.0),
+                    Node {
+                        margin: UiRect::horizontal(px(kit::PADDING)),
+                        ..default()
+                    },
+                ),
             ],
         ))
         .id();
@@ -104,14 +138,79 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn spawn_number(commands: &mut Commands, content: Entity, at: Vec2) -> Entity {
+fn spawn_number(commands: &mut Commands, content: Entity, at: Vec2, value: f32) -> Entity {
     commands
         .spawn((
             kit::node(at),
+            Value(value),
             ChildOf(content),
-            children![kit::title("Number"), kit::output("value", NUMBER, BLUE),],
+            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
         ))
         .id()
+}
+
+/// Every node that gets a `Value` (spawned, restored or pasted) gets a field
+/// under its title showing it.
+fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Commands) {
+    for (node, value) in &nodes {
+        let margin = UiRect::horizontal(px(kit::PADDING));
+        let field = commands
+            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .insert(scene::Transient)
+            .id();
+        commands.entity(node).insert_child(1, field);
+        commands.trigger(UpdateNumberInput {
+            entity: field,
+            value: NumberInputValue::F32(value.0),
+        });
+    }
+}
+
+/// Typing sets the value live; the finished edit is recorded for undo.
+fn edit_number(
+    change: On<ValueChange<f32>>,
+    graph: GraphQuery,
+    mut values: Query<&mut Value>,
+    mut edited: Local<bool>,
+    mut commands: Commands,
+) {
+    let Some(mut value) = graph
+        .node_of(change.source)
+        .and_then(|n| values.get_mut(n).ok())
+    else {
+        return;
+    };
+    *edited |= value.0 != change.value;
+    value.0 = change.value;
+    if change.is_final && std::mem::take(&mut *edited) {
+        commands.queue(record);
+    }
+}
+
+/// Each Add node shows the sum of what flows into it.
+fn show_sums(
+    graph: GraphQuery,
+    values: Query<&Value>,
+    mut sums: Query<(&mut Text, &ChildOf), With<Sum>>,
+) {
+    for (mut text, node) in &mut sums {
+        let sum = sum_of(node.parent(), &graph, &values, 32);
+        text.set_if_neq(Text(format!("= {sum}")));
+    }
+}
+
+/// A node's number: its `Value`, or the sum of its inputs.
+fn sum_of(node: Entity, graph: &GraphQuery, values: &Query<&Value>, depth: u8) -> f32 {
+    if let Ok(value) = values.get(node) {
+        return value.0;
+    }
+    let Some(depth) = depth.checked_sub(1) else {
+        return 0.0; // Wires can form a loop; give up on a deep chain.
+    };
+    let inputs = graph.inputs_of(node).into_iter();
+    let peers = inputs.flat_map(|p| graph.peers_of(p));
+    let nodes = peers.filter_map(|p| graph.node_of(p));
+    nodes.fold(0.0, |sum, n| sum + sum_of(n, graph, values, depth))
 }
 
 /// Edits worth undoing record a snapshot once they have applied.
@@ -252,10 +351,15 @@ fn add_on_right_click(
         commands.graph_edit(canvas, GraphEdit::Disconnect { edge: clicked });
     } else if graph.node_of(clicked).is_none() {
         let at = view.canvas_to_graph(click.pointer_location.position);
-        spawn_number(&mut commands, content, at);
+        spawn_number(&mut commands, content, at, 0.0);
         // Spawning is not a graph edit, so record it here.
         commands.queue(record);
     }
+}
+
+/// Shortcuts are off while a text field has the focus.
+fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> bool {
+    focus.get().is_none_or(|f| !fields.contains(f))
 }
 
 /// Selected nodes and edges.

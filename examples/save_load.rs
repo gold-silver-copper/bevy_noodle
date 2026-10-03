@@ -9,8 +9,13 @@
 //! and how they connect; loading rebuilds the UI with ordinary spawns and
 //! connects.
 //!
-//! S saves a snapshot, L loads it, M saves the model, O opens it, N clears.
-//! Right-click adds a number, Delete removes the selection.
+//! Type into a Number's field to change its value; the Sum updates live, and
+//! both kinds of save keep it. Fields are [`scene::Transient`]: a field is
+//! rebuilt for every node that gets a `Value`, loaded ones included.
+//!
+//! S saves a snapshot, L loads it, M saves the model, O opens it, N clears
+//! (not while typing in a field). Right-click adds a number, Delete removes
+//! the selection.
 //!
 //! ```sh
 //! cargo run --example save_load --features default_style,scene
@@ -18,8 +23,15 @@
 
 use std::path::PathBuf;
 
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue, UpdateNumberInput};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::UiTheme;
+use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
+use bevy::text::EditableText;
 use bevy::ui::Selected;
+use bevy::ui_widgets::ValueChange;
 use bevy::world_serialization::serde::WorldDeserializer;
 use bevy_noodle::prelude::*;
 use bevy_noodle::scene;
@@ -32,11 +44,14 @@ const ORANGE: Color = Color::srgb(0.95, 0.6, 0.25);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
-        .add_systems(Update, (keys, evaluate))
+        .add_systems(Update, (keys.run_if(not_typing), add_fields, evaluate))
         .add_observer(add_on_right_click)
+        .add_observer(edit_number)
         .run();
 }
 
@@ -121,12 +136,41 @@ fn spawn_number(commands: &mut Commands, content: Entity, value: f32, at: Vec2) 
             kit::node(at),
             Value(value),
             ChildOf(content),
-            children![
-                kit::title(format!("Number {value}")),
-                kit::output("value", NUMBER, BLUE),
-            ],
+            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
         ))
         .id()
+}
+
+/// Every node that gets a `Value` (spawned or loaded) gets a field under its
+/// title showing it.
+fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Commands) {
+    for (node, value) in &nodes {
+        let margin = UiRect::horizontal(px(kit::PADDING));
+        let field = commands
+            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .insert(scene::Transient)
+            .id();
+        commands.entity(node).insert_child(1, field);
+        commands.trigger(UpdateNumberInput {
+            entity: field,
+            value: NumberInputValue::F32(value.0),
+        });
+    }
+}
+
+/// A field's edit sets its node's value.
+fn edit_number(change: On<ValueChange<f32>>, graph: GraphQuery, mut values: Query<&mut Value>) {
+    if let Some(mut value) = graph
+        .node_of(change.source)
+        .and_then(|n| values.get_mut(n).ok())
+    {
+        value.0 = change.value;
+    }
+}
+
+/// Shortcuts are off while a text field has the focus.
+fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> bool {
+    focus.get().is_none_or(|f| !fields.contains(f))
 }
 
 fn spawn_sum(commands: &mut Commands, content: Entity, at: Vec2) -> Entity {

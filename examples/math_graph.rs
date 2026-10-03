@@ -6,6 +6,7 @@
 //! cargo run --example math_graph --features default_style
 //! ```
 
+use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
 use bevy::text::{EditableText, EditableTextFilter, LineBreak};
 use bevy_noodle::prelude::*;
@@ -94,6 +95,8 @@ fn spawn_node(
             text.visible_width = Some(8.0);
             commands.spawn((
                 NumberField(node),
+                // A focusable control: presses and drags in it are its own.
+                TabIndex(0),
                 Node {
                     padding: UiRect::axes(px(6), px(3)),
                     margin: UiRect::horizontal(px(kit::PADDING)),

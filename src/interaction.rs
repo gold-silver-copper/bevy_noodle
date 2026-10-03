@@ -3,11 +3,16 @@
 //! drag is computed from the event's `delta`/`distance`. No keyboard bindings;
 //! modifier keys for additive selection and zoom are configurable.
 //!
+//! Presses and drags that start in a focusable control inside a node (anything
+//! with a [`TabIndex`], such as a slider or text field) belong to the control:
+//! they don't select, raise or move the node.
+//!
 //! Edges with an [`EdgeHitbox`] are picked by a small backend running after
 //! Bevy's UI backend, so they get `Pointer` events like any UI entity.
 
 use bevy::input::gestures::PinchGesture;
 use bevy::input::mouse::MouseScrollUnit;
+use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::{HitData, PointerHits};
 use bevy::picking::hover::{HoverMap, Hovered};
 use bevy::picking::pointer::{PointerButton, PointerId, PointerLocation};
@@ -161,6 +166,7 @@ struct Ctx<'w, 's> {
     disabled: Query<'w, 's, (), With<InteractionDisabled>>,
     selected: Query<'w, 's, (), With<Selected>>,
     handles: Query<'w, 's, (), With<NodeDragHandle>>,
+    controls: Query<'w, 's, (), With<TabIndex>>,
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
     keys: Option<Res<'w, ButtonInput<KeyCode>>>,
@@ -238,12 +244,23 @@ impl Ctx<'_, '_> {
         }
     }
 
+    /// The entities from `original` up to, not including, `item`.
+    fn path(&self, item: Entity, original: Entity) -> impl Iterator<Item = Entity> {
+        let ancestors = std::iter::once(original).chain(self.parents.iter_ancestors(original));
+        ancestors.take_while(move |e| *e != item)
+    }
+
+    /// Whether an event from `original` is for `item`, not a control inside it.
+    fn owns(&self, item: Entity, original: Entity) -> bool {
+        !self.path(item, original).any(|e| self.controls.contains(e))
+    }
+
     /// Whether a drag from `original` moves `node`: with drag handles, only from one.
     fn grabs(&self, node: Entity, original: Entity) -> bool {
         let handle = |e: Entity| self.handles.contains(e);
-        let ancestors = std::iter::once(original).chain(self.parents.iter_ancestors(original));
-        ancestors.take_while(|e| *e != node).any(handle)
-            || !self.children.iter_descendants(node).any(handle)
+        self.owns(node, original)
+            && (self.path(node, original).any(handle)
+                || !self.children.iter_descendants(node).any(handle))
     }
 
     /// Whether the event started on empty canvas (not on its nodes or edges).
@@ -263,7 +280,9 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx) {
     let additive = ctx.held(&settings.additive_keys);
     match hop {
         Hop::Port(_) if settings.connect_button == Some(press.button) => press.propagate(false),
-        Hop::Node(item) | Hop::Edge(item) if selecting => {
+        Hop::Node(item) | Hop::Edge(item)
+            if selecting && ctx.owns(item, press.original_event_target()) =>
+        {
             press.propagate(false);
             if additive {
                 ctx.select(canvas, vec![item], SelectMode::Toggle);

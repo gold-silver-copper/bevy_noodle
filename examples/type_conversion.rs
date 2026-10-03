@@ -2,13 +2,21 @@
 //! rules refuse an int output on a float input (`IncompatibleTypes`); the
 //! observer sees that verdict, lets dragged wires snap there (in preview),
 //! and answers the real edit with an "int to float" converter node wired in
-//! between. Drag from "Int 7" to "a" or "b" to see it.
+//! between. Drag from "Int" to "a" or "b" to see it. Type into the Int and
+//! Float fields: the product follows live, through the converter.
 //!
 //! ```sh
 //! cargo run --example type_conversion --features default_style
 //! ```
 
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{
+    FeathersNumberInput, NumberFormat, NumberInputValue, UpdateNumberInput,
+};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::UiTheme;
 use bevy::prelude::*;
+use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 use bevy_noodle::{PortAnchor, RejectReason};
@@ -20,12 +28,48 @@ const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
-        .add_systems(Update, demo_connection)
+        .add_systems(Update, (demo_connection, show_product))
         .add_observer(convert)
+        .add_observer(edit_int)
+        .add_observer(edit_float)
         .run();
+}
+
+/// What a node computes.
+#[derive(Component, Clone, Copy)]
+enum Calc {
+    Int(i32),
+    Float(f32),
+    ToFloat,
+    Multiply,
+}
+
+/// The text where Multiply shows its product.
+#[derive(Component)]
+struct Shows;
+
+/// A field for a node's value, under its title.
+fn field(commands: &mut Commands, node: Entity, value: NumberInputValue) {
+    let margin = UiRect::horizontal(px(kit::PADDING));
+    let format = match value {
+        NumberInputValue::I32(_) => NumberFormat::I32,
+        _ => NumberFormat::F32,
+    };
+    let field = commands
+        .spawn_scene(
+            bsn! { @FeathersNumberInput { @number_format: format } Node { margin: {margin} } },
+        )
+        .id();
+    commands.entity(node).insert_child(1, field);
+    commands.trigger(UpdateNumberInput {
+        entity: field,
+        value,
+    });
 }
 
 /// The connection made once laid out, to show the conversion.
@@ -43,24 +87,40 @@ fn setup(mut commands: Commands) {
     let int = commands
         .spawn((
             kit::node(Vec2::new(60.0, 100.0)),
+            Calc::Int(7),
             ChildOf(content),
-            children![kit::title("Int 7"), kit::output("value", INT, GREEN)],
+            children![kit::title("Int"), kit::output("value", INT, GREEN)],
         ))
         .id();
-    commands.spawn((
-        kit::node(Vec2::new(60.0, 330.0)),
-        ChildOf(content),
-        children![kit::title("Float 2.5"), kit::output("value", FLOAT, BLUE)],
-    ));
+    field(&mut commands, int, NumberInputValue::I32(7));
+    let float = commands
+        .spawn((
+            kit::node(Vec2::new(60.0, 330.0)),
+            Calc::Float(2.5),
+            ChildOf(content),
+            children![kit::title("Float"), kit::output("value", FLOAT, BLUE)],
+        ))
+        .id();
+    field(&mut commands, float, NumberInputValue::F32(2.5));
     let multiply = commands
         .spawn((
             kit::node(Vec2::new(620.0, 200.0)),
+            Calc::Multiply,
             ChildOf(content),
             children![
                 kit::title("Multiply"),
                 kit::input("a", FLOAT, BLUE),
                 kit::input("b", FLOAT, BLUE),
                 kit::output("product", FLOAT, BLUE),
+                (
+                    Shows,
+                    Text::default(),
+                    TextFont::from_font_size(15.0),
+                    Node {
+                        margin: UiRect::horizontal(px(kit::PADDING)),
+                        ..default()
+                    },
+                ),
             ],
         ))
         .id();
@@ -130,6 +190,7 @@ fn convert(
     let converter = commands
         .spawn((
             kit::node(at),
+            Calc::ToFloat,
             ChildOf(content),
             children![
                 kit::title("int to float"),
@@ -148,4 +209,52 @@ fn convert(
                 .ok();
         }
     });
+}
+
+/// An Int field's edit sets its node's value.
+fn edit_int(change: On<ValueChange<i32>>, graph: GraphQuery, mut calcs: Query<&mut Calc>) {
+    if let Some(mut calc) = graph
+        .node_of(change.source)
+        .and_then(|n| calcs.get_mut(n).ok())
+    {
+        *calc = Calc::Int(change.value);
+    }
+}
+
+/// A Float field's edit sets its node's value.
+fn edit_float(change: On<ValueChange<f32>>, graph: GraphQuery, mut calcs: Query<&mut Calc>) {
+    if let Some(mut calc) = graph
+        .node_of(change.source)
+        .and_then(|n| calcs.get_mut(n).ok())
+    {
+        *calc = Calc::Float(change.value);
+    }
+}
+
+/// What a node outputs, following its inputs back through the graph.
+fn value(node: Entity, graph: &GraphQuery, calcs: &Query<&Calc>, depth: u8) -> Option<f32> {
+    let input = |i: usize| {
+        let peer = *graph.peers_of(*graph.inputs_of(node).get(i)?).first()?;
+        // Wires can form a loop; give up on a deep chain.
+        value(graph.node_of(peer)?, graph, calcs, depth.checked_sub(1)?)
+    };
+    match calcs.get(node).ok()? {
+        Calc::Int(v) => Some(*v as f32),
+        Calc::Float(v) => Some(*v),
+        Calc::ToFloat => input(0),
+        Calc::Multiply => Some(input(0)? * input(1)?),
+    }
+}
+
+/// Multiply shows its product, every frame.
+fn show_product(
+    graph: GraphQuery,
+    calcs: Query<&Calc>,
+    mut shown: Query<(&mut Text, &ChildOf), With<Shows>>,
+) {
+    for (mut text, node) in &mut shown {
+        let product = value(node.parent(), &graph, &calcs, 32);
+        let product = product.map_or("= ? (connect a and b)".into(), |p| format!("= {p}"));
+        text.set_if_neq(Text(product));
+    }
 }

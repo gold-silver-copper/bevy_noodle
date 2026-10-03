@@ -3,11 +3,17 @@
 //! move carries its own `EditOrigin`, so it does not trigger itself and an
 //! undo stack can tell the two apart.
 //!
+//! A frame's title is a text field (Bevy's `EditableText`): click it and
+//! type. It has a `TabIndex`, so pressing or dragging in it edits the text
+//! instead of moving the frame.
+//!
 //! ```sh
 //! cargo run --example comment_frames --features default_style
 //! ```
 
+use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
+use bevy::text::{EditableText, LineBreak};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -65,10 +71,16 @@ fn setup(mut commands: Commands) {
             BorderColor::all(Color::srgba(r, g, b, 0.5)),
             ChildOf(content),
             children![(
-                Text::new(title),
+                EditableText::new(title),
+                TabIndex(0),
+                Node {
+                    width: percent(100),
+                    align_self: AlignSelf::FlexStart,
+                    ..default()
+                },
+                TextLayout::linebreak(LineBreak::NoWrap),
                 TextFont::from_font_size(16.0),
                 TextColor(Color::srgb(r, g, b)),
-                bevy::picking::Pickable::IGNORE,
             )],
         ));
     }

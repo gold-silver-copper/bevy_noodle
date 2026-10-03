@@ -7,13 +7,23 @@
 //! completes it, Escape drops it. Delete removes the selection: that one is
 //! bound below, in app code.
 //!
+//! The Number fields are in the Tab order too: Tab into one and type a
+//! number; Add shows the sum live. While a field has the focus, keys go to
+//! it (Delete included).
+//!
 //! ```sh
 //! cargo run --example keyboard --features default_style
 //! ```
 
-use bevy::input_focus::AutoFocus;
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue, UpdateNumberInput};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::UiTheme;
+use bevy::input_focus::{AutoFocus, InputFocus};
 use bevy::prelude::*;
+use bevy::text::EditableText;
 use bevy::ui::Selected;
+use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -22,20 +32,31 @@ const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
+        // Feathers first: it adds the Tab navigation the keyboard plugin uses.
+        .add_plugins((DefaultPlugins, FeathersPlugins))
         .add_plugins((
-            DefaultPlugins,
             NoodlePlugins,
             NoodleKeyboardPlugin,
             NoodleDefaultStylePlugin,
         ))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
-        .add_systems(Update, delete_selection)
+        .add_systems(Update, (delete_selection.run_if(not_typing), show_sum))
+        .add_observer(edit_number)
         .run();
 }
 
 #[derive(Resource)]
 struct Graph(Entity);
+
+/// A Number node's value, edited by its field.
+#[derive(Component)]
+struct Value(f32);
+
+/// The text where Add shows its sum.
+#[derive(Component)]
+struct Sum;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
@@ -45,22 +66,29 @@ fn setup(mut commands: Commands) {
         .id();
     commands.insert_resource(Graph(canvas));
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
-    let number = |at| (kit::node(at), ChildOf(content));
-    commands.spawn((
-        number(Vec2::new(80.0, 120.0)),
-        AutoFocus,
-        children![
-            kit::title("First number"),
-            kit::output("value", NUMBER, BLUE)
-        ],
-    ));
-    commands.spawn((
-        number(Vec2::new(80.0, 300.0)),
-        children![
-            kit::title("Second number"),
-            kit::output("value", NUMBER, BLUE)
-        ],
-    ));
+    for (title, value, y) in [("First number", 2.0, 120.0), ("Second number", 3.0, 300.0)] {
+        let node = commands
+            .spawn((
+                kit::node(Vec2::new(80.0, y)),
+                Value(value),
+                ChildOf(content),
+                children![kit::title(title)],
+            ))
+            .id();
+        let margin = UiRect::horizontal(px(kit::PADDING));
+        let field = commands
+            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .insert(ChildOf(node))
+            .id();
+        commands.trigger(UpdateNumberInput {
+            entity: field,
+            value: NumberInputValue::F32(value),
+        });
+        commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
+        if y < 200.0 {
+            commands.entity(node).insert(AutoFocus);
+        }
+    }
     commands.spawn((
         kit::node(Vec2::new(400.0, 190.0)),
         ChildOf(content),
@@ -69,6 +97,15 @@ fn setup(mut commands: Commands) {
             kit::input("a", NUMBER, BLUE),
             kit::input("b", NUMBER, BLUE),
             kit::output("sum", NUMBER, BLUE),
+            (
+                Sum,
+                Text::default(),
+                TextFont::from_font_size(15.0),
+                Node {
+                    margin: UiRect::horizontal(px(kit::PADDING)),
+                    ..default()
+                },
+            ),
         ],
     ));
     commands.spawn((
@@ -99,4 +136,34 @@ fn delete_selection(
         let items = selected.iter().collect();
         commands.graph_edit(graph.0, GraphEdit::Delete { items });
     }
+}
+
+/// A field's edit sets its node's value.
+fn edit_number(change: On<ValueChange<f32>>, graph: GraphQuery, mut values: Query<&mut Value>) {
+    if let Some(mut value) = graph
+        .node_of(change.source)
+        .and_then(|n| values.get_mut(n).ok())
+    {
+        value.0 = change.value;
+    }
+}
+
+/// Add shows the sum of the numbers wired into it.
+fn show_sum(
+    graph: GraphQuery,
+    values: Query<&Value>,
+    mut sums: Query<(&mut Text, &ChildOf), With<Sum>>,
+) {
+    for (mut text, node) in &mut sums {
+        let inputs = graph.inputs_of(node.parent()).into_iter();
+        let peers = inputs.flat_map(|p| graph.peers_of(p));
+        let values = peers.filter_map(|p| values.get(graph.node_of(p)?).ok());
+        let sum = values.fold(0.0, |sum, v| sum + v.0);
+        text.set_if_neq(Text(format!("= {sum}")));
+    }
+}
+
+/// Shortcuts are off while a text field has the focus.
+fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> bool {
+    focus.get().is_none_or(|f| !fields.contains(f))
 }

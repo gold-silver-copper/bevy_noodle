@@ -72,8 +72,12 @@ fn snapshot_round_trip() {
     let (canvas, content, [out, inp]) = graph(w);
     w.graph_edit(canvas, GraphEdit::Connect { from: out, to: inp })
         .unwrap();
+    // A control the app rebuilds from `Payload` stays out, with its children.
+    let node = w.get::<ChildOf>(out).unwrap().parent();
+    let control = w.spawn((scene::Transient, ChildOf(node))).id();
+    w.spawn(ChildOf(control));
     let saved = scene::snapshot(w, canvas).unwrap();
-    assert_eq!(saved.entities.len(), 5);
+    assert_eq!(saved.entities.len(), 5, "two nodes, two ports and an edge");
 
     // Change everything, then restore.
     let nodes: Vec<_> = w.get::<Children>(content).unwrap().to_vec();
@@ -93,6 +97,9 @@ fn snapshot_round_trip() {
     assert_eq!(w.get::<OutgoingEdges>(map[&out]).map(|e| e.len()), Some(1));
     let node = w.get::<ChildOf>(map[&inp]).unwrap().parent();
     assert_eq!(w.get::<Payload>(node), Some(&Payload(2.5)));
+    // The left-out control leaves no trace in its node's children.
+    let node = w.get::<ChildOf>(map[&out]).unwrap().parent();
+    assert_eq!(w.get::<Children>(node).unwrap().to_vec(), [map[&out]]);
 }
 
 #[test]

@@ -6,11 +6,21 @@
 //! inner graph is independent: wires cannot cross it, and dragging, panning
 //! and selecting inside it leave the outer graph alone.
 //!
+//! Type into the Number fields and drag the Scale slider inside the group:
+//! Print follows live, through the group.
+//!
 //! ```sh
 //! cargo run --example subgraph --features default_style
 //! ```
 
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{
+    FeathersNumberInput, FeathersSlider, NumberInputValue, UpdateNumberInput,
+};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::UiTheme;
 use bevy::prelude::*;
+use bevy::ui_widgets::{SliderPrecision, SliderStep, ValueChange, slider_self_update};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -20,10 +30,13 @@ const ORANGE: Color = Color::srgb(0.95, 0.6, 0.25);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
         .add_systems(Update, show_results)
+        .add_observer(edit)
         .run();
 }
 
@@ -34,7 +47,7 @@ type Wire = (Entity, Entity, usize, Entity, usize);
 #[derive(Component, Clone, Copy)]
 enum Op {
     Number(f32),
-    Double,
+    Scale(f32),
     Add,
     /// A group and the canvas inside it.
     Group(Entity),
@@ -85,13 +98,13 @@ fn setup(mut commands: Commands) {
             Op::Group(inner),
             ChildOf(outer_content),
             children![
-                kit::title("Group: 2a + b"),
+                kit::title("Group"),
                 kit::input("a", NUMBER, BLUE),
                 kit::input("b", NUMBER, BLUE),
             ],
         ))
         .add_child(inner)
-        .with_child(kit::output("2a + b", NUMBER, BLUE))
+        .with_child(kit::output("result", NUMBER, BLUE))
         .id();
 
     let mut node = |content, op, title, at: Vec2, rows: &[(&str, PortDirection)]| {
@@ -113,14 +126,14 @@ fn setup(mut commands: Commands) {
     let three = node(
         outer_content,
         Op::Number(3.0),
-        "Number 3",
+        "Number",
         Vec2::new(40.0, 120.0),
         &[("value", O)],
     );
     let four = node(
         outer_content,
         Op::Number(4.0),
-        "Number 4",
+        "Number",
         Vec2::new(40.0, 330.0),
         &[("value", O)],
     );
@@ -131,18 +144,18 @@ fn setup(mut commands: Commands) {
         Vec2::new(10.0, 110.0),
         &[("a", O), ("b", O)],
     );
-    let double = node(
+    let scale = node(
         inner_content,
-        Op::Double,
-        "Double",
-        Vec2::new(200.0, 30.0),
-        &[("x", I), ("2x", O)],
+        Op::Scale(2.0),
+        "Scale",
+        Vec2::new(200.0, 10.0),
+        &[("x", I), ("k x", O)],
     );
     let add = node(
         inner_content,
         Op::Add,
         "Add",
-        Vec2::new(380.0, 140.0),
+        Vec2::new(390.0, 140.0),
         &[("a", I), ("b", I), ("sum", O)],
     );
     let output = node(
@@ -150,7 +163,7 @@ fn setup(mut commands: Commands) {
         Op::Out,
         "Out",
         Vec2::new(600.0, 170.0),
-        &[("2a + b", I)],
+        &[("result", I)],
     );
     let print = node(
         outer_content,
@@ -173,11 +186,34 @@ fn setup(mut commands: Commands) {
         .id();
     commands.entity(print).insert(Op::Print(result));
 
+    // Controls under the titles: number fields, and a slider for the scale.
+    let margin = UiRect::horizontal(px(kit::PADDING));
+    for (number, value) in [(three, 3.0), (four, 4.0)] {
+        let field = commands
+            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .id();
+        commands.entity(number).insert_child(1, field);
+        commands.trigger(UpdateNumberInput {
+            entity: field,
+            value: NumberInputValue::F32(value),
+        });
+    }
+    let slider = commands
+        .spawn_scene(bsn! {
+            @FeathersSlider { @max: 4.0, @value: 2.0 }
+            SliderStep(0.25)
+            SliderPrecision(2)
+            Node { margin: {margin} }
+            on(slider_self_update)
+        })
+        .id();
+    commands.entity(scale).insert_child(1, slider);
+
     let wires: [Wire; 7] = [
         (outer, three, 0, group, 0),
         (outer, four, 0, group, 1),
-        (inner, input, 0, double, 0),
-        (inner, double, 0, add, 0),
+        (inner, input, 0, scale, 0),
+        (inner, scale, 0, add, 0),
         (inner, input, 1, add, 1),
         (inner, add, 0, output, 0),
         (outer, group, 0, print, 0),
@@ -229,7 +265,7 @@ fn input_value(
     let index = graph.outputs_of(node).iter().position(|p| *p == output)?;
     match ops.get(node).ok()?.1 {
         Op::Number(value) => Some(*value),
-        Op::Double => Some(2.0 * input_of(node, 0)?),
+        Op::Scale(k) => Some(k * input_of(node, 0)?),
         Op::Add => Some(input_of(node, 0)? + input_of(node, 1)?),
         // A group's output is what reaches the same input of its Out node.
         Op::Group(inner) => {
@@ -245,5 +281,18 @@ fn input_value(
             input_of(group, index)
         }
         Op::Out | Op::Print(_) => None,
+    }
+}
+
+/// A field or slider sets its node's number or scale.
+fn edit(change: On<ValueChange<f32>>, graph: GraphQuery, mut ops: Query<&mut Op>) {
+    let node = graph.node_of(change.source);
+    let Some(mut op) = node.and_then(|n| ops.get_mut(n).ok()) else {
+        return;
+    };
+    match *op {
+        Op::Number(_) => *op = Op::Number(change.value),
+        Op::Scale(_) => *op = Op::Scale(change.value),
+        _ => {}
     }
 }

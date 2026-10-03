@@ -5,11 +5,12 @@ use std::fmt::Debug;
 
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::gestures::PinchGesture;
+use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::HitData;
 use bevy::picking::hover::HoverMap;
 use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
-use bevy::ui::UiScale;
+use bevy::ui::{Selected, UiScale};
 use bevy_noodle::prelude::*;
 use bevy_noodle::{WireCandidate, WireTarget};
 
@@ -294,4 +295,50 @@ fn outer_edges_are_pickable_over_nested_canvases() {
         pick(&mut app, inner_canvas, Vec2::new(50.0, 1.0)),
         Some(inner_edge)
     );
+}
+
+#[test]
+fn controls_inside_nodes_keep_their_presses_and_drags() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let node = w
+        .spawn((
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            ChildOf(content),
+        ))
+        .id();
+    // A focusable control, such as a slider or text field, and a label.
+    let control = w.spawn((TabIndex(0), Node::default(), ChildOf(node))).id();
+    let thumb = w.spawn((Node::default(), ChildOf(control))).id();
+    let label = w.spawn((Text::new("Value"), ChildOf(node))).id();
+
+    let button = PointerButton::Primary;
+    pointer(
+        w,
+        thumb,
+        Press {
+            button,
+            hit: hit(),
+            count: 1,
+        },
+    );
+    drag(w, thumb, Vec2::new(10.0, 0.0));
+    assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::ZERO);
+    assert!(w.get::<Selected>(node).is_none());
+
+    pointer(
+        w,
+        label,
+        Press {
+            button,
+            hit: hit(),
+            count: 1,
+        },
+    );
+    drag(w, label, Vec2::new(10.0, 0.0));
+    assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::new(10.0, 0.0));
+    assert!(w.get::<Selected>(node).is_some());
 }

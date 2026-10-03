@@ -63,20 +63,20 @@ fn setup(mut commands: Commands) {
 | Example | Shows |
 |---|---|
 | `cargo run --example minimal` | Plain Bevy UI nodes, with edges drawn as gizmos from `EdgeGeometry`. |
-| `cargo run --example styled --features default_style` | The default look, plus app-level bindings: right-click adds a node, a dropped wire spawns a matching node, Delete removes the selection. |
+| `cargo run --example styled --features default_style` | The default look with Bevy's feathers controls in the nodes: type numbers and a template, and Print shows the result live. Plus app-level bindings: right-click adds a node, a dropped wire spawns a matching node, Delete removes the selection. |
 | `cargo run --example math_graph --features default_style` | A live calculator: your own components, Bevy's `EditableText` inside nodes, evaluation with `GraphQuery`, and a veto that rejects cycles. |
 | `cargo run --example edge_styles --features default_style` | Every `EdgeStyle` option: gradients, dashes, marching ants and travelling pulses, animated in the shader. Edges copy their look from the node they leave. |
-| `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
-| `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
-| `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
-| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes and ports, Enter to select, arrows to move, Space on two ports to connect, with a focus outline. |
-| `cargo run --example comment_frames --features default_style` | Comment frames: a frame node moves the nodes inside it, through an `EditApplied` observer with its own `EditOrigin`. |
+| `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. Number fields outside and a slider inside the group drive the result live. |
+| `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities live from in-node controls: a shape dropdown, color pickers, spin and size sliders, a ring count field. |
+| `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots (value edits included), copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. Number fields feed a live sum. |
+| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes, fields and ports, Enter to select, arrows to move, Space on two ports to connect, with a focus outline. |
+| `cargo run --example comment_frames --features default_style` | Comment frames with editable titles: a frame node moves the nodes inside it, through an `EditApplied` observer with its own `EditOrigin`. |
 | `cargo run --example reroute --features default_style` | Reroute dots for routing edges; right-click an edge to insert one where you clicked. |
-| `cargo run --example type_conversion --features default_style` | An `EditRequested` observer vetoes connections a node does not accept and inserts an "int to float" converter. |
+| `cargo run --example type_conversion --features default_style` | An `EditRequested` observer overrides the built-in type rule: int outputs snap to float inputs, and connecting one inserts an "int to float" converter. Edit the int and float and the product follows. |
 | `cargo run --example minimap --features default_style` | A minimap of the same graph, kept in sync from `NodePosition`s and `CanvasView`; click or drag it to move the view. |
 | `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble). |
 | `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
-| `cargo run --example save_load --features default_style,scene` | Saving and loading as RON: a full snapshot (user components and entity references intact) or just the graph model, a few hundred bytes, rebuilt with ordinary spawns. |
+| `cargo run --example save_load --features default_style,scene` | Saving and loading as RON: a full snapshot (user components, such as the values typed into the fields, and entity references intact) or just the graph model, a few hundred bytes, rebuilt with ordinary spawns. |
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
 ![The styled example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png)
@@ -133,6 +133,11 @@ PendingWire             the wire being dragged; also has EdgeGeometry
   `Delete` removes listed edges along with nodes.
 - **Bindings** are just systems:
   `commands.graph_edit(canvas, GraphEdit::Delete { items: selected.iter().collect() })`.
+- **Controls inside nodes.** Sliders, text fields, color pickers and menus
+  (`bevy_ui_widgets`, `bevy_feathers` or your own) work inside nodes. A press
+  or drag that starts in a focusable control (anything with a `TabIndex`, as
+  every feathers control and text field has) belongs to the control: it does
+  not select, raise or move the node.
 
 ### Optional default style (`default_style`)
 
@@ -171,6 +176,10 @@ your reflected components, with entity references remapped:
   between them, and `scene::insert(world, canvas, &snapshot)` adds them to any
   graph (copy and paste).
 - Save to files with `DynamicWorld::serialize`.
+- Mark UI you rebuild from your own data, such as controls inside nodes,
+  `scene::Transient`: snapshots leave it out (widget observers and text state
+  would not survive a restore), so keep the value in a reflected component and
+  rebuild the control for nodes that get one.
 
 See the `editor` and `save_load` examples.
 

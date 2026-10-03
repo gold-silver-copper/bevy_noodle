@@ -4,7 +4,9 @@
 //! applies. The graph is a translucent panel over the 3D view, with no window
 //! of its own.
 //!
-//! Rewire anything to change the scene. Right-click adds a node.
+//! Every value is a control in its node: a shape dropdown, color pickers,
+//! spin and size sliders, a ring count field. Change any of them, or rewire
+//! anything, and the scene follows live. Right-click adds a node.
 //!
 //! ```sh
 //! cargo run --example scene_builder_3d --features default_style
@@ -12,7 +14,16 @@
 
 use std::f32::consts::TAU;
 
+use bevy::feathers::FeathersPlugins;
+use bevy::feathers::controls::{
+    ColorChannel, ColorPlaneValue, FeathersColorPlane, FeathersColorSlider, FeathersMenu,
+    FeathersMenuButton, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput, FeathersSlider,
+    NumberFormat, NumberInputValue, SliderBaseColor, UpdateNumberInput,
+};
+use bevy::feathers::dark_theme::create_dark_theme;
+use bevy::feathers::theme::{ThemedText, UiTheme};
 use bevy::prelude::*;
+use bevy::ui_widgets::{Activate, SliderPrecision, ValueChange, slider_self_update};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::{SelectedBorderColor, kit};
 
@@ -28,38 +39,64 @@ const SKY: Color = Color::srgb(0.1, 0.11, 0.13);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
+        .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(SKY))
         .add_systems(Startup, setup)
-        .add_systems(Update, (rebuild.run_if(graph_changed), spin))
+        .add_systems(Update, (show_paints, rebuild.run_if(graph_changed), spin))
         .add_observer(add_on_right_click)
+        .add_observer(choose_shape)
+        .add_observer(edit_number)
+        .add_observer(edit_count)
+        .add_observer(edit_hue)
         .run();
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 enum Shape {
+    #[default]
     Cube,
     Sphere,
     Torus,
 }
 
-/// What a node is.
+impl Shape {
+    const ALL: [Shape; 3] = [Shape::Cube, Shape::Sphere, Shape::Torus];
+
+    fn name(self) -> &'static str {
+        ["Cube", "Sphere", "Torus"][self as usize]
+    }
+}
+
+/// What a node is, with the value its controls edit.
 #[derive(Component, Clone, Copy)]
 enum Kind {
     Shape(Shape),
-    Paint(&'static str, Color),
+    Paint(Hsla),
+    /// Turns per second.
     Spin(f32),
-    Object,
-    Ring(u32),
+    /// Size.
+    Object(f32),
+    Ring(i32),
     Scene,
 }
+
+/// A shape dropdown's item.
+#[derive(Component, Clone, Default)]
+struct Choice(Shape);
+
+/// A shape dropdown's caption.
+#[derive(Component, Clone, Default)]
+struct Caption;
 
 /// Marks the 3D entities built from the graph.
 #[derive(Component)]
 struct Built;
 
+/// Speed and starting rotation, so a rebuild keeps the phase.
 #[derive(Component)]
-struct Spin(f32);
+struct Spin(f32, Quat);
 
 #[derive(Resource)]
 struct Meshes([Handle<Mesh>; 3]);
@@ -124,24 +161,20 @@ fn setup(
         .insert((panel, background, border))
         .id();
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
-    let coral = Color::srgb(0.98, 0.45, 0.4);
-    let teal = Color::srgb(0.2, 0.75, 0.75);
+    let coral = Hsla::hsl(5.0, 0.9, 0.65);
+    let teal = Hsla::hsl(180.0, 0.6, 0.45);
     let n = [
-        (Kind::Shape(Shape::Cube), 20.0, 30.0),
-        (Kind::Shape(Shape::Torus), 20.0, 380.0),
-        (Kind::Paint("Coral", coral), 20.0, 125.0),
-        (Kind::Paint("Teal", teal), 20.0, 475.0),
-        (Kind::Spin(1.2), 20.0, 250.0),
-        (Kind::Object, 230.0, 60.0),
-        (Kind::Object, 230.0, 380.0),
-        (Kind::Ring(8), 440.0, 400.0),
-        (Kind::Scene, 440.0, 200.0),
-        (Kind::Shape(Shape::Sphere), 20.0, 600.0),
-        (
-            Kind::Paint("Gold", Color::srgb(0.95, 0.75, 0.3)),
-            20.0,
-            700.0,
-        ),
+        (Kind::Shape(Shape::Cube), 20.0, 20.0),
+        (Kind::Shape(Shape::Torus), 20.0, 410.0),
+        (Kind::Paint(coral), 20.0, 125.0),
+        (Kind::Paint(teal), 20.0, 515.0),
+        (Kind::Spin(1.2), 20.0, 305.0),
+        (Kind::Object(1.0), 230.0, 40.0),
+        (Kind::Object(1.0), 230.0, 410.0),
+        (Kind::Ring(8), 440.0, 300.0),
+        (Kind::Scene, 440.0, 170.0),
+        (Kind::Shape(Shape::Sphere), 440.0, 30.0),
+        (Kind::Paint(Hsla::hsl(42.0, 0.85, 0.6)), 440.0, 460.0),
     ]
     .map(|(kind, x, y)| spawn(&mut commands, content, kind, Vec2::new(x, y)));
     // (from node, output, to node, input)
@@ -169,19 +202,12 @@ fn setup(
 }
 
 fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Entity {
-    let (title, inputs, outputs): (String, &[_], &[_]) = match kind {
-        Kind::Shape(shape) => {
-            let name = match shape {
-                Shape::Cube => "Cube",
-                Shape::Sphere => "Sphere",
-                Shape::Torus => "Torus",
-            };
-            (name.into(), &[], &[("shape", SHAPE, GREY)])
-        }
-        Kind::Paint(name, _) => (name.into(), &[], &[("color", PAINT, PURPLE)]),
-        Kind::Spin(speed) => (format!("Spin {speed}/s"), &[], &[("motion", MOTION, GREEN)]),
-        Kind::Object => (
-            "Object".into(),
+    let (title, inputs, outputs): (_, &[_], &[_]) = match kind {
+        Kind::Shape(_) => ("Shape", &[], &[("shape", SHAPE, GREY)]),
+        Kind::Paint(_) => ("Paint", &[], &[("color", PAINT, PURPLE)]),
+        Kind::Spin(_) => ("Spin", &[], &[("motion", MOTION, GREEN)]),
+        Kind::Object(_) => (
+            "Object",
             &[
                 ("shape", SHAPE, GREY),
                 ("color", PAINT, PURPLE),
@@ -189,15 +215,16 @@ fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Enti
             ],
             &[("object", OBJECT, ORANGE)],
         ),
-        Kind::Ring(count) => (
-            format!("Ring of {count}"),
+        Kind::Ring(_) => (
+            "Ring",
             &[("object", OBJECT, ORANGE)],
             &[("objects", OBJECT, ORANGE)],
         ),
-        Kind::Scene => ("Scene".into(), &[("objects", OBJECT, ORANGE)], &[]),
+        Kind::Scene => ("Scene", &[("objects", OBJECT, ORANGE)], &[]),
     };
     let node = commands.spawn((kit::node(at), kind, ChildOf(content))).id();
     commands.spawn((kit::title(title), ChildOf(node)));
+    controls(commands, node, kind);
     for (label, port_type, color) in inputs {
         let port = match kind {
             Kind::Scene => Port::input(*port_type).with_max_connections(None),
@@ -208,25 +235,84 @@ fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Enti
     for (label, port_type, color) in outputs {
         commands.spawn((kit::output(*label, *port_type, *color), ChildOf(node)));
     }
-    if let Kind::Paint(_, color) = kind {
-        // A swatch: the node's border shows the color unless selected.
-        commands.entity(node).insert(SelectedBorderColor {
-            normal: color,
-            selected: Color::WHITE,
-        });
-    }
     node
+}
+
+/// The controls editing a node's value, under its title.
+fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
+    let margin = UiRect::horizontal(px(kit::PADDING));
+    let slider = |min: f32, max: f32, value: f32| {
+        bsn! {
+            @FeathersSlider { @min: min, @max: max, @value: value }
+            SliderPrecision(2)
+            Node { margin: {margin} }
+            on(slider_self_update)
+        }
+    };
+    match kind {
+        Kind::Shape(shape) => {
+            let items = Shape::ALL.map(|choice| {
+                let name = choice.name();
+                bsn! {
+                    @FeathersMenuItem { @caption: bsn! { Text(name) ThemedText } }
+                    Choice(choice)
+                }
+            });
+            let name = shape.name();
+            let [cube, sphere, torus] = items;
+            commands.spawn_scene(bsn! {
+                @FeathersMenu
+                Node { margin: {margin} }
+                Children [
+                    @FeathersMenuButton { @caption: bsn! { Text(name) ThemedText Caption } },
+                    (@FeathersMenuPopup Children [ cube, sphere, torus ])
+                ]
+            })
+        }
+        Kind::Paint(color) => {
+            // A hue and saturation plane over a lightness slider.
+            commands
+                .spawn_scene(bsn! { @FeathersColorPlane::HueSaturation Node { margin: {margin}, min_height: px(70) } })
+                .insert(ChildOf(node));
+            let lightness = color.lightness;
+            commands.spawn_scene(bsn! {
+                @FeathersColorSlider { @channel: ColorChannel::HslLightness, @value: lightness }
+                Node { margin: {margin} }
+                on(slider_self_update)
+            })
+        }
+        Kind::Spin(speed) => commands.spawn_scene(slider(-4.0, 4.0, speed)),
+        Kind::Object(size) => commands.spawn_scene(slider(0.25, 2.0, size)),
+        Kind::Ring(count) => {
+            let field = commands
+                .spawn_scene(bsn! {
+                    @FeathersNumberInput { @number_format: NumberFormat::I32 }
+                    Node { margin: {margin} }
+                })
+                .insert(ChildOf(node))
+                .id();
+            return commands.trigger(UpdateNumberInput {
+                entity: field,
+                value: NumberInputValue::I32(count),
+            });
+        }
+        Kind::Scene => return,
+    }
+    .insert(ChildOf(node));
 }
 
 /// Whether an edit changed connections or nodes (a run condition).
 fn graph_changed(
     mut applied: MessageReader<EditApplied>,
     added: Query<(), Added<GraphNode>>,
+    edited: Query<(), Changed<Kind>>,
 ) -> bool {
     let structural =
         |edit: &GraphEdit| !matches!(edit, GraphEdit::Select { .. } | GraphEdit::MoveNodes { .. });
     // Read every message (`any` would stop early and leave some for next frame).
-    applied.read().filter(|e| structural(&e.edit)).count() > 0 || !added.is_empty()
+    applied.read().filter(|e| structural(&e.edit)).count() > 0
+        || !added.is_empty()
+        || !edited.is_empty()
 }
 
 /// Rebuild the 3D scene from the graph.
@@ -257,14 +343,15 @@ fn rebuild(
         let place = Transform::from_xyz(i as f32 * spacing - offset, 0.0, 0.0);
         for instance in item {
             let mesh = meshes.0[instance.shape as usize].clone();
+            let transform = place * instance.transform;
             let mut entity = commands.spawn((
                 Built,
                 Mesh3d(mesh),
                 MeshMaterial3d(materials.add(instance.color)),
-                place * instance.transform,
+                transform,
             ));
             if let Some(speed) = instance.spin {
-                entity.insert(Spin(speed));
+                entity.insert(Spin(speed, transform.rotation));
             }
         }
     }
@@ -293,12 +380,12 @@ fn objects(
     let inputs = graph.inputs_of(node);
     let input = |i: usize| inputs.get(i).and_then(|p| source(graph, kinds, *p));
     match kind {
-        Kind::Object => {
+        Kind::Object(size) => {
             let Some((_, Kind::Shape(shape))) = input(0) else {
                 return Vec::new();
             };
             let color = match input(1) {
-                Some((_, Kind::Paint(_, color))) => *color,
+                Some((_, Kind::Paint(color))) => (*color).into(),
                 _ => Color::WHITE,
             };
             let spin = match input(2) {
@@ -309,7 +396,7 @@ fn objects(
                 shape: *shape,
                 color,
                 spin,
-                transform: Transform::IDENTITY,
+                transform: Transform::from_scale(Vec3::splat(*size)),
             }]
         }
         Kind::Ring(count) if depth < 8 => {
@@ -320,9 +407,10 @@ fn objects(
                 return Vec::new();
             };
             let inner = objects(graph, kinds, inner, depth + 1);
-            (0..*count)
+            let count = (*count).clamp(0, 64);
+            (0..count)
                 .flat_map(|k| {
-                    let angle = k as f32 / *count as f32 * TAU;
+                    let angle = k as f32 / count as f32 * TAU;
                     let around =
                         Transform::from_translation(Quat::from_rotation_y(angle) * Vec3::X * 1.3)
                             .with_scale(Vec3::splat(0.4));
@@ -338,8 +426,90 @@ fn objects(
 }
 
 fn spin(time: Res<Time>, mut spinning: Query<(&mut Transform, &Spin)>) {
-    for (mut transform, spin) in &mut spinning {
-        transform.rotate_y(spin.0 * time.delta_secs());
+    for (mut transform, Spin(speed, start)) in &mut spinning {
+        transform.rotation = *start * Quat::from_rotation_y(speed * time.elapsed_secs());
+    }
+}
+
+/// A slider sets its node's lightness, speed or size.
+fn edit_number(change: On<ValueChange<f32>>, graph: GraphQuery, mut kinds: Query<&mut Kind>) {
+    let Some(mut kind) = graph
+        .node_of(change.source)
+        .and_then(|n| kinds.get_mut(n).ok())
+    else {
+        return;
+    };
+    match &mut *kind {
+        Kind::Paint(color) => color.lightness = change.value,
+        Kind::Spin(speed) => *speed = change.value,
+        Kind::Object(size) => *size = change.value,
+        _ => {}
+    }
+}
+
+/// The color plane sets hue (across) and saturation (down).
+fn edit_hue(change: On<ValueChange<Vec2>>, graph: GraphQuery, mut kinds: Query<&mut Kind>) {
+    let node = graph.node_of(change.source);
+    if let Some(Kind::Paint(color)) = node.and_then(|n| kinds.get_mut(n).ok()).as_deref_mut() {
+        color.hue = change.value.x * 360.0;
+        color.saturation = 1.0 - change.value.y;
+    }
+}
+
+/// A ring's count field sets its count.
+fn edit_count(change: On<ValueChange<i32>>, graph: GraphQuery, mut kinds: Query<&mut Kind>) {
+    let node = graph.node_of(change.source);
+    if let Some(Kind::Ring(count)) = node.and_then(|n| kinds.get_mut(n).ok()).as_deref_mut() {
+        *count = change.value;
+    }
+}
+
+/// A dropdown item sets its node's shape and the dropdown's caption.
+fn choose_shape(
+    activate: On<Activate>,
+    choices: Query<&Choice>,
+    graph: GraphQuery,
+    mut kinds: Query<&mut Kind>,
+    mut captions: Query<(Entity, &mut Text), With<Caption>>,
+) {
+    let (Ok(Choice(shape)), Some(node)) = (
+        choices.get(activate.event_target()),
+        graph.node_of(activate.event_target()),
+    ) else {
+        return;
+    };
+    if let Ok(mut kind) = kinds.get_mut(node) {
+        *kind = Kind::Shape(*shape);
+    }
+    for (caption, mut text) in &mut captions {
+        if graph.node_of(caption) == Some(node) {
+            text.0 = shape.name().into();
+        }
+    }
+}
+
+/// Paint nodes show their color: the plane's thumb and gradient, the slider's
+/// gradient, and the node's border.
+fn show_paints(
+    paints: Query<(Entity, &Kind, &mut SelectedBorderColor), Changed<Kind>>,
+    mut planes: Query<(&ChildOf, &mut ColorPlaneValue)>,
+    mut sliders: Query<(&ChildOf, &mut SliderBaseColor)>,
+) {
+    for (node, kind, mut border) in paints {
+        let Kind::Paint(color) = *kind else {
+            continue;
+        };
+        border.normal = color.with_lightness(color.lightness.max(0.25)).into();
+        for (parent, mut plane) in &mut planes {
+            if parent.parent() == node {
+                plane.0 = Vec3::new(color.hue / 360.0, 1.0 - color.saturation, color.lightness);
+            }
+        }
+        for (parent, mut base) in &mut sliders {
+            if parent.parent() == node {
+                base.0 = color.into();
+            }
+        }
     }
 }
 
@@ -360,8 +530,8 @@ fn add_on_right_click(
     {
         let kinds = [
             Kind::Shape(Shape::Sphere),
-            Kind::Paint("Lime", Color::srgb(0.6, 0.9, 0.3)),
-            Kind::Object,
+            Kind::Paint(Hsla::hsl(90.0, 0.7, 0.55)),
+            Kind::Object(1.0),
             Kind::Ring(5),
             Kind::Spin(-2.5),
         ];
