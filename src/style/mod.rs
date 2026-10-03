@@ -20,7 +20,7 @@ use bevy::ui::{ComputedNode, Selected};
 
 use crate::interaction::{SelectionBox, WireCandidate, WireTarget};
 use crate::{NoodleSystems, components::*, query::GraphQuery};
-use render::{GridMaterial, MaterialsPlugin, WireMaterial, wire_material};
+use render::{Grid, GridMaterial, MaterialsPlugin, WireMaterial, wire_material};
 
 pub struct NoodleDefaultStylePlugin;
 
@@ -348,13 +348,14 @@ fn draw_grids(
         };
         let size = (computed.size() * computed.inverse_scale_factor()).max(Vec2::ONE);
         let linear = |c: Color| c.to_linear().to_vec4();
-        let material = GridMaterial {
+        let grid = Grid {
             background: linear(grid.background),
             minor: linear(grid.minor),
             major: linear(grid.major),
             view: Vec4::new(view.pan.x, view.pan.y, view.zoom, grid.spacing.max(1.0)),
             extent: Vec4::new(size.x, size.y, grid.major_every.max(1) as f32, 0.0),
         };
+        let material = GridMaterial { grid };
         match visual.and_then(|v| grids.get(v.0).ok()) {
             Some(handle) => update(&mut materials, &handle.0, material),
             None => {

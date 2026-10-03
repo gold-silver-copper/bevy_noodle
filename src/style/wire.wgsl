@@ -4,15 +4,18 @@
 #import bevy_ui::ui_vertex_output::UiVertexOutput
 
 @group(0) @binding(1) var<uniform> globals: Globals;
-// Colors at the start (output) and end (input) of the wire.
-@group(1) @binding(0) var<uniform> start_color: vec4<f32>;
-@group(1) @binding(1) var<uniform> end_color: vec4<f32>;
-@group(1) @binding(2) var<uniform> p0p1: vec4<f32>;
-@group(1) @binding(3) var<uniform> p2p3: vec4<f32>;
-// x: stroke width, yz: node size in logical pixels.
-@group(1) @binding(4) var<uniform> params: vec4<f32>;
-// x: dash length (0 = solid), y: gap length, z: flow speed in pixels per second.
-@group(1) @binding(5) var<uniform> pattern: vec4<f32>;
+struct Wire {
+    // Colors at the start (output) and end (input) of the wire.
+    start_color: vec4<f32>,
+    end_color: vec4<f32>,
+    p0p1: vec4<f32>,
+    p2p3: vec4<f32>,
+    // x: stroke width, yz: node size in logical pixels.
+    params: vec4<f32>,
+    // x: dash length (0 = solid), y: gap length, z: flow speed in pixels per second.
+    pattern: vec4<f32>,
+}
+@group(1) @binding(0) var<uniform> wire: Wire;
 
 const SAMPLES: i32 = 32;
 const PULSE_SPACING: f32 = 96.0;
@@ -24,11 +27,11 @@ fn bezier(p0: vec2<f32>, p1: vec2<f32>, p2: vec2<f32>, p3: vec2<f32>, t: f32) ->
 
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
-    let p = in.uv * params.yz;
-    let p0 = p0p1.xy;
-    let p1 = p0p1.zw;
-    let p2 = p2p3.xy;
-    let p3 = p2p3.zw;
+    let p = in.uv * wire.params.yz;
+    let p0 = wire.p0p1.xy;
+    let p1 = wire.p0p1.zw;
+    let p2 = wire.p2p3.xy;
+    let p3 = wire.p2p3.zw;
 
     // Distance to the curve, and the arc length at the closest point.
     var distance = 1e9;
@@ -52,16 +55,16 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
 
     // Width of one screen pixel in local units, so edges stay crisp when zoomed.
     let pixel = max(length(fwidth(p)) * 0.7071, 1e-4);
-    let half_width = max(params.x * 0.5, pixel * 0.5);
+    let half_width = max(wire.params.x * 0.5, pixel * 0.5);
     var coverage = 1.0 - smoothstep(half_width - pixel, half_width + pixel, distance);
 
-    var color = mix(start_color, end_color, clamp(along / max(total, 1e-4), 0.0, 1.0));
-    let phase = along - globals.time * pattern.z;
-    if pattern.x > 0.0 {
-        let period = pattern.x + pattern.y;
+    var color = mix(wire.start_color, wire.end_color, clamp(along / max(total, 1e-4), 0.0, 1.0));
+    let phase = along - globals.time * wire.pattern.z;
+    if wire.pattern.x > 0.0 {
+        let period = wire.pattern.x + wire.pattern.y;
         let offset = phase - period * floor(phase / period);
-        coverage *= clamp(min(offset, pattern.x - offset) / pixel + 0.5, 0.0, 1.0);
-    } else if pattern.z != 0.0 {
+        coverage *= clamp(min(offset, wire.pattern.x - offset) / pixel + 0.5, 0.0, 1.0);
+    } else if wire.pattern.z != 0.0 {
         // Solid wires carry pulses instead.
         let wave = 0.5 + 0.5 * cos(phase * 6.2831853 / PULSE_SPACING);
         color = vec4<f32>(mix(color.rgb, vec3<f32>(1.0), 0.7 * pow(wave, 16.0)), color.a);

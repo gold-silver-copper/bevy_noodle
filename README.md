@@ -68,6 +68,7 @@ fn setup(mut commands: Commands) {
 | `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
 | `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
 | `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
+| `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
 | `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
@@ -78,6 +79,7 @@ fn setup(mut commands: Commands) {
 ![The scene_builder_3d example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png)
 ![The editor example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/editor.png)
 ![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
+![The stress example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/stress.png)
 
 ## Concepts
 

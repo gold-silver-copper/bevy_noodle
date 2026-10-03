@@ -260,13 +260,16 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
 fn plan_edit(
     In((canvas, mut edit)): In<(Entity, GraphEdit)>,
     graph: GraphQuery,
-    selected: Query<(), With<Selected>>,
+    selected: Query<Entity, With<Selected>>,
 ) -> Result<Plan, RejectReason> {
     if graph.canvas_of(canvas) != Some(canvas) {
         return Err(RejectReason::InvalidEntity);
     }
-    let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && graph.canvas_of(*e) == Some(canvas);
-    let edges = graph.edges_in(canvas);
+    // Each check looks only at the entities listed, so edits cost the same in
+    // a graph of any size.
+    let here = |e: &Entity| graph.canvas_of(*e) == Some(canvas);
+    let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && here(e);
+    let edge = |e: &Entity| graph.edge_ports(*e).is_some() && here(e);
     let (mut disconnect, mut select) = (Vec::new(), Vec::new());
     match &mut edit {
         GraphEdit::Connect { from, to } => {
@@ -277,14 +280,12 @@ fn plan_edit(
         GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
             return Err(RejectReason::InvalidEntity);
         }
-        GraphEdit::Disconnect { edge } if !edges.contains(edge) => {
-            return Err(RejectReason::NotInCanvas);
-        }
+        GraphEdit::Disconnect { edge } if !here(edge) => return Err(RejectReason::NotInCanvas),
         GraphEdit::Disconnect { .. } => {}
         GraphEdit::MoveNodes { nodes, .. } => nodes.retain(mine),
         GraphEdit::DeleteNodes { nodes } => {
             // Nodes go with their edges; listed edges go too.
-            nodes.retain(|e| mine(e) || edges.contains(e));
+            nodes.retain(|e| mine(e) || edge(e));
             nodes.sort();
             nodes.dedup();
             disconnect = nodes
@@ -292,13 +293,18 @@ fn plan_edit(
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
-            disconnect.extend(nodes.iter().filter(|e| edges.contains(e)));
+            disconnect.extend(nodes.iter().filter(|e| edge(e)));
             disconnect.sort();
             disconnect.dedup();
         }
         GraphEdit::Select { nodes, mode } => {
-            nodes.retain(|e| mine(e) || edges.contains(e));
-            for item in graph.nodes_of(canvas).into_iter().chain(edges) {
+            nodes.retain(|e| mine(e) || edge(e));
+            // Only what is selected now or listed can change.
+            let mut items: Vec<Entity> = selected.iter().filter(|e| mine(e) || edge(e)).collect();
+            items.extend(nodes.iter().copied());
+            items.sort();
+            items.dedup();
+            for item in items {
                 let (listed, on) = (nodes.contains(&item), selected.contains(item));
                 let want = match mode {
                     SelectMode::Replace => listed,

@@ -65,5 +65,9 @@ required-features = ["default_style"]
 name = "scene_builder_3d"
 required-features = ["default_style"]
 
+[[example]]
+name = "stress"
+required-features = ["default_style"]
+
 [package.metadata.docs.rs]
 all-features = true

@@ -8,7 +8,7 @@
 
 use bevy::asset::embedded_asset;
 use bevy::prelude::*;
-use bevy::render::render_resource::AsBindGroup;
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
 use bevy::shader::ShaderRef;
 
 pub(crate) struct MaterialsPlugin;
@@ -24,25 +24,25 @@ impl Plugin for MaterialsPlugin {
     }
 }
 
-/// A cubic Bézier stroke. Coordinates are in the node's local logical pixels.
+/// A cubic Bézier stroke. One uniform, so each wire needs one GPU buffer.
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug, PartialEq)]
 pub(crate) struct WireMaterial {
-    /// Linear RGBA at the start and end.
     #[uniform(0)]
+    pub wire: Wire,
+}
+
+/// Coordinates are in the node's local logical pixels; colors are linear RGBA.
+#[derive(ShaderType, Clone, Debug, PartialEq)]
+pub(crate) struct Wire {
+    /// Colors at the start and end.
     pub start_color: Vec4,
-    #[uniform(1)]
     pub end_color: Vec4,
-    /// Control points 0 and 1.
-    #[uniform(2)]
+    /// Control points 0 and 1, then 2 and 3.
     pub p0p1: Vec4,
-    /// Control points 2 and 3.
-    #[uniform(3)]
     pub p2p3: Vec4,
     /// x: stroke width, yz: node size in logical pixels.
-    #[uniform(4)]
     pub params: Vec4,
     /// x: dash length (0 = solid), y: gap length, z: flow speed (pixels/s).
-    #[uniform(5)]
     pub pattern: Vec4,
 }
 
@@ -56,16 +56,17 @@ impl UiMaterial for WireMaterial {
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug, PartialEq)]
 pub(crate) struct GridMaterial {
     #[uniform(0)]
+    pub grid: Grid,
+}
+
+#[derive(ShaderType, Clone, Debug, PartialEq)]
+pub(crate) struct Grid {
     pub background: Vec4,
-    #[uniform(1)]
     pub minor: Vec4,
-    #[uniform(2)]
     pub major: Vec4,
     /// xy: pan, z: zoom, w: grid spacing in graph units.
-    #[uniform(3)]
     pub view: Vec4,
     /// xy: canvas size in logical pixels, z: major line interval.
-    #[uniform(4)]
     pub extent: Vec4,
 }
 
@@ -91,12 +92,14 @@ pub(crate) fn wire_material(
     (
         Rect::from_corners(min, min + size),
         WireMaterial {
-            start_color: start.to_linear().to_vec4(),
-            end_color: end.to_linear().to_vec4(),
-            p0p1: Vec4::new(local[0].x, local[0].y, local[1].x, local[1].y),
-            p2p3: Vec4::new(local[2].x, local[2].y, local[3].x, local[3].y),
-            params: Vec4::new(width, size.x, size.y, 0.0),
-            pattern: pattern.extend(0.0),
+            wire: Wire {
+                start_color: start.to_linear().to_vec4(),
+                end_color: end.to_linear().to_vec4(),
+                p0p1: Vec4::new(local[0].x, local[0].y, local[1].x, local[1].y),
+                p2p3: Vec4::new(local[2].x, local[2].y, local[3].x, local[3].y),
+                params: Vec4::new(width, size.x, size.y, 0.0),
+                pattern: pattern.extend(0.0),
+            },
         },
     )
 }
