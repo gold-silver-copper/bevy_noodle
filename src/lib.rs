@@ -4,16 +4,17 @@
 //! ```text
 //! NodeCanvas              your UI node: one graph and its viewport (no background)
 //! └── CanvasContent       pans and zooms; holds the nodes
-//!     └── GraphNode       your UI node, styled however you like
-//!         └── … Port      your UI node marking a connection point
-//! Edge                    spawned on connect; EdgeSource/EdgeTarget relate it to ports
+//!     ├── GraphNode       your UI node, styled however you like
+//!     │   └── … Port      your UI node marking a connection point
+//!     └── Edge            spawned on connect; EdgeSource/EdgeTarget relate it to ports
 //! ```
 //!
 //! Any number of canvases can coexist or nest; every lookup resolves to the
 //! nearest one. Change graphs with [`GraphCommandsExt::graph_edit`]; react to
 //! [`EditRequested`] (to veto) and [`EditApplied`]. Interaction is opt-in per
 //! canvas with [`CanvasInteraction`]. The core draws nothing: draw edges from
-//! [`EdgeGeometry`], or enable the `default_style` feature.
+//! [`EdgeGeometry`], or enable the `default_style` feature. The `scene` feature
+//! adds graph snapshots (undo, save and load).
 
 // Bevy's `AsBindGroup` derive trips a recursion lint on recent compilers.
 #![recursion_limit = "256"]
@@ -24,6 +25,8 @@ pub mod edit;
 mod geometry;
 pub mod interaction;
 pub mod query;
+#[cfg(feature = "scene")]
+pub mod scene;
 #[cfg(feature = "default_style")]
 pub mod style;
 

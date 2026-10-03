@@ -167,6 +167,7 @@ pub struct PortTangent(pub Vec2);
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct PortAnchor {
+    #[entities]
     pub node: Option<Entity>,
     /// Center relative to the node's [`NodePosition`].
     pub offset: Vec2,
@@ -174,7 +175,8 @@ pub struct PortAnchor {
     pub position: Option<Vec2>,
 }
 
-/// A connection, spawned and despawned by graph edits. Despawned with either port.
+/// A connection, spawned as a child of the canvas' [`CanvasContent`] (so the
+/// content subtree is the whole graph) and despawned with either port.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
 #[require(EdgeGeometry)]
@@ -248,11 +250,14 @@ impl EdgeGeometry {
 #[reflect(Component)]
 #[require(EdgeGeometry)]
 pub struct PendingWire {
+    #[entities]
     pub canvas: Entity,
+    #[entities]
     pub from: Entity,
     /// Pointer position in graph space.
     pub pointer: Vec2,
     /// The compatible port under the pointer, if any.
+    #[entities]
     pub target: Option<Entity>,
 }
 

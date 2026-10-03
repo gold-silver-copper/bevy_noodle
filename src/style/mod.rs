@@ -11,7 +11,7 @@
 //! [`kit`] has functions returning ready-made node bundles.
 
 pub mod kit;
-mod render;
+pub(crate) mod render;
 
 use bevy::picking::Pickable;
 use bevy::prelude::*;
@@ -40,14 +40,26 @@ impl Plugin for NoodleDefaultStylePlugin {
 }
 
 /// How edges are drawn. On a canvas it applies to all its edges; on an edge
-/// it overrides the canvas.
+/// it overrides the canvas. Lengths are in graph units.
+///
+/// ```ignore
+/// // Marching ants flowing from output to input, fading blue to pink.
+/// EdgeStyle { dash: Some(Vec2::new(10.0, 6.0)), flow_speed: 40.0, end_color: Some(PINK.into()), ..default() }
+/// ```
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
 #[reflect(Component, Default)]
 pub struct EdgeStyle {
     /// `None` uses the output port's [`PortColor`].
     pub color: Option<Color>,
+    /// Fade to this color toward the input end. `None`: no gradient.
+    pub end_color: Option<Color>,
     pub width: f32,
     pub curvature: f32,
+    /// Dash and gap lengths. `None`: a solid wire.
+    pub dash: Option<Vec2>,
+    /// Animate dashes toward the input at this speed (per second). Solid wires
+    /// carry travelling pulses instead. Negative flows backward.
+    pub flow_speed: f32,
     pub layer: EdgeLayer,
     /// End wires at port rims instead of centers.
     pub trim_to_ports: bool,
@@ -57,8 +69,11 @@ impl Default for EdgeStyle {
     fn default() -> Self {
         Self {
             color: None,
+            end_color: None,
             width: 3.0,
             curvature: 0.5,
+            dash: None,
+            flow_speed: 0.0,
             layer: EdgeLayer::AboveNodes,
             trim_to_ports: true,
         }
@@ -172,6 +187,7 @@ fn draw_edges(
         &ComputedNode,
         Option<&UiTransform>,
     )>,
+    parented: Query<(), With<ChildOf>>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
     for (entity, geometry, own, source, target, wire, visual, node, z_index) in &mut edges {
@@ -213,12 +229,13 @@ fn draw_edges(
             .color
             .or(port_color)
             .unwrap_or(Color::srgb(0.8, 0.82, 0.86));
-        let color = if wire.is_some() {
-            color.with_alpha(0.85)
-        } else {
-            color
-        };
-        let (rect, material) = wire_material(shape.bezier(style.curvature), color, style.width);
+        let alpha = if wire.is_some() { 0.85 } else { 1.0 };
+        let colors =
+            [color, style.end_color.unwrap_or(color)].map(|c| c.with_alpha(c.alpha() * alpha));
+        let dash = style.dash.unwrap_or_default().max(Vec2::ZERO);
+        let pattern = dash.extend(style.flow_speed);
+        let (rect, material) =
+            wire_material(shape.bezier(style.curvature), colors, style.width, pattern);
         let z = match (wire, style.layer) {
             (Some(_), _) => ZIndex(i32::MAX),
             (None, EdgeLayer::AboveNodes) => ZIndex(i32::MAX - 1),
@@ -257,8 +274,11 @@ fn draw_edges(
                     EdgeVisual(handle),
                     z,
                     Pickable::IGNORE,
-                    ChildOf(content),
                 ));
+                // Pending wires and edges spawned without a parent.
+                if !parented.contains(entity) {
+                    commands.entity(entity).insert(ChildOf(content));
+                }
             }
         }
     }

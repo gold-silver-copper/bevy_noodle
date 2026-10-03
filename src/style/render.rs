@@ -27,19 +27,23 @@ impl Plugin for MaterialsPlugin {
 /// A cubic Bézier stroke. Coordinates are in the node's local logical pixels.
 #[derive(Asset, TypePath, AsBindGroup, Clone, Debug, PartialEq)]
 pub(crate) struct WireMaterial {
-    /// Linear RGBA.
+    /// Linear RGBA at the start and end.
     #[uniform(0)]
-    pub color: Vec4,
-    /// Control points 0 and 1.
+    pub start_color: Vec4,
     #[uniform(1)]
+    pub end_color: Vec4,
+    /// Control points 0 and 1.
+    #[uniform(2)]
     pub p0p1: Vec4,
     /// Control points 2 and 3.
-    #[uniform(2)]
-    pub p2p3: Vec4,
-    /// x: stroke width, yz: node size in logical pixels,
-    /// w: 0 = cubic Bézier, 1 = two straight segments (p0-p1 and p2-p3).
     #[uniform(3)]
+    pub p2p3: Vec4,
+    /// x: stroke width, yz: node size in logical pixels.
+    #[uniform(4)]
     pub params: Vec4,
+    /// x: dash length (0 = solid), y: gap length, z: flow speed (pixels/s).
+    #[uniform(5)]
+    pub pattern: Vec4,
 }
 
 impl UiMaterial for WireMaterial {
@@ -81,7 +85,12 @@ pub(crate) fn cubic_bezier(points: [Vec2; 4], t: f32) -> Vec2 {
 }
 
 /// A wire material for `points` (graph space), plus the node rect it needs.
-pub(crate) fn wire_material(points: [Vec2; 4], color: Color, width: f32) -> (Rect, WireMaterial) {
+pub(crate) fn wire_material(
+    points: [Vec2; 4],
+    [start, end]: [Color; 2],
+    width: f32,
+    pattern: Vec3,
+) -> (Rect, WireMaterial) {
     // Conservative bounds: the curve stays inside the hull of its control points.
     let padding = Vec2::splat(width + 2.0);
     let min = points.iter().copied().fold(Vec2::MAX, Vec2::min) - padding;
@@ -91,10 +100,12 @@ pub(crate) fn wire_material(points: [Vec2; 4], color: Color, width: f32) -> (Rec
     (
         Rect::from_corners(min, min + size),
         WireMaterial {
-            color: color.to_linear().to_vec4(),
+            start_color: start.to_linear().to_vec4(),
+            end_color: end.to_linear().to_vec4(),
             p0p1: Vec4::new(local[0].x, local[0].y, local[1].x, local[1].y),
             p2p3: Vec4::new(local[2].x, local[2].y, local[3].x, local[3].y),
             params: Vec4::new(width, size.x, size.y, 0.0),
+            pattern: pattern.extend(0.0),
         },
     )
 }
@@ -114,7 +125,7 @@ mod tests {
             valid: true,
         };
         let points = geometry.bezier(0.5);
-        let (rect, _) = wire_material(points, Color::WHITE, 3.0);
+        let (rect, _) = wire_material(points, [Color::WHITE; 2], 3.0, Vec3::ZERO);
         for step in 0..=20 {
             assert!(rect.contains(cubic_bezier(points, step as f32 / 20.0)));
         }

@@ -85,6 +85,9 @@ pub struct EditApplied {
     pub origin: EditOrigin,
     /// The edge a [`GraphEdit::Connect`] created.
     pub created: Option<Entity>,
+    /// The `(output, input)` ports of a connect or disconnect, so the edit can
+    /// be replayed or inverted after the edge is gone.
+    pub ports: Option<(Entity, Entity)>,
 }
 
 /// Triggered on the canvas when an edit was refused.
@@ -178,8 +181,10 @@ impl GraphWorldExt for World {
 /// A validated edit and its side effects.
 struct Plan {
     edit: GraphEdit,
-    /// Edges removed first, each reported as a disconnect.
-    disconnect: Vec<Entity>,
+    /// The canvas content, which new edges are children of.
+    content: Option<Entity>,
+    /// Edges (and their ports) removed first, each reported as a disconnect.
+    disconnect: Vec<(Entity, (Entity, Entity))>,
     /// Selection changes.
     select: Vec<(Entity, bool)>,
 }
@@ -207,18 +212,30 @@ fn run(
     }
     let Plan {
         edit,
+        content,
         disconnect,
         select,
     } = plan(world, request.edit)?;
-    for edge in disconnect {
+    for (edge, ports) in disconnect {
         world.despawn(edge);
-        applied(world, canvas, GraphEdit::Disconnect { edge }, origin, None);
+        let edit = GraphEdit::Disconnect { edge };
+        applied(world, canvas, edit, origin, None, Some(ports));
     }
+    let mut ports = None;
     let created = match &edit {
         GraphEdit::Connect { from, to } => {
-            Some(world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to))).id())
+            ports = Some((*from, *to));
+            let mut edge = world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to)));
+            if let Some(content) = content {
+                edge.insert(ChildOf(content));
+            }
+            Some(edge.id())
         }
         GraphEdit::Disconnect { edge } => {
+            ports = world
+                .get::<EdgeSource>(*edge)
+                .zip(world.get::<EdgeTarget>(*edge))
+                .map(|(s, t)| (s.0, t.0));
             world.despawn(*edge);
             None
         }
@@ -247,7 +264,7 @@ fn run(
             None
         }
     };
-    applied(world, canvas, edit, origin, created);
+    applied(world, canvas, edit, origin, created, ports);
     Ok(created)
 }
 
@@ -257,12 +274,14 @@ fn applied(
     edit: GraphEdit,
     origin: EditOrigin,
     created: Option<Entity>,
+    ports: Option<(Entity, Entity)>,
 ) {
     let event = EditApplied {
         canvas,
         edit,
         origin,
         created,
+        ports,
     };
     world.trigger(event.clone());
     world.write_message(event);
@@ -281,6 +300,7 @@ fn plan_edit(
     };
     let mut plan = Plan {
         edit: edit.clone(),
+        content: graph.content_of(canvas),
         disconnect: Vec::new(),
         select: Vec::new(),
     };
@@ -288,7 +308,7 @@ fn plan_edit(
         GraphEdit::Connect { from, to } => {
             let (from, to, replaces) = graph.check_connection(from, to, canvas)?;
             plan.edit = GraphEdit::Connect { from, to };
-            plan.disconnect = replaces;
+            plan.disconnect = with_ports(&graph, replaces);
         }
         GraphEdit::Disconnect { edge } => match graph.edge_ports(edge) {
             None => return Err(RejectReason::InvalidEntity),
@@ -320,13 +340,14 @@ fn plan_edit(
             if nodes.is_empty() {
                 return Err(RejectReason::Empty);
             }
-            plan.disconnect = nodes
+            let mut edges: Vec<_> = nodes
                 .iter()
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
-            plan.disconnect.sort();
-            plan.disconnect.dedup();
+            edges.sort();
+            edges.dedup();
+            plan.disconnect = with_ports(&graph, edges);
             plan.edit = GraphEdit::DeleteNodes { nodes };
         }
         GraphEdit::Select { mut nodes, mode } => {
@@ -347,4 +368,11 @@ fn plan_edit(
         }
     }
     Ok(plan)
+}
+
+fn with_ports(graph: &GraphQuery, edges: Vec<Entity>) -> Vec<(Entity, (Entity, Entity))> {
+    edges
+        .into_iter()
+        .filter_map(|e| Some((e, graph.edge_ports(e)?)))
+        .collect()
 }

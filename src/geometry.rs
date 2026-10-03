@@ -130,20 +130,25 @@ pub(crate) fn measure_ports(
 /// re-parenting). Only runs when something was re-parented.
 pub(crate) fn drop_cross_graph_edges(
     moved: Query<(), Changed<ChildOf>>,
-    edges: Query<(Entity, &EdgeSource, &EdgeTarget)>,
+    edges: Query<(Entity, &EdgeSource, &EdgeTarget, Option<&ChildOf>)>,
     graph: GraphQuery,
     mut commands: Commands,
 ) {
     if moved.is_empty() {
         return;
     }
-    for (edge, source, target) in &edges {
+    for (edge, source, target, parent) in &edges {
         let canvas = graph.canvas_of(source.0);
         if canvas != graph.canvas_of(target.0) {
             match canvas {
                 Some(canvas) => commands.graph_edit(canvas, GraphEdit::Disconnect { edge }),
                 None => commands.entity(edge).despawn(),
             }
+        } else if let Some(content) = canvas.and_then(|c| graph.content_of(c))
+            && parent.is_some_and(|p| p.parent() != content)
+        {
+            // Both ends moved to another graph together: follow them.
+            commands.entity(edge).insert(ChildOf(content));
         }
     }
 }

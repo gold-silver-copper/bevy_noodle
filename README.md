@@ -64,19 +64,29 @@ fn setup(mut commands: Commands) {
 | `cargo run --example minimal` | Plain Bevy UI nodes, with edges drawn as gizmos from `EdgeGeometry`. |
 | `cargo run --example styled --features default_style` | The default look, plus app-level bindings: right-click adds a node, a dropped wire spawns a matching node, Delete removes the selection. |
 | `cargo run --example math_graph --features default_style` | A live calculator: your own components, Bevy's `EditableText` inside nodes, evaluation with `GraphQuery`, and a veto that rejects cycles. |
+| `cargo run --example edge_styles --features default_style` | Every `EdgeStyle` option: gradients, dashes, marching ants and travelling pulses, animated in the shader. Edges copy their look from the node they leave. |
+| `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
+| `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
+| `cargo run --example undo --features default_style,scene` | Undo and redo from whole-graph snapshots, recorded on `EditApplied`. |
+| `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
 ![The styled example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png)
 ![The math_graph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/math_graph.png)
+![The edge_styles example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/edge_styles.png)
+![The subgraph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/subgraph.png)
+![The scene_builder_3d example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png)
+![The undo example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/undo.png)
+![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
 
 ## Concepts
 
 ```text
 NodeCanvas              your UI node: one graph and its viewport
 └── CanvasContent       pans and zooms (driven by CanvasView); holds the nodes
-    └── GraphNode       your UI node; NodePosition is optional (without it, your layout places it)
-        └── … Port      your UI node marking a connection point
-Edge                    EdgeSource → output port, EdgeTarget → input port, plus EdgeGeometry
+    ├── GraphNode       your UI node; NodePosition is optional (without it, your layout places it)
+    │   └── … Port      your UI node marking a connection point
+    └── Edge            EdgeSource → output port, EdgeTarget → input port, plus EdgeGeometry
 PendingWire             the wire being dragged; also has EdgeGeometry
 ```
 
@@ -90,7 +100,8 @@ PendingWire             the wire being dragged; also has EdgeGeometry
   `PortType::ANY`) and limits allow. Anything else is an observer:
   `On<EditRequested>` → `request.reject()`.
 - **Reacting.** `EditApplied` is an entity event on the canvas and a message,
-  with an `origin` (`Code`, `Interaction` or `Custom`). Drags end with a
+  with an `origin` (`Code`, `Interaction` or `Custom`), the `created` edge and
+  the `(output, input)` `ports` of a connect or disconnect. Drags end with a
   `MoveNodes { is_final: true, total, .. }`.
 - **Interaction state** you can style: `Selected` on nodes, `WireCandidate` and
   `WireTarget` on ports, `SelectionBox` on the canvas. A `WireDropped` event
@@ -101,13 +112,23 @@ PendingWire             the wire being dragged; also has EdgeGeometry
 ### Optional default style (`default_style`)
 
 Each piece is opt-in on the canvas or the entity:
-- **`EdgeStyle`:** wires drawn above or below the nodes, ending at port rims.
-  Put it on a canvas, or on a single edge to override.
+- **`EdgeStyle`:** wires drawn above or below the nodes, ending at port rims,
+  with optional gradients (`end_color`), dashes (`dash`) and animated flow
+  (`flow_speed`), all in the shader. Put it on a canvas, or on a single edge
+  to override.
 - **`CanvasGrid`:** a background grid.
 - **`SelectionBoxStyle`:** draws the selection box.
 - **`PortHighlight` + `PortColor`:** ports show connection and drag state.
 - **`SelectedBorderColor`:** a node border that follows selection.
 - **`style::kit`:** plain functions returning node bundles.
+
+### Snapshots (`scene`)
+
+`scene::snapshot(world, canvas)` captures a graph as a Bevy `DynamicWorld`:
+nodes, ports, edges, nested canvases, and your reflected components (entity
+references are remapped). `scene::restore(world, canvas, &snapshot)` replaces
+the graph with it. Use it for undo, copy and paste, or files via
+`DynamicWorld::serialize`. See the `undo` and `save_load` examples.
 
 ## Migrating from 0.2
 

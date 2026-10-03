@@ -333,6 +333,31 @@ fn reparenting_into_another_graph_drops_crossing_edges() {
 }
 
 #[test]
+fn edges_follow_their_ports_into_another_graph() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c1, content1) = canvas(w, None);
+    let (_, content2) = canvas(w, None);
+    let (na, a) = node(w, content1, &[Port::output(NUM)]);
+    let (nb, b) = node(w, content1, &[Port::input(NUM)]);
+    let edge = w
+        .graph_edit(
+            c1,
+            GraphEdit::Connect {
+                from: a[0],
+                to: b[0],
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), content1);
+    w.entity_mut(na).insert(ChildOf(content2));
+    w.entity_mut(nb).insert(ChildOf(content2));
+    app.update();
+    assert_eq!(app.world().get::<ChildOf>(edge).unwrap().parent(), content2);
+}
+
+#[test]
 fn commands_apply_on_flush_and_types_are_auto_registered() {
     let mut app = app();
     let w = app.world_mut();

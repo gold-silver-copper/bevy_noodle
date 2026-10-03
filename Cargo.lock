@@ -1186,6 +1186,8 @@ name = "bevy_noodle"
 version = "0.3.0"
 dependencies = [
  "bevy",
+ "ron",
+ "serde",
 ]
 
 [[package]]

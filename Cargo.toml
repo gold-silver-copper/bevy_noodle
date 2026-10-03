@@ -17,6 +17,8 @@ default = []
 # Optional look: wire and grid shaders, selection box, port highlighting and
 # node-building helpers. The core draws nothing.
 default_style = ["bevy/ui_bevy_render"]
+# Graph snapshots (save/load, undo) with Bevy's `DynamicWorld`.
+scene = ["bevy/bevy_world_serialization"]
 
 [dependencies]
 bevy = { version = "0.19", default-features = false, features = [
@@ -27,6 +29,13 @@ bevy = { version = "0.19", default-features = false, features = [
 
 [dev-dependencies]
 bevy = "0.19"
+# Reading saved graphs in the save_load example.
+ron = "0.12"
+serde = "1"
+
+[[test]]
+name = "scene"
+required-features = ["scene"]
 
 [[example]]
 name = "styled"
@@ -34,6 +43,26 @@ required-features = ["default_style"]
 
 [[example]]
 name = "math_graph"
+required-features = ["default_style"]
+
+[[example]]
+name = "edge_styles"
+required-features = ["default_style"]
+
+[[example]]
+name = "undo"
+required-features = ["default_style", "scene"]
+
+[[example]]
+name = "save_load"
+required-features = ["default_style", "scene"]
+
+[[example]]
+name = "subgraph"
+required-features = ["default_style"]
+
+[[example]]
+name = "scene_builder_3d"
 required-features = ["default_style"]
 
 [package.metadata.docs.rs]
