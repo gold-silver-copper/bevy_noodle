@@ -6,7 +6,7 @@
 A headless, entity-based node graph library for [Bevy](https://bevyengine.org) UI.
 **You build and style the nodes; bevy_noodle handles the graph.**
 
-![Dragging a wire, with the optional default style](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
+![A wire snapping onto a port, with the optional default style](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
 
 - **Nodes, ports and edges are entities.** A node is your own UI entity tagged
   `GraphNode`. Style it with any Bevy UI component, attach your own components,
@@ -235,7 +235,7 @@ Nothing applies unless opted in per entity:
 
 | Add | To get |
 |---|---|
-| `EdgeStyle` on a canvas (or an edge, to override) | anti-aliased Bézier wires, plus the wire being dragged |
+| `EdgeStyle` on a canvas (or an edge, to override) | anti-aliased Bézier wires, plus the wire being dragged. Drawn above the nodes and ending at each port's rim by default (`layer: EdgeLayer::BelowNodes` and `trim_to_ports` change that) |
 | `CanvasGrid` on a canvas | a grid that pans and zooms (transparent background by default) |
 | `SelectionBoxStyle` on a canvas | a visible selection box |
 | `PortHighlight` + `PortColor` on a port | connection-state highlighting while dragging |

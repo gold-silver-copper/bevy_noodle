@@ -1,6 +1,6 @@
 [package]
 name = "bevy_noodle"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.95"
 description = "A headless, entity-based node graph library for Bevy UI: you style the nodes, it handles the graph."

@@ -70,6 +70,11 @@ pub struct EdgeStyle {
     pub width: f32,
     /// Handle length relative to the edge's length.
     pub curvature: f32,
+    /// Whether edges are drawn above or below the nodes.
+    pub layer: EdgeLayer,
+    /// End wires at the rim of each port instead of its center, so port dots
+    /// stay fully visible when edges are drawn above the nodes.
+    pub trim_to_ports: bool,
 }
 
 impl Default for EdgeStyle {
@@ -78,7 +83,60 @@ impl Default for EdgeStyle {
             color: None,
             width: 3.0,
             curvature: 0.5,
+            layer: EdgeLayer::AboveNodes,
+            trim_to_ports: true,
         }
+    }
+}
+
+/// Where edges are drawn relative to the nodes.
+#[derive(Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[reflect(Default, Debug, PartialEq)]
+pub enum EdgeLayer {
+    #[default]
+    AboveNodes,
+    BelowNodes,
+}
+
+impl EdgeLayer {
+    fn z_index(self) -> ZIndex {
+        match self {
+            // The wire being dragged uses i32::MAX, above these.
+            EdgeLayer::AboveNodes => ZIndex(i32::MAX - 1),
+            EdgeLayer::BelowNodes => ZIndex(-1),
+        }
+    }
+}
+
+/// Half the laid-out size of a port (graph units), including its highlight scale.
+fn port_radius(
+    port: Option<Entity>,
+    ports: &Query<(&ComputedNode, Option<&UiTransform>), With<Port>>,
+) -> f32 {
+    port.and_then(|port| ports.get(port).ok())
+        .map(|(computed, transform)| {
+            let size = computed.size() * computed.inverse_scale_factor();
+            let scale = transform.map_or(1.0, |t| t.scale.min_element());
+            size.min_element() * 0.5 * scale
+        })
+        .unwrap_or(0.0)
+}
+
+/// Moves the ends of `geometry` out along their tangents to the port rims.
+fn trimmed(
+    geometry: &EdgeGeometry,
+    style: &EdgeStyle,
+    start_port: Option<Entity>,
+    end_port: Option<Entity>,
+    ports: &Query<(&ComputedNode, Option<&UiTransform>), With<Port>>,
+) -> EdgeGeometry {
+    if !style.trim_to_ports {
+        return *geometry;
+    }
+    EdgeGeometry {
+        start: geometry.start + geometry.start_tangent * port_radius(start_port, ports),
+        end: geometry.end + geometry.end_tangent * port_radius(end_port, ports),
+        ..*geometry
     }
 }
 
@@ -211,17 +269,20 @@ fn draw_edges(
             Entity,
             &Edge,
             &crate::EdgeSource,
+            &crate::EdgeTarget,
             &EdgeGeometry,
             Option<&EdgeStyle>,
             Option<&EdgeVisual>,
             Option<&mut Node>,
+            Option<&mut ZIndex>,
         ),
         Without<NodeCanvas>,
     >,
     port_colors: Query<&PortColor>,
+    ports: Query<(&ComputedNode, Option<&UiTransform>), With<Port>>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
-    for (entity, edge, source, geometry, own_style, visual, node) in &mut edges {
+    for (entity, edge, source, target, geometry, own_style, visual, node, z_index) in &mut edges {
         let Ok((canvas_style, canvas_children)) = canvases.get(edge.canvas) else {
             continue;
         };
@@ -229,10 +290,16 @@ fn draw_edges(
             continue;
         };
         let color = edge_color(style, port_colors.get(source.0).ok());
-        let (rect, material) = wire_material(geometry.bezier(style.curvature), color, style.width);
+        let shape = trimmed(geometry, style, Some(source.0), Some(target.0), &ports);
+        let (rect, material) = wire_material(shape.bezier(style.curvature), color, style.width);
 
         match (visual, node) {
             (Some(visual), Some(mut node)) => {
+                if let Some(mut z_index) = z_index
+                    && *z_index != style.layer.z_index()
+                {
+                    *z_index = style.layer.z_index();
+                }
                 if geometry.valid {
                     place(&mut node, rect);
                     set_material(&mut materials, &visual.0, material);
@@ -258,8 +325,7 @@ fn draw_edges(
                     node,
                     MaterialNode(handle.clone()),
                     EdgeVisual(handle),
-                    // Behind the nodes.
-                    ZIndex(-1),
+                    style.layer.z_index(),
                     Pickable::IGNORE,
                     ChildOf(content),
                 ));
@@ -281,6 +347,8 @@ fn draw_pending_wires(
     >,
     contents: Query<(), With<CanvasContent>>,
     port_colors: Query<&PortColor>,
+    ports: Query<(&ComputedNode, Option<&UiTransform>), With<Port>>,
+    directions: Query<&Port>,
     mut nodes: Query<&mut Node>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
@@ -292,8 +360,18 @@ fn draw_pending_wires(
         match (wire, &visuals.preview) {
             (Some(wire), Some((entity, handle))) => {
                 let color = edge_color(style, port_colors.get(wire.from).ok()).with_alpha(0.85);
+                // The geometry runs output → input; the pointer end has no port.
+                let from_is_output = directions
+                    .get(wire.from)
+                    .is_ok_and(|p| p.direction == crate::PortDirection::Output);
+                let (start_port, end_port) = if from_is_output {
+                    (Some(wire.from), wire.target)
+                } else {
+                    (wire.target, Some(wire.from))
+                };
+                let shape = trimmed(&wire.geometry, style, start_port, end_port, &ports);
                 let (rect, material) =
-                    wire_material(wire.geometry.bezier(style.curvature), color, style.width);
+                    wire_material(shape.bezier(style.curvature), color, style.width);
                 if let Ok(mut node) = nodes.get_mut(*entity) {
                     place(&mut node, rect);
                 }

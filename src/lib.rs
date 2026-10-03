@@ -171,7 +171,7 @@ impl Plugin for NoodleCorePlugin {
 /// Everything needed to build and react to graphs.
 pub mod prelude {
     #[cfg(feature = "default_style")]
-    pub use crate::style::{CanvasGrid, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
+    pub use crate::style::{CanvasGrid, EdgeLayer, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
     pub use crate::{
         CancelInteraction, CanvasContent, CanvasInteraction, CanvasKeymap, CanvasView,
         ClearSelection, DeleteSelection, Edge, EdgeGeometry, EdgeSource, EdgeTarget, EditApplied,
