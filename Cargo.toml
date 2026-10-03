@@ -10,7 +10,7 @@ repository = "https://github.com/gold-silver-copper/bevy_noodle"
 documentation = "https://docs.rs/bevy_noodle"
 keywords = ["bevy", "node-graph", "node-editor", "visual-scripting", "ui"]
 categories = ["game-development", "gui", "visualization"]
-include = ["Cargo.toml", "README.md", "LICENSE", "src/**", "examples/**", "tests/**"]
+include = ["Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE", "src/**", "examples/**", "tests/**"]
 
 [features]
 default = []

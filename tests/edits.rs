@@ -30,7 +30,7 @@ fn kind(edit: &GraphEdit) -> &'static str {
         GraphEdit::Connect { .. } => "connect",
         GraphEdit::Disconnect { .. } => "disconnect",
         GraphEdit::MoveNodes { .. } => "move",
-        GraphEdit::DeleteNodes { .. } => "delete",
+        GraphEdit::Delete { .. } => "delete",
         GraphEdit::Select { .. } => "select",
     }
 }
@@ -236,7 +236,7 @@ fn deleting_nodes_or_ports_removes_edges() {
         .unwrap();
     log(&mut app);
     let w = app.world_mut();
-    w.graph_edit(c, GraphEdit::DeleteNodes { nodes: vec![na] })
+    w.graph_edit(c, GraphEdit::Delete { items: vec![na] })
         .unwrap();
     assert!(w.get::<IncomingEdges>(b[0]).is_none());
     assert_eq!(log(&mut app), ["applied disconnect", "applied delete"]);
@@ -254,7 +254,7 @@ fn selection_modes() {
         w.graph_edit(
             c,
             GraphEdit::Select {
-                nodes: nodes.iter().map(|i| n[*i]).collect(),
+                items: nodes.iter().map(|i| n[*i]).collect(),
                 mode,
             },
         )
@@ -300,10 +300,10 @@ fn graphs_are_independent_and_can_nest() {
         ),
         Err(RejectReason::NotInCanvas)
     );
-    let (nodes1, ports1, canvas3) = query(w, |g| (g.nodes_of(c1), g.ports_of(n1), g.canvas_of(n3)));
+    let (nodes1, ports1, canvas3) = query(w, |g| (g.nodes_in(c1), g.ports_of(n1), g.canvas_of(n3)));
     assert_eq!((nodes1, ports1, canvas3), (vec![n1], p1.clone(), Some(c3)));
     assert_eq!(
-        w.graph_edit(c2, GraphEdit::DeleteNodes { nodes: vec![n1] }),
+        w.graph_edit(c2, GraphEdit::Delete { items: vec![n1] }),
         Err(RejectReason::Empty)
     );
 }
@@ -413,7 +413,8 @@ fn edges_can_be_selected_and_deleted_with_nodes() {
     let e1 = connect(w, a[0], b[0]);
     let e2 = connect(w, a[0], cc[0]);
     let select = |w: &mut World, nodes, mode| {
-        w.graph_edit(c, GraphEdit::Select { nodes, mode }).unwrap();
+        w.graph_edit(c, GraphEdit::Select { items: nodes, mode })
+            .unwrap();
     };
     select(w, vec![e1, nb], SelectMode::Replace);
     assert!(w.get::<Selected>(e1).is_some() && w.get::<Selected>(nb).is_some());
@@ -425,8 +426,8 @@ fn edges_can_be_selected_and_deleted_with_nodes() {
     let w = app.world_mut();
     w.graph_edit(
         c,
-        GraphEdit::DeleteNodes {
-            nodes: vec![e2, nb],
+        GraphEdit::Delete {
+            items: vec![e2, nb],
         },
     )
     .unwrap();

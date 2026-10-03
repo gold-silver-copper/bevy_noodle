@@ -14,8 +14,10 @@ use crate::query::GraphQuery;
 /// canvas pixels around them.
 #[derive(EntityEvent, Clone, Copy, Debug)]
 pub struct FrameAll {
+    /// The canvas to frame.
     #[event_target]
     pub canvas: Entity,
+    /// Margin around the nodes, in canvas pixels.
     pub padding: f32,
 }
 
@@ -171,7 +173,7 @@ pub(crate) fn frame_all(
         return;
     };
     let nodes = graph
-        .nodes_of(event.canvas)
+        .nodes_in(event.canvas)
         .into_iter()
         .filter_map(|n| nodes.get(n).ok());
     let rects =

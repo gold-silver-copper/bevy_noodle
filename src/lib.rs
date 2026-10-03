@@ -19,6 +19,7 @@
 // Bevy's `AsBindGroup` derive trips a recursion lint on recent compilers.
 #![recursion_limit = "256"]
 #![allow(clippy::type_complexity)]
+#![warn(missing_docs)]
 
 pub mod components;
 pub mod edit;
@@ -90,6 +91,7 @@ impl Plugin for NoodleCorePlugin {
     }
 }
 
+/// Everything most apps need: `use bevy_noodle::prelude::*;`.
 pub mod prelude {
     #[cfg(feature = "default_style")]
     pub use crate::style::{CanvasGrid, EdgeLayer, EdgeStyle, NoodleDefaultStylePlugin, PortColor};

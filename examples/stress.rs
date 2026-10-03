@@ -170,7 +170,7 @@ fn churn(
     let deletions = if missing == 0 { excess + 2 } else { 0 };
     let doomed: Vec<Entity> = (0..deletions).filter_map(|_| stress.pick(&nodes)).collect();
     if !doomed.is_empty() {
-        commands.graph_edit(canvas, GraphEdit::DeleteNodes { nodes: doomed });
+        commands.graph_edit(canvas, GraphEdit::Delete { items: doomed });
     }
 
     // Wiring: random pairs, many of them rejected (types, same node, full).
@@ -203,7 +203,7 @@ fn churn(
     if stress.below(20) == 0 {
         let picked = (0..10).filter_map(|_| stress.pick(&nodes)).collect();
         let edit = GraphEdit::Select {
-            nodes: picked,
+            items: picked,
             mode: SelectMode::Replace,
         };
         commands.graph_edit(canvas, edit);

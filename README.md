@@ -93,11 +93,11 @@ NodeCanvas              your UI node: one graph and its viewport
 PendingWire             the wire being dragged; also has EdgeGeometry
 ```
 
-- **Reading.** `GraphQuery` is a system param: `nodes_of`, `edges_in`,
+- **Reading.** `GraphQuery` is a system param: `nodes_in`, `edges_in`,
   `ports_of`, `inputs_of`, `outputs_of`, `peers_of`, `edges_of`, `edge_ports`,
   `node_of`, `canvas_of`, `check_connection`.
 - **Writing.** `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`.
-  The other edits are `Disconnect`, `MoveNodes`, `DeleteNodes` and `Select`.
+  The other edits are `Disconnect`, `MoveNodes`, `Delete` and `Select`.
   Spawning a node is just a spawn.
 - **Rules.** Ports connect when their `PortType`s match (or one is
   `PortType::ANY`) and limits allow. Anything else is an observer:
@@ -112,9 +112,9 @@ PendingWire             the wire being dragged; also has EdgeGeometry
 - **Edges are pickable.** An edge with an `EdgeHitbox` (the default style adds
   one) gets `Pointer` events like any UI entity, from a small picking backend
   that respects overlays, clipping and ports. Clicking selects it, and
-  `DeleteNodes` removes listed edges along with nodes.
+  `Delete` removes listed edges along with nodes.
 - **Bindings** are just systems:
-  `commands.graph_edit(canvas, GraphEdit::DeleteNodes { nodes: selected.iter().collect() })`.
+  `commands.graph_edit(canvas, GraphEdit::Delete { items: selected.iter().collect() })`.
 
 ### Optional default style (`default_style`)
 
@@ -145,22 +145,44 @@ See the `editor` and `save_load` examples.
 
 ## Migrating from 0.2
 
-- Add `CanvasInteraction::default()` to canvases that should be interactive.
-- `NoodleKeyBindingsPlugin`/`CanvasKeymap` are gone. Bind keys with a system,
+**Interaction and bindings**
+- Interaction is opt-in: add `CanvasInteraction::default()` to canvases that
+  should respond to the pointer. Its buttons and modifier keys are fields.
+- `NoodleKeyBindingsPlugin`/`CanvasKeymap` are gone: bind keys with a system,
   as in the `styled` example.
-- `NodeFinder` is gone. Handle `WireDropped`, or a click on the canvas, and
-  spawn nodes yourself.
 - The `DeleteSelection`, `SelectAll`, `ClearSelection`, `PanBy`, `ZoomBy` and
-  `CancelInteraction` actions are gone. Use `graph_edit`, or change `CanvasView`
-  directly. `FrameAll` remains.
-- `Edge` is now a marker: find an edge's canvas with `GraphQuery::canvas_of`.
-- `sources_of`/`targets_of` became `peers_of`.
-- `CanvasWantsInput` is gone. `CanvasInteraction` requires `Hovered`; read
-  that instead.
-- `kit` functions take no theme argument.
+  `CancelInteraction` actions are gone: use `graph_edit`, or change
+  `CanvasView`. `FrameAll` remains.
+- `CanvasWantsInput` is gone: `CanvasInteraction` requires `Hovered`; read that.
+- The node finder popup is gone: handle `WireDropped` (or a canvas click) and
+  spawn nodes yourself, as in the `styled` example.
+
+**Edits**
+- `GraphEdit::DeleteNodes { nodes }` is `GraphEdit::Delete { items }`, and
+  `GraphEdit::Select { nodes, mode }` is `GraphEdit::Select { items, mode }`.
+  Both take nodes and edges.
+- `EditApplied` has a `ports: Option<(output, input)>` field for connects and
+  disconnects.
+- `GraphCommandsExt`/`GraphWorldExt` only need `graph_edit_with_origin`
+  implemented; `graph_edit` is provided. `EditResult` names the return type.
+
+**Graph structure**
+- `Edge` is a marker (no `canvas` field) and edges are children of the
+  canvas's `CanvasContent`. Find an edge's canvas with `GraphQuery::canvas_of`.
+- `PortAnchor::measured` is gone: `PortAnchor::position` is `Some` once measured.
+- `GraphQuery`: `nodes_of` is `nodes_in`; `sources_of`/`targets_of` are
+  `peers_of`; `is_node`, `subtree_any` and `is_connected` are gone (use
+  `node_of`, `edges_of`); `edges_in` is new.
+
+**Default style (`default_style`)**
+- `EdgeStyle` has new fields (`end_color`, `dash`, `flow_speed`, `layer`,
+  `trim_to_ports`, `selected_color`, `hover_width`): build it with
+  `..default()`.
+- `kit` functions take no `KitTheme`; `kit::port_dot` is `kit::port`.
 - `kit::body` is gone: put `kit::input`/`kit::output` rows straight into the
   node after `kit::title`. Give other content a horizontal margin of
   `kit::PADDING`.
+- `kit::canvas()` is new: an interactive, clipped canvas with the whole look.
 
 ## License
 

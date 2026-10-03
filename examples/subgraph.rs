@@ -234,7 +234,7 @@ fn input_value(
         // A group's output is what reaches the same input of its Out node.
         Op::Group(inner) => {
             let out = graph
-                .nodes_of(*inner)
+                .nodes_in(*inner)
                 .into_iter()
                 .find(|n| matches!(ops.get(*n), Ok((_, Op::Out))))?;
             input_of(out, index)

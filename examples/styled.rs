@@ -177,8 +177,8 @@ fn delete_selection(
         for canvas in &canvases {
             commands.graph_edit(
                 canvas,
-                GraphEdit::DeleteNodes {
-                    nodes: selected.iter().collect(),
+                GraphEdit::Delete {
+                    items: selected.iter().collect(),
                 },
             );
         }

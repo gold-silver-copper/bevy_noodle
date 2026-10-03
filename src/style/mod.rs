@@ -22,6 +22,7 @@ use crate::interaction::{SelectionBox, WireCandidate, WireTarget};
 use crate::{NoodleSystems, components::*, query::GraphQuery};
 use render::{Grid, GridMaterial, MaterialsPlugin, WireMaterial, wire_material};
 
+/// The optional default look: wires, grids, selection boxes, port and selection highlights. Each piece is opted into per entity.
 pub struct NoodleDefaultStylePlugin;
 
 impl Plugin for NoodleDefaultStylePlugin {
@@ -54,13 +55,16 @@ pub struct EdgeStyle {
     pub color: Option<Color>,
     /// Fade to this color toward the input end. `None`: no gradient.
     pub end_color: Option<Color>,
+    /// Stroke width, in graph units.
     pub width: f32,
+    /// How far the curve's handles reach, as a fraction of the distance between ends.
     pub curvature: f32,
     /// Dash and gap lengths. `None`: a solid wire.
     pub dash: Option<Vec2>,
     /// Animate dashes toward the input at this speed (per second). Solid wires
     /// carry travelling pulses instead. Negative flows backward.
     pub flow_speed: f32,
+    /// Whether wires are drawn above or below nodes.
     pub layer: EdgeLayer,
     /// End wires at port rims instead of centers.
     pub trim_to_ports: bool,
@@ -87,10 +91,13 @@ impl Default for EdgeStyle {
     }
 }
 
+/// Where wires are drawn relative to nodes.
 #[derive(Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EdgeLayer {
+    /// On top of nodes.
     #[default]
     AboveNodes,
+    /// Under nodes (only pickable over empty canvas).
     BelowNodes,
 }
 
@@ -105,14 +112,19 @@ pub struct PortColor(pub Color);
 #[require(UiTransform)]
 pub struct PortHighlight;
 
+/// A pannable, zoomable background grid for a canvas.
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
 #[reflect(Component, Default)]
 pub struct CanvasGrid {
     /// Minor line spacing in graph units.
     pub spacing: f32,
+    /// Every how many minor lines a major one is drawn.
     pub major_every: u32,
+    /// Minor line color.
     pub minor: Color,
+    /// Major line color.
     pub major: Color,
+    /// Fill behind the lines.
     pub background: Color,
 }
 
@@ -130,10 +142,13 @@ impl Default for CanvasGrid {
     }
 }
 
+/// How the selection box looks while box-selecting.
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
 #[reflect(Component, Default)]
 pub struct SelectionBoxStyle {
+    /// Fill color.
     pub fill: Color,
+    /// Border color.
     pub border: Color,
 }
 
@@ -150,7 +165,9 @@ impl Default for SelectionBoxStyle {
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
 #[reflect(Component)]
 pub struct SelectedBorderColor {
+    /// Border color when not selected.
     pub normal: Color,
+    /// Border color when selected.
     pub selected: Color,
 }
 

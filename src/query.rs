@@ -48,6 +48,7 @@ impl GraphQuery<'_, '_> {
         self.nearest(entity, |e| self.nodes.contains(e))
     }
 
+    /// The [`CanvasContent`] of a canvas.
     pub fn content_of(&self, canvas: Entity) -> Option<Entity> {
         self.children
             .get(canvas)
@@ -56,12 +57,13 @@ impl GraphQuery<'_, '_> {
             .find(|c| self.contents.contains(*c))
     }
 
+    /// The [`Port`] on `entity`, if it is one.
     pub fn port(&self, entity: Entity) -> Option<&Port> {
         self.ports.get(entity).ok().map(|(port, ..)| port)
     }
 
     /// Nodes of a canvas (not of canvases nested inside them).
-    pub fn nodes_of(&self, canvas: Entity) -> Vec<Entity> {
+    pub fn nodes_in(&self, canvas: Entity) -> Vec<Entity> {
         self.children
             .iter_descendants(canvas)
             .filter(|e| self.nodes.contains(*e) && self.canvas_of(*e) == Some(canvas))
@@ -76,10 +78,12 @@ impl GraphQuery<'_, '_> {
             .collect()
     }
 
+    /// Input ports of a node, in hierarchy order.
     pub fn inputs_of(&self, node: Entity) -> Vec<Entity> {
         self.ports_toward(node, PortDirection::Input)
     }
 
+    /// Output ports of a node, in hierarchy order.
     pub fn outputs_of(&self, node: Entity) -> Vec<Entity> {
         self.ports_toward(node, PortDirection::Output)
     }

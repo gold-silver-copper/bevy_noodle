@@ -22,6 +22,7 @@ use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
 use crate::query::GraphQuery;
 
+/// Pointer interaction for canvases with [`CanvasInteraction`], and picking for edges with an [`EdgeHitbox`].
 pub struct NoodleInteractionPlugin;
 
 impl Plugin for NoodleInteractionPlugin {
@@ -64,9 +65,13 @@ pub struct CanvasInteraction {
     pub additive_keys: Vec<KeyCode>,
     /// Held keys making scrolling zoom.
     pub zoom_keys: Vec<KeyCode>,
+    /// What scrolling does.
     pub scroll: ScrollMode,
+    /// Trackpad pinch zooms.
     pub pinch_zoom: bool,
+    /// Smallest zoom.
     pub zoom_min: f32,
+    /// Largest zoom.
     pub zoom_max: f32,
 }
 
@@ -103,7 +108,9 @@ pub enum ScrollMode {
     /// Mouse wheels (lines) zoom, trackpads (pixels) pan.
     #[default]
     Auto,
+    /// Scrolling zooms.
     Zoom,
+    /// Scrolling pans.
     Pan,
     /// Left to the rest of the app.
     None,
@@ -128,9 +135,12 @@ pub struct WireTarget;
 /// `position` is in graph space.
 #[derive(EntityEvent, Clone, Copy, Debug)]
 pub struct WireDropped {
+    /// The canvas.
     #[event_target]
     pub canvas: Entity,
+    /// The port the wire came from.
     pub from: Entity,
+    /// Where it was dropped, in graph space.
     pub position: Vec2,
 }
 
@@ -214,12 +224,12 @@ impl Ctx<'_, '_> {
     }
 
     fn select(&mut self, canvas: Entity, nodes: Vec<Entity>, mode: SelectMode) {
-        self.edit(canvas, GraphEdit::Select { nodes, mode });
+        self.edit(canvas, GraphEdit::Select { items: nodes, mode });
     }
 
     /// The selected nodes of `canvas`, or just `node` if it isn't selected.
     fn selection(&self, canvas: Entity, node: Entity) -> Vec<Entity> {
-        let mut nodes = self.graph.nodes_of(canvas);
+        let mut nodes = self.graph.nodes_in(canvas);
         nodes.retain(|n| self.selected.contains(*n));
         if nodes.contains(&node) {
             nodes
@@ -307,7 +317,7 @@ fn on_drag_start(
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = source;
             }
-            for node in ctx.graph.nodes_of(canvas) {
+            for node in ctx.graph.nodes_in(canvas) {
                 for candidate in ctx.graph.ports_of(node) {
                     if ctx.graph.check_connection(from, candidate, canvas).is_ok() {
                         ctx.commands.entity(candidate).insert(WireCandidate);
@@ -417,7 +427,7 @@ fn on_drag(
                 view.canvas_to_graph(rect.min),
                 view.canvas_to_graph(rect.max),
             );
-            let mut hits = ctx.graph.nodes_of(canvas);
+            let mut hits = ctx.graph.nodes_in(canvas);
             hits.retain(|n| {
                 nodes.get(*n).is_ok_and(|(p, c)| {
                     let size = c.size() * c.inverse_scale_factor();

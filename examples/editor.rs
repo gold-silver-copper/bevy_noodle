@@ -197,7 +197,7 @@ fn paste(world: &mut World) {
     let next = scene::snapshot_nodes(world, &nodes);
     world.resource_mut::<Clipboard>().0 = Some(next);
     let select = GraphEdit::Select {
-        nodes,
+        items: nodes,
         mode: SelectMode::Replace,
     };
     world.graph_edit(canvas, select).ok();
@@ -267,6 +267,6 @@ fn delete_selection(
 ) {
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
         let nodes = selected.iter().collect();
-        commands.graph_edit(graph.0, GraphEdit::DeleteNodes { nodes });
+        commands.graph_edit(graph.0, GraphEdit::Delete { items: nodes });
     }
 }

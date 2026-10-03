@@ -77,7 +77,7 @@ fn snapshot_round_trip() {
 
     // Change everything, then restore.
     let nodes: Vec<_> = w.get::<Children>(content).unwrap().to_vec();
-    w.graph_edit(canvas, GraphEdit::DeleteNodes { nodes })
+    w.graph_edit(canvas, GraphEdit::Delete { items: nodes })
         .unwrap();
     assert!(w.get::<Children>(content).is_none_or(|c| c.is_empty()));
     let map = scene::restore(w, canvas, &saved).unwrap();

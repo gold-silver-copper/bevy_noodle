@@ -160,7 +160,7 @@ fn keys(
 ) {
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
         let nodes = selected.iter().collect();
-        commands.graph_edit(graph.0, GraphEdit::DeleteNodes { nodes });
+        commands.graph_edit(graph.0, GraphEdit::Delete { items: nodes });
     }
     let action: fn(&mut World, Entity) -> Result<String> = match () {
         _ if keys.just_pressed(KeyCode::KeyS) => save,

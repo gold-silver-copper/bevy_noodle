@@ -17,7 +17,9 @@ pub struct NodeCanvas;
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct CanvasView {
+    /// Where the graph origin appears, in canvas-local logical pixels.
     pub pan: Vec2,
+    /// Scale of graph space: 1 is one logical pixel per graph unit.
     pub zoom: f32,
 }
 
@@ -31,10 +33,12 @@ impl Default for CanvasView {
 }
 
 impl CanvasView {
+    /// Graph space → canvas-local logical pixels.
     pub fn graph_to_canvas(&self, point: Vec2) -> Vec2 {
         self.pan + point * self.zoom
     }
 
+    /// Canvas-local logical pixels → graph space.
     pub fn canvas_to_graph(&self, point: Vec2) -> Vec2 {
         (point - self.pan) / self.zoom.max(f32::EPSILON)
     }
@@ -86,10 +90,13 @@ pub struct NodePosition(pub Vec2);
 #[reflect(Component, Default)]
 pub struct NodeDragHandle;
 
+/// Which way data flows through a [`Port`].
 #[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PortDirection {
+    /// Edges arrive here.
     #[default]
     Input,
+    /// Edges leave from here.
     Output,
 }
 
@@ -99,6 +106,7 @@ pub enum PortDirection {
 pub struct PortType(pub u64);
 
 impl PortType {
+    /// Connects to every type.
     pub const ANY: PortType = PortType(0);
 
     /// A type identified by name (FNV-1a; never `ANY`).
@@ -111,6 +119,7 @@ impl PortType {
         PortType(if hash == 0 { 1 } else { hash })
     }
 
+    /// Whether a port of this type may connect to one of `other`.
     pub fn accepts(self, other: PortType) -> bool {
         self == other || self == Self::ANY || other == Self::ANY
     }
@@ -121,7 +130,9 @@ impl PortType {
 #[reflect(Component)]
 #[require(PortAnchor)]
 pub struct Port {
+    /// Input or output.
     pub direction: PortDirection,
+    /// What the port carries.
     pub port_type: PortType,
     /// `None` is unlimited. A full port with a limit of 1 swaps its edge.
     pub max_connections: Option<u32>,
@@ -146,6 +157,7 @@ impl Port {
         }
     }
 
+    /// The same port with another connection limit (`None` is unlimited).
     pub const fn with_max_connections(mut self, max: Option<u32>) -> Self {
         self.max_connections = max;
         self
@@ -168,6 +180,7 @@ pub struct PortTangent(pub Vec2);
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct PortAnchor {
+    /// The [`GraphNode`] the port belongs to.
     #[entities]
     pub node: Option<Entity>,
     /// Center relative to the node's [`NodePosition`].
@@ -214,13 +227,16 @@ pub struct IncomingEdges(Vec<Entity>);
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
 pub struct EdgeHitbox {
+    /// The curve's control points.
     pub points: [Vec2; 4],
+    /// How far from the curve the pointer still hits it.
     pub radius: f32,
     /// Drawn under nodes, so only pickable over empty canvas.
     pub below_nodes: bool,
 }
 
 impl EdgeHitbox {
+    /// The curve, as Bevy's [`CubicSegment`].
     pub fn curve(&self) -> CubicSegment<Vec2> {
         CubicSegment::new_bezier(self.points)
     }
@@ -240,8 +256,11 @@ impl EdgeHitbox {
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct EdgeGeometry {
+    /// Output end.
     pub start: Vec2,
+    /// Input end.
     pub end: Vec2,
+    /// Points away from the output's node.
     pub start_tangent: Vec2,
     /// Points away from the input's node.
     pub end_tangent: Vec2,
@@ -279,8 +298,10 @@ impl EdgeGeometry {
 #[reflect(Component)]
 #[require(EdgeGeometry)]
 pub struct PendingWire {
+    /// The canvas it is dragged in.
     #[entities]
     pub canvas: Entity,
+    /// The port the drag started at.
     #[entities]
     pub from: Entity,
     /// Pointer position in graph space.

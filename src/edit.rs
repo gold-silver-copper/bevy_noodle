@@ -14,49 +14,67 @@ use crate::query::GraphQuery;
 pub enum GraphEdit {
     /// Connect two ports (either order; normalized to output → input).
     Connect {
+        /// One port.
         from: Entity,
+        /// The other port.
         to: Entity,
     },
+    /// Remove an edge.
     Disconnect {
+        /// The edge.
         edge: Entity,
     },
     /// Move nodes by `delta` (graph units). Drags stream `is_final: false`
     /// edits and end with one `is_final: true` edit carrying the gesture's
     /// `total`: record that one for undo.
     MoveNodes {
+        /// The nodes (others are ignored).
         nodes: Vec<Entity>,
+        /// This step's movement.
         delta: Vec2,
+        /// The whole gesture's movement so far.
         total: Vec2,
+        /// Whether this ends the gesture.
         is_final: bool,
     },
-    /// Despawn nodes with their ports and edges. Edges listed are
-    /// disconnected too, so a whole selection can be deleted at once.
-    DeleteNodes {
-        nodes: Vec<Entity>,
+    /// Despawn nodes with their ports and edges, and disconnect edges: a
+    /// whole selection can be deleted at once.
+    Delete {
+        /// Nodes and edges (others are ignored).
+        items: Vec<Entity>,
     },
     /// Change which nodes and edges carry [`Selected`].
     Select {
-        nodes: Vec<Entity>,
+        /// Nodes and edges (others are ignored).
+        items: Vec<Entity>,
+        /// How `items` combine with the current selection.
         mode: SelectMode,
     },
 }
 
+/// How [`GraphEdit::Select`] combines its items with the current selection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Reflect)]
 pub enum SelectMode {
     /// Select exactly these nodes.
     #[default]
     Replace,
+    /// Add these to the selection.
     Add,
+    /// Remove these from the selection.
     Remove,
+    /// Flip each of these.
     Toggle,
 }
 
 /// Where an edit came from, so undo stacks and netcode can skip echoes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Reflect)]
 pub enum EditOrigin {
+    /// Called from code with [`GraphCommandsExt::graph_edit`] or [`GraphWorldExt::graph_edit`].
     #[default]
     Code,
+    /// Made by pointer interaction ([`CanvasInteraction`](crate::CanvasInteraction)).
     Interaction,
+    /// Yours, e.g. for edits replayed from the network.
     Custom(u64),
 }
 
@@ -64,14 +82,18 @@ pub enum EditOrigin {
 /// `edit` or call [`reject`](Self::reject).
 #[derive(EntityEvent, Clone, Debug)]
 pub struct EditRequested {
+    /// The canvas edited.
     #[event_target]
     pub canvas: Entity,
+    /// The edit, which observers may change.
     pub edit: GraphEdit,
+    /// Where it came from.
     pub origin: EditOrigin,
     rejected: bool,
 }
 
 impl EditRequested {
+    /// Refuse the edit: it reports [`RejectReason::Rejected`].
     pub fn reject(&mut self) {
         self.rejected = true;
     }
@@ -80,9 +102,12 @@ impl EditRequested {
 /// Triggered on the canvas, and written as a message, after an edit applied.
 #[derive(EntityEvent, Message, Clone, Debug)]
 pub struct EditApplied {
+    /// The canvas edited.
     #[event_target]
     pub canvas: Entity,
+    /// The edit as applied (normalized by validation and observers).
     pub edit: GraphEdit,
+    /// Where it came from.
     pub origin: EditOrigin,
     /// The edge a [`GraphEdit::Connect`] created.
     pub created: Option<Entity>,
@@ -94,20 +119,31 @@ pub struct EditApplied {
 /// Triggered on the canvas when an edit was refused.
 #[derive(EntityEvent, Clone, Debug)]
 pub struct EditRejected {
+    /// The canvas.
     #[event_target]
     pub canvas: Entity,
+    /// The edit as requested.
     pub edit: GraphEdit,
+    /// Why it was refused.
     pub reason: RejectReason,
 }
 
+/// Why an edit was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
 pub enum RejectReason {
+    /// The canvas, port or edge does not exist (or is not one).
     InvalidEntity,
+    /// An entity belongs to another canvas.
     NotInCanvas,
+    /// A port is not inside a [`GraphNode`].
     NotInNode,
+    /// Both ports are on the same node.
     SameNode,
+    /// Both ports are inputs, or both outputs.
     SameDirection,
+    /// The port types do not accept each other.
     IncompatibleTypes,
+    /// The ports are connected already.
     AlreadyConnected,
     /// The port holds its maximum (above 1) number of edges.
     PortFull,
@@ -122,8 +158,10 @@ pub type EditResult = Result<Option<Entity>, RejectReason>;
 
 /// Queue graph edits from [`Commands`].
 pub trait GraphCommandsExt {
+    /// Queue `edit` with an [`EditOrigin`].
     fn graph_edit_with_origin(&mut self, canvas: Entity, edit: GraphEdit, origin: EditOrigin);
 
+    /// Queue `edit`, with [`EditOrigin::Code`].
     fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code);
     }
@@ -137,6 +175,7 @@ impl GraphCommandsExt for Commands<'_, '_> {
 
 /// Apply graph edits immediately.
 pub trait GraphWorldExt {
+    /// Apply `edit` now, with an [`EditOrigin`].
     fn graph_edit_with_origin(
         &mut self,
         canvas: Entity,
@@ -144,6 +183,7 @@ pub trait GraphWorldExt {
         origin: EditOrigin,
     ) -> EditResult;
 
+    /// Apply `edit` now, with [`EditOrigin::Code`].
     fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) -> EditResult {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code)
     }
@@ -243,7 +283,7 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
             }
         }
         // Listed edges are already gone.
-        GraphEdit::DeleteNodes { nodes } => nodes.iter().for_each(|n| _ = world.try_despawn(*n)),
+        GraphEdit::Delete { items } => items.iter().for_each(|e| _ = world.try_despawn(*e)),
         GraphEdit::Select { .. } => {
             for (node, on) in select {
                 match on {
@@ -283,29 +323,30 @@ fn plan_edit(
         GraphEdit::Disconnect { edge } if !here(edge) => return Err(RejectReason::NotInCanvas),
         GraphEdit::Disconnect { .. } => {}
         GraphEdit::MoveNodes { nodes, .. } => nodes.retain(mine),
-        GraphEdit::DeleteNodes { nodes } => {
+        GraphEdit::Delete { items } => {
             // Nodes go with their edges; listed edges go too.
-            nodes.retain(|e| mine(e) || edge(e));
-            nodes.sort();
-            nodes.dedup();
-            disconnect = nodes
+            items.retain(|e| mine(e) || edge(e));
+            items.sort();
+            items.dedup();
+            disconnect = items
                 .iter()
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
-            disconnect.extend(nodes.iter().filter(|e| edge(e)));
+            disconnect.extend(items.iter().filter(|e| edge(e)));
             disconnect.sort();
             disconnect.dedup();
         }
-        GraphEdit::Select { nodes, mode } => {
-            nodes.retain(|e| mine(e) || edge(e));
+        GraphEdit::Select { items, mode } => {
+            items.retain(|e| mine(e) || edge(e));
             // Only what is selected now or listed can change.
-            let mut items: Vec<Entity> = selected.iter().filter(|e| mine(e) || edge(e)).collect();
-            items.extend(nodes.iter().copied());
-            items.sort();
-            items.dedup();
-            for item in items {
-                let (listed, on) = (nodes.contains(&item), selected.contains(item));
+            let mut candidates: Vec<Entity> =
+                selected.iter().filter(|e| mine(e) || edge(e)).collect();
+            candidates.extend(items.iter().copied());
+            candidates.sort();
+            candidates.dedup();
+            for item in candidates {
+                let (listed, on) = (items.contains(&item), selected.contains(item));
                 let want = match mode {
                     SelectMode::Replace => listed,
                     SelectMode::Add => on || listed,
@@ -318,8 +359,8 @@ fn plan_edit(
             }
         }
     }
-    if let GraphEdit::MoveNodes { nodes, .. } | GraphEdit::DeleteNodes { nodes } = &edit
-        && nodes.is_empty()
+    if let GraphEdit::MoveNodes { nodes: items, .. } | GraphEdit::Delete { items } = &edit
+        && items.is_empty()
     {
         return Err(RejectReason::Empty);
     }
