@@ -2,6 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/bevy_noodle.svg)](https://crates.io/crates/bevy_noodle)
 [![docs.rs](https://docs.rs/bevy_noodle/badge.svg)](https://docs.rs/bevy_noodle)
+[![CI](https://github.com/gold-silver-copper/bevy_noodle/actions/workflows/ci.yml/badge.svg)](https://github.com/gold-silver-copper/bevy_noodle/actions/workflows/ci.yml)
 
 A minimal, headless node graph library for [Bevy](https://bevyengine.org) UI.
 **You build and style the nodes and edges; bevy_noodle handles the graph.**

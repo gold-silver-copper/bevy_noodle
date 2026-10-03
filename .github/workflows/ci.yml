@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # No debug info: smaller caches and faster links on CI.
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Bevy's Linux dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - run: cargo fmt --check
+      - name: Clippy, for each feature combination
+        run: |
+          for features in "" default_style scene default_style,scene; do
+            cargo clippy --all-targets --features "$features" -- -D warnings
+          done
+      - run: cargo test --all-features
+      - run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
