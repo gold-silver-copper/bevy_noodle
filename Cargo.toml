@@ -78,5 +78,25 @@ required-features = ["default_style"]
 name = "keyboard"
 required-features = ["default_style"]
 
+[[example]]
+name = "comment_frames"
+required-features = ["default_style"]
+
+[[example]]
+name = "reroute"
+required-features = ["default_style"]
+
+[[example]]
+name = "type_conversion"
+required-features = ["default_style"]
+
+[[example]]
+name = "minimap"
+required-features = ["default_style"]
+
+[[example]]
+name = "auto_layout"
+required-features = ["default_style"]
+
 [package.metadata.docs.rs]
 all-features = true

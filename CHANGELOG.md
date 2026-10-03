@@ -7,6 +7,8 @@
   and `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape),
   built on `bevy_input_focus`; `AccessibleLabel`s for nodes and ports; a
   `FocusOutline` in the default style. Example: `keyboard`.
+- Examples: `comment_frames`, `reroute`, `type_conversion`, `minimap`,
+  `auto_layout`.
 
 ## 0.3.0
 

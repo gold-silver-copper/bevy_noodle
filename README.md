@@ -70,6 +70,11 @@ fn setup(mut commands: Commands) {
 | `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
 | `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
 | `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes and ports, Enter to select, arrows to move, Space on two ports to connect, with screen-reader labels and a focus outline. |
+| `cargo run --example comment_frames --features default_style` | Comment frames: a frame node moves the nodes inside it, through an `EditApplied` observer with its own `EditOrigin`. |
+| `cargo run --example reroute --features default_style` | Reroute dots for routing edges; right-click an edge to insert one where you clicked. |
+| `cargo run --example type_conversion --features default_style` | An `EditRequested` observer vetoes connections a node does not accept and inserts an "int to float" converter. |
+| `cargo run --example minimap --features default_style` | A minimap of the same graph, kept in sync from `NodePosition`s and `CanvasView`; click or drag it to move the view. |
+| `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble). |
 | `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
 | `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
 
@@ -83,6 +88,11 @@ fn setup(mut commands: Commands) {
 ![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
 ![The stress example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/stress.png)
 ![The keyboard example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/keyboard.png)
+![The comment_frames example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/comment_frames.png)
+![The reroute example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/reroute.png)
+![The type_conversion example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/type_conversion.png)
+![The minimap example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimap.png)
+![The auto_layout example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/auto_layout.png)
 
 ## Concepts
 
