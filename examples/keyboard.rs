@@ -1,12 +1,11 @@
 //! A graph used from the keyboard alone, built on Bevy's input focus
-//! (`bevy_input_focus`) and accessibility (`AccessibleLabel`).
+//! (`bevy_input_focus`).
 //!
 //! Tab and Shift+Tab move focus between nodes and ports. Enter selects the
 //! focused node (Shift+Enter adds to the selection), the arrow keys move the
 //! selection, Space on a port starts a connection and Space on a second port
 //! completes it, Escape drops it. Delete removes the selection: that one is
-//! bound below, in app code. Screen readers announce nodes by their titles
-//! and ports by their labels.
+//! bound below, in app code.
 //!
 //! ```sh
 //! cargo run --example keyboard --features default_style

@@ -38,18 +38,13 @@ fn app() -> (App, Graph) {
         .spawn((NodeCanvas, CanvasKeyboard::default(), Node::default()))
         .id();
     let content = w.spawn((CanvasContent, ChildOf(canvas))).id();
-    let spawn = |w: &mut World, port: Port, name: &str| {
-        let node = (
-            GraphNode,
-            NodePosition::default(),
-            Node::default(),
-            Name::new(name.to_owned()),
-        );
+    let spawn = |w: &mut World, port: Port| {
+        let node = (GraphNode, NodePosition::default(), Node::default());
         let node = w.spawn((node, ChildOf(content))).id();
         (node, w.spawn((port, Node::default(), ChildOf(node))).id())
     };
-    let (a, out) = spawn(w, Port::output(NUM), "Source");
-    let (b, inp) = spawn(w, Port::input(NUM), "Sink");
+    let (a, out) = spawn(w, Port::output(NUM));
+    let (b, inp) = spawn(w, Port::input(NUM));
     app.update();
     let graph = Graph {
         canvas,
@@ -83,15 +78,13 @@ fn press(app: &mut App, entity: Entity, key: KeyCode) {
 }
 
 #[test]
-fn nodes_and_ports_become_tabbable_and_named() {
+fn nodes_and_ports_become_tabbable() {
     let (app, g) = app();
     let w = app.world();
     assert!(w.get::<TabGroup>(g.canvas).is_some());
     for entity in g.nodes.into_iter().chain(g.ports) {
         assert!(w.get::<TabIndex>(entity).is_some());
     }
-    let label = w.get::<AccessibleLabel>(g.nodes[0]).map(|l| l.0.clone());
-    assert_eq!(label.as_deref(), Some("Source"));
 }
 
 #[test]
@@ -138,4 +131,42 @@ fn escape_cancels_a_connection() {
     let w = app.world_mut();
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
     assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
+}
+
+/// Holds `key` down (or lets it go) for the next frames.
+fn hold(app: &mut App, key: KeyCode, state: ButtonState) {
+    let w = app.world_mut();
+    let window = w
+        .query_filtered::<Entity, With<PrimaryWindow>>()
+        .single(w)
+        .unwrap();
+    let logical_key = Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified);
+    let (text, repeat) = (None, false);
+    w.write_message(KeyboardInput {
+        key_code: key,
+        logical_key,
+        state,
+        text,
+        repeat,
+        window,
+    });
+    app.update();
+}
+
+#[test]
+fn modified_arrows_pan_and_plus_minus_zoom() {
+    let (mut app, g) = app();
+    hold(&mut app, KeyCode::ControlLeft, ButtonState::Pressed);
+    press(&mut app, g.nodes[0], KeyCode::ArrowLeft);
+    hold(&mut app, KeyCode::ControlLeft, ButtonState::Released);
+    let view = *app.world().get::<CanvasView>(g.canvas).unwrap();
+    assert_eq!(view.pan, Vec2::new(60.0, 0.0), "the view moved left");
+    assert_eq!(
+        app.world().get::<NodePosition>(g.nodes[0]).unwrap().0,
+        Vec2::ZERO
+    );
+    press(&mut app, g.nodes[0], KeyCode::Equal);
+    assert!((app.world().get::<CanvasView>(g.canvas).unwrap().zoom - 1.2).abs() < 1e-5);
+    press(&mut app, g.nodes[0], KeyCode::Minus);
+    assert!((app.world().get::<CanvasView>(g.canvas).unwrap().zoom - 1.0).abs() < 1e-5);
 }

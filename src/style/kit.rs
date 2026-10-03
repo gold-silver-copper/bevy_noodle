@@ -22,14 +22,6 @@ use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection
 use crate::interaction::CanvasInteraction;
 
 const BORDER: f32 = 1.5;
-/// Marks a kit title: it names its node for screen readers.
-#[derive(Component)]
-pub(crate) struct Title;
-
-/// Marks a kit row's label: it names the row's port for screen readers.
-#[derive(Component)]
-pub(crate) struct Label;
-
 /// Horizontal padding of rows inside a node.
 pub const PADDING: f32 = 10.0;
 const PORT_RADIUS: f32 = 6.0;
@@ -97,7 +89,6 @@ pub fn title(text: impl Into<String>) -> impl Bundle {
     };
     let background = BackgroundColor(Color::srgb_u8(60, 63, 71));
     (
-        Title,
         Text::new(text),
         TextFont::from_font_size(14.0),
         node,
@@ -151,7 +142,6 @@ fn row(
         ..default()
     };
     let text = (
-        Label,
         Text::new(label),
         TextFont::from_font_size(13.0),
         TextColor(Color::srgb_u8(214, 218, 224)),

@@ -9,15 +9,23 @@
   `GraphWorldExt::preview_edit` ask observers without applying anything;
   dragged wires and keyboard connections snap to ports observers would allow.
   `type_conversion` now uses real int and float ports.
-- Keyboard use and accessibility, opt-in per canvas: `NoodleKeyboardPlugin`
-  and `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape),
-  built on `bevy_input_focus`; `AccessibleLabel`s for nodes and ports; a
-  `FocusOutline` in the default style. Example: `keyboard`.
+- Keyboard use, opt-in per canvas: `NoodleKeyboardPlugin` and
+  `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape), built
+  on `bevy_input_focus`; a `FocusOutline` in the default style.
+  Ctrl/Cmd+arrows pan the view and +/- zoom it. Example: `keyboard`.
 - Examples: `comment_frames`, `reroute`, `type_conversion`, `minimap`,
   `auto_layout`.
 - `kit::input_dot`/`kit::output_dot`: port rows without labels, about a
   fifth fewer UI entities per node and no text to lay out. The `stress`
   example switches to them with T.
+
+### Fixed
+- Edges of an outer graph are pickable where they pass over a nested canvas.
+- New wires and selection boxes show in the frame they appear, not the next.
+
+### Changed
+- `save_load` also saves and opens the graph model alone (a few hundred
+  bytes instead of a full snapshot).
 
 ## 0.3.0
 

@@ -1,22 +1,20 @@
-//! Keyboard use and accessibility, opt-in per canvas with [`CanvasKeyboard`].
+//! Keyboard use, opt-in per canvas with [`CanvasKeyboard`].
 //!
 //! Built on `bevy_input_focus`: the canvas is a [`TabGroup`], its nodes and
 //! ports get a [`TabIndex`] so Tab and Shift+Tab move focus between them, and
-//! keys reach the focused entity as [`FocusedInput`] events. Nodes are named
-//! for screen readers with Bevy UI's [`AccessibleLabel`] (from a [`Name`] if
-//! they have one; the default style's kit labels its titles and ports). No key
-//! does anything on a canvas without [`CanvasKeyboard`].
+//! keys reach the focused entity as [`FocusedInput`] events. No key does
+//! anything on a canvas without [`CanvasKeyboard`].
 
 use bevy::input::ButtonState;
 use bevy::input::keyboard::KeyboardInput;
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex, TabNavigationPlugin};
 use bevy::input_focus::{FocusGained, FocusedInput};
 use bevy::prelude::*;
-use bevy::ui::Selected;
+use bevy::ui::{ComputedNode, Selected};
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{WireCandidate, WireTarget, mark_candidates};
+use crate::interaction::{CanvasInteraction, WireCandidate, WireTarget, mark_candidates};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -51,6 +49,15 @@ pub struct CanvasKeyboard {
     pub step: f32,
     /// Held keys making selection additive.
     pub additive_keys: Vec<KeyCode>,
+    /// Held with a move key: pan the view instead, by `pan_step`.
+    pub pan_modifiers: Vec<KeyCode>,
+    /// How far one key press pans, in canvas pixels.
+    pub pan_step: f32,
+    /// Zoom in and out around the canvas centre, by `zoom_step`. The zoom
+    /// stays within the canvas's [`CanvasInteraction`] limits (or 0.1 to 4).
+    pub zoom_keys: Option<[KeyCode; 2]>,
+    /// The zoom factor of one key press.
+    pub zoom_step: f32,
 }
 
 impl Default for CanvasKeyboard {
@@ -63,39 +70,33 @@ impl Default for CanvasKeyboard {
             move_keys: Some([ArrowLeft, ArrowRight, ArrowUp, ArrowDown]),
             step: 10.0,
             additive_keys: vec![ShiftLeft, ShiftRight],
+            pan_modifiers: vec![ControlLeft, ControlRight, SuperLeft, SuperRight],
+            pan_step: 60.0,
+            zoom_keys: Some([Equal, Minus]),
+            zoom_step: 1.2,
         }
     }
 }
 
-/// Nodes and ports of keyboard canvases become tabbable, and nodes with a
-/// [`Name`] are labelled with it.
+/// Nodes and ports of keyboard canvases become tabbable.
 fn make_focusable(
     mut commands: Commands,
     graph: GraphQuery,
     keyboards: Query<(), With<CanvasKeyboard>>,
     new_canvases: Query<Entity, Added<CanvasKeyboard>>,
     new: Query<Entity, Or<(Added<GraphNode>, Added<Port>)>>,
-    items: Query<(Entity, Option<&Name>), (Or<(With<GraphNode>, With<Port>)>, Without<TabIndex>)>,
-    labelled: Query<(), With<AccessibleLabel>>,
+    items: Query<(), (Or<(With<GraphNode>, With<Port>)>, Without<TabIndex>)>,
 ) {
     let canvases = new_canvases.iter().flat_map(|c| graph.nodes_in(c));
     let candidates = new
         .iter()
         .chain(canvases.flat_map(|n| std::iter::once(n).chain(graph.ports_of(n))));
     for entity in candidates {
-        let Ok((entity, name)) = items.get(entity) else {
-            continue;
-        };
-        if graph
+        let keyboard = graph
             .canvas_of(entity)
-            .is_some_and(|c| keyboards.contains(c))
-        {
+            .is_some_and(|c| keyboards.contains(c));
+        if items.contains(entity) && keyboard {
             commands.entity(entity).insert(TabIndex(0));
-            if let (Some(name), false) = (name, labelled.contains(entity)) {
-                commands
-                    .entity(entity)
-                    .insert(AccessibleLabel::new(name.as_str()));
-            }
         }
     }
 }
@@ -110,6 +111,7 @@ fn on_key(
     wires: Query<(Entity, &PendingWire)>,
     anchors: Query<&PortAnchor>,
     marked: Query<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>,
+    mut views: Query<(&mut CanvasView, &ComputedNode, Option<&CanvasInteraction>)>,
     mut commands: Commands,
 ) {
     // Act once, where the key was pressed (it then bubbles up to the window).
@@ -127,7 +129,29 @@ fn on_key(
     let origin = EditOrigin::Interaction;
     let wire = wires.iter().find(|(_, w)| w.canvas == canvas);
     let moves = settings.move_keys.map_or([None; 4], |k| k.map(Some));
-    if code == settings.connect && graph.port(target).is_some() {
+    let direction = moves.iter().position(|k| *k == code);
+    let directions = [Vec2::NEG_X, Vec2::X, Vec2::NEG_Y, Vec2::Y];
+    let panning = keys.any_pressed(settings.pan_modifiers.iter().copied());
+    let zoom = settings.zoom_keys.and_then(|[zoom_in, zoom_out]| {
+        let step = settings.zoom_step;
+        (code == Some(zoom_in))
+            .then_some(step)
+            .or((code == Some(zoom_out)).then_some(1.0 / step))
+    });
+    if let (Ok((mut view, computed, interaction)), true) = (
+        views.get_mut(canvas),
+        (panning && direction.is_some()) || zoom.is_some(),
+    ) {
+        if let Some(direction) = direction.filter(|_| panning) {
+            // The view moves the way the key points, so the graph moves back.
+            view.pan -= directions[direction] * settings.pan_step;
+        }
+        if let Some(factor) = zoom {
+            let centre = computed.size() * computed.inverse_scale_factor() / 2.0;
+            let (min, max) = interaction.map_or((0.1, 4.0), |i| (i.zoom_min, i.zoom_max));
+            view.zoom_around(centre, factor, min, max);
+        }
+    } else if code == settings.connect && graph.port(target).is_some() {
         match wire {
             Some((_, wire)) if wire.from != target => {
                 let (from, to) = (wire.from, target);
@@ -167,8 +191,8 @@ fn on_key(
             },
             origin,
         );
-    } else if let (Some(node), Some(direction)) = (node, moves.iter().position(|k| *k == code)) {
-        let delta = [Vec2::NEG_X, Vec2::X, Vec2::NEG_Y, Vec2::Y][direction] * settings.step;
+    } else if let (Some(node), Some(direction)) = (node, direction) {
+        let delta = directions[direction] * settings.step;
         let mut nodes = graph.nodes_in(canvas);
         nodes.retain(|n| selected.contains(*n));
         if !nodes.contains(&node) {

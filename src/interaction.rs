@@ -583,34 +583,45 @@ fn pick_edges(
             .iter()
             .find(|(id, _)| **id == ui.pointer)
             .and_then(|(_, l)| l.location());
-        let content = canvas.and_then(|c| contents.get(graph.content_of(c)?).ok());
-        let (Some(canvas), Some(location), Ok(camera), Some((computed, transform)), None) = (
-            canvas,
-            location,
-            cameras.get(data.camera),
-            content,
-            graph.port(*top),
-        ) else {
+        let (Some(canvas), Some(location), Ok(camera), None) =
+            (canvas, location, cameras.get(data.camera), graph.port(*top))
+        else {
             continue;
         };
         let mut point = location.position * camera.target_scaling_factor().unwrap_or(1.0);
         point -= camera
             .physical_viewport_rect()
             .map_or(Vec2::ZERO, |v| v.min.as_vec2());
-        let local = transform.inverse().transform_point2(point) * computed.inverse_scale_factor();
-        let min_radius = MIN_RADIUS / transform.matrix2.x_axis.length().max(1e-6);
+        // The nearest edge of `canvas` under the pointer, if any.
+        let nearest = |canvas: Entity, below_too: bool| {
+            let (computed, transform) = contents.get(graph.content_of(canvas)?).ok()?;
+            let local =
+                transform.inverse().transform_point2(point) * computed.inverse_scale_factor();
+            let min_radius = MIN_RADIUS / transform.matrix2.x_axis.length().max(1e-6);
+            let edges = hitboxes.iter().filter(|(edge, h)| {
+                (below_too || !h.below_nodes) && graph.canvas_of(*edge) == Some(canvas)
+            });
+            let distances =
+                edges.map(|(edge, h)| (edge, h.distance(local) / h.radius.max(min_radius)));
+            let (edge, _) = distances
+                .filter(|(_, d)| *d <= 1.0)
+                .min_by(|a, b| a.1.total_cmp(&b.1))?;
+            Some((edge, local))
+        };
+        // The canvas under the pointer first, then the canvases around it,
+        // where the pointer is over the node holding the inner one: there
+        // only edges drawn above nodes count.
         let over_node = graph
             .node_of(*top)
             .is_some_and(|n| graph.canvas_of(n) == Some(canvas));
-        let nearest = hitboxes
-            .iter()
-            .filter(|(edge, h)| {
-                !(h.below_nodes && over_node) && graph.canvas_of(*edge) == Some(canvas)
-            })
-            .map(|(edge, h)| (edge, h.distance(local) / h.radius.max(min_radius)))
-            .filter(|(_, d)| *d <= 1.0)
-            .min_by(|a, b| a.1.total_cmp(&b.1));
-        if let Some((edge, _)) = nearest {
+        let outer = |c: Entity| graph.node_of(c).and_then(|n| graph.canvas_of(n));
+        let mut found = nearest(canvas, !over_node);
+        let mut current = outer(canvas);
+        while let (None, Some(c)) = (found, current) {
+            found = nearest(c, false);
+            current = outer(c);
+        }
+        if let Some((edge, local)) = found {
             let hit = HitData::new(data.camera, -1.0, Some(local.extend(0.0)), None);
             hits.push(PointerHits::new(ui.pointer, vec![(edge, hit)], ui.order));
         }

@@ -4,8 +4,13 @@
 //! nodes, ports, edges, and your own reflected components, entity references
 //! included (`Shows` below points at a text entity and survives the trip).
 //!
-//! S saves, L loads, N clears. Right-click adds a number, Delete removes the
-//! selection.
+//! A snapshot keeps every UI detail, so it is large. For a small file, save
+//! the graph model instead (M, and O to open it): what each node is, where,
+//! and how they connect; loading rebuilds the UI with ordinary spawns and
+//! connects.
+//!
+//! S saves a snapshot, L loads it, M saves the model, O opens it, N clears.
+//! Right-click adds a number, Delete removes the selection.
 //!
 //! ```sh
 //! cargo run --example save_load --features default_style,scene
@@ -51,6 +56,25 @@ struct Graph(Entity);
 #[derive(Component)]
 struct Status;
 
+/// The graph as plain data.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Model {
+    /// Each node, with its top-left corner.
+    nodes: Vec<(Kind, [f32; 2])>,
+    /// `[from node, output, to node, input]`, by index.
+    edges: Vec<[usize; 4]>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+enum Kind {
+    Number(f32),
+    Sum,
+}
+
+fn model_file() -> PathBuf {
+    std::env::temp_dir().join("bevy_noodle_graph.model.ron")
+}
+
 fn file() -> PathBuf {
     std::env::temp_dir().join("bevy_noodle_graph.scn.ron")
 }
@@ -76,8 +100,8 @@ fn setup(mut commands: Commands) {
     });
     commands.spawn((
         Text::new(format!(
-            "S: save | L: load | N: clear    {}",
-            file().display()
+            "S/L: save/load snapshot | M/O: save/open model | N: clear    {}",
+            std::env::temp_dir().display()
         )),
         TextFont::from_font_size(14.0),
         TextColor(Color::srgb_u8(170, 175, 185)),
@@ -166,6 +190,8 @@ fn keys(
         _ if keys.just_pressed(KeyCode::KeyS) => save,
         _ if keys.just_pressed(KeyCode::KeyL) => load,
         _ if keys.just_pressed(KeyCode::KeyN) => clear,
+        _ if keys.just_pressed(KeyCode::KeyM) => save_model,
+        _ if keys.just_pressed(KeyCode::KeyO) => open_model,
         _ => return,
     };
     let canvas = graph.0;
@@ -180,8 +206,11 @@ fn keys(
 fn save(world: &mut World, canvas: Entity) -> Result<String> {
     let snapshot = scene::snapshot(world, canvas).ok_or("no canvas content")?;
     let ron = snapshot.serialize(&world.resource::<AppTypeRegistry>().read())?;
-    std::fs::write(file(), ron)?;
-    Ok(format!("saved {} entities", snapshot.entities.len()))
+    std::fs::write(file(), &ron)?;
+    let (entities, bytes) = (snapshot.entities.len(), ron.len());
+    Ok(format!(
+        "saved a snapshot: {entities} entities, {bytes} bytes"
+    ))
 }
 
 fn load(world: &mut World, canvas: Entity) -> Result<String> {
@@ -201,6 +230,64 @@ fn load(world: &mut World, canvas: Entity) -> Result<String> {
 fn clear(world: &mut World, canvas: Entity) -> Result<String> {
     scene::restore(world, canvas, &default())?;
     Ok("cleared".into())
+}
+
+fn save_model(world: &mut World, canvas: Entity) -> Result<String> {
+    let read =
+        |In(canvas), graph: GraphQuery, values: Query<&Value>, positions: Query<&NodePosition>| {
+            let nodes = graph.nodes_in(canvas);
+            let index = |n| nodes.iter().position(|m| *m == n);
+            let kind = |n| values.get(n).map_or(Kind::Sum, |v| Kind::Number(v.0));
+            let at = |n| positions.get(n).map_or([0.0; 2], |p| p.0.to_array());
+            let edges = graph.edges_in(canvas).into_iter().filter_map(|edge| {
+                let (output, input) = graph.edge_ports(edge)?;
+                let (from, to) = (graph.node_of(output)?, graph.node_of(input)?);
+                let output = graph.outputs_of(from).iter().position(|p| *p == output)?;
+                let input = graph.inputs_of(to).iter().position(|p| *p == input)?;
+                Some([index(from)?, output, index(to)?, input])
+            });
+            let edges = edges.collect();
+            Model {
+                nodes: nodes.iter().map(|n| (kind(*n), at(*n))).collect(),
+                edges,
+            }
+        };
+    let model = world.run_system_cached_with(read, canvas)?;
+    let ron = ron::ser::to_string_pretty(&model, default())?;
+    std::fs::write(model_file(), &ron)?;
+    Ok(format!(
+        "saved the model: {} nodes, {} bytes",
+        model.nodes.len(),
+        ron.len()
+    ))
+}
+
+fn open_model(world: &mut World, canvas: Entity) -> Result<String> {
+    let model: Model = ron::from_str(&std::fs::read_to_string(model_file())?)?;
+    clear(world, canvas)?;
+    let content = |In(canvas), graph: GraphQuery| graph.content_of(canvas);
+    let content = world
+        .run_system_cached_with(content, canvas)?
+        .ok_or("no canvas content")?;
+    let mut commands = world.commands();
+    let nodes: Vec<Entity> = (model.nodes.iter())
+        .map(|(kind, [x, y])| match kind {
+            Kind::Number(value) => spawn_number(&mut commands, content, *value, Vec2::new(*x, *y)),
+            Kind::Sum => spawn_sum(&mut commands, content, Vec2::new(*x, *y)),
+        })
+        .collect();
+    world.flush();
+    for [from, output, to, input] in &model.edges {
+        let ports = |In((a, b)): In<(Entity, Entity)>, graph: GraphQuery| {
+            (graph.outputs_of(a), graph.inputs_of(b))
+        };
+        let (outputs, inputs) = world.run_system_cached_with(ports, (nodes[*from], nodes[*to]))?;
+        let (from, to) = (outputs[*output], inputs[*input]);
+        world
+            .graph_edit(canvas, GraphEdit::Connect { from, to })
+            .ok();
+    }
+    Ok(format!("opened the model: {} nodes", nodes.len()))
 }
 
 fn add_on_right_click(

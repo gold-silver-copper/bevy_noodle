@@ -209,3 +209,89 @@ fn dragged_wires_snap_to_ports_observers_allow() {
     let targets: Vec<_> = w.query::<&EdgeTarget>().iter(w).map(|t| t.0).collect();
     assert_eq!(targets, [ports[1]]);
 }
+
+/// Feeds the edge picking backend a UI hit on `top` at `at`, and returns the
+/// edge it reports, if any.
+fn pick(app: &mut App, top: Entity, at: Vec2) -> Option<Entity> {
+    use bevy::picking::backend::PointerHits;
+    let w = app.world_mut();
+    let camera = w.spawn(Camera::default()).id();
+    let location = Location {
+        target: NormalizedRenderTarget::None {
+            width: 1,
+            height: 1,
+        },
+        position: at,
+    };
+    w.spawn((PointerId::Mouse, PointerLocation::new(location)));
+    let hit = HitData::new(camera, 0.0, None, None);
+    w.write_message(PointerHits::new(PointerId::Mouse, vec![(top, hit)], 0.5));
+    app.update();
+    let messages = app.world().resource::<Messages<PointerHits>>();
+    let mut cursor = messages.get_cursor();
+    let picks: Vec<Entity> = cursor
+        .read(messages)
+        .flat_map(|h| h.picks.iter().map(|(e, _)| *e))
+        .collect();
+    // The latest hit: the previous frame's messages are still buffered.
+    picks
+        .into_iter()
+        .rev()
+        .find(|e| app.world().get::<Edge>(*e).is_some())
+}
+
+#[test]
+fn outer_edges_are_pickable_over_nested_canvases() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, outer) = graph(w);
+    let group = w.spawn((GraphNode, Node::default(), ChildOf(outer))).id();
+    let inner_canvas = w
+        .spawn((
+            NodeCanvas,
+            CanvasInteraction::default(),
+            Node::default(),
+            ChildOf(group),
+        ))
+        .id();
+    let inner = w.spawn((CanvasContent, ChildOf(inner_canvas))).id();
+    // An edge of `content` running along y = 0, from x = 0 to x = 100.
+    let edge_in = |w: &mut World, content: Entity| {
+        let ports = [Port::output(NUM), Port::input(NUM)].map(|port| {
+            let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
+            w.spawn((port, Node::default(), ChildOf(node))).id()
+        });
+        let points = [
+            Vec2::ZERO,
+            Vec2::new(30.0, 0.0),
+            Vec2::new(70.0, 0.0),
+            Vec2::new(100.0, 0.0),
+        ];
+        let hitbox = EdgeHitbox {
+            points,
+            radius: 4.0,
+            below_nodes: false,
+        };
+        w.spawn((
+            Edge,
+            EdgeSource(ports[0]),
+            EdgeTarget(ports[1]),
+            hitbox,
+            ChildOf(content),
+        ))
+        .id()
+    };
+    let outer_edge = edge_in(w, outer);
+    // Over the nested canvas, where only the outer edge passes.
+    assert_eq!(
+        pick(&mut app, inner_canvas, Vec2::new(50.0, 1.0)),
+        Some(outer_edge)
+    );
+    // Where an inner edge passes too, the inner one wins.
+    let w = app.world_mut();
+    let inner_edge = edge_in(w, inner);
+    assert_eq!(
+        pick(&mut app, inner_canvas, Vec2::new(50.0, 1.0)),
+        Some(inner_edge)
+    );
+}

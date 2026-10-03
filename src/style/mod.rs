@@ -13,7 +13,6 @@
 pub mod kit;
 mod render;
 
-use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::input_focus::{FocusGained, FocusLost, InputFocusVisible};
 use bevy::picking::Pickable;
 use bevy::picking::hover::PickingInteraction;
@@ -38,7 +37,6 @@ impl Plugin for NoodleDefaultStylePlugin {
                     draw_selection_boxes,
                     highlight_ports,
                     selected_borders,
-                    label_kit,
                 )
                     .in_set(NoodleSystems::Render),
             )
@@ -341,26 +339,22 @@ fn draw_edges(
         }
         // Wires are drawn by their own UI node, so the edge itself can be picked.
         let visual = visual.and_then(|v| v.0.first().copied());
+        let shown = geometry.valid.then_some(rect);
         let Some((visual, (mut node, mut z_index, handle, parent))) =
             visual.and_then(|v| Some((v, visuals.get_mut(v).ok()?)))
         else {
+            // Placed right away, so a new wire shows in the frame it appears.
+            let mut node = Node::default();
+            place(&mut node, shown);
             let wire = (
                 MaterialNode(materials.add(material)),
                 DrawsEdge(entity),
                 ChildOf(content),
             );
-            commands.spawn((
-                Node {
-                    display: Display::None,
-                    ..default()
-                },
-                z,
-                Pickable::IGNORE,
-                wire,
-            ));
+            commands.spawn((node, z, Pickable::IGNORE, wire));
             continue;
         };
-        place(&mut node, geometry.valid.then_some(rect));
+        place(&mut node, shown);
         update(&mut materials, &handle.0, material);
         z_index.set_if_neq(z);
         if parent.parent() != content {
@@ -433,11 +427,11 @@ fn draw_selection_boxes(
         match visual.and_then(|v| nodes.get_mut(v.0).ok()) {
             Some(mut node) => place(&mut node, selection.map(|s| s.0)),
             None if selection.is_some() => {
-                let node = Node {
+                let mut node = Node {
                     border: UiRect::all(px(1)),
-                    display: Display::None,
                     ..default()
                 };
+                place(&mut node, selection.map(|s| s.0));
                 let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
                 let visual = (
                     node,
@@ -508,28 +502,6 @@ fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut 
             colors.normal
         };
         border.set_if_neq(BorderColor::all(color));
-    }
-}
-
-/// Kit nodes and ports made focusable by a keyboard canvas are named for
-/// screen readers: nodes by their title, ports by their row's label.
-fn label_kit(
-    mut commands: Commands,
-    focusable: Query<(Entity, &ChildOf), (Added<TabIndex>, Without<AccessibleLabel>)>,
-    children: Query<&Children>,
-    texts: Query<(&Text, Has<kit::Title>), Or<(With<kit::Title>, With<kit::Label>)>>,
-) {
-    for (entity, parent) in &focusable {
-        // A kit title among the entity's children, or a label beside it in a row.
-        let find = |of: Entity, title: bool| {
-            let kids = children.get(of).into_iter().flatten();
-            kids.filter_map(|c| texts.get(*c).ok())
-                .find(|t| t.1 == title)
-                .map(|t| t.0.0.clone())
-        };
-        if let Some(name) = find(entity, true).or_else(|| find(parent.parent(), false)) {
-            commands.entity(entity).insert(AccessibleLabel::new(name));
-        }
     }
 }
 

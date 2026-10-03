@@ -69,14 +69,14 @@ fn setup(mut commands: Commands) {
 | `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
 | `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
 | `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
-| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes and ports, Enter to select, arrows to move, Space on two ports to connect, with screen-reader labels and a focus outline. |
+| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes and ports, Enter to select, arrows to move, Space on two ports to connect, with a focus outline. |
 | `cargo run --example comment_frames --features default_style` | Comment frames: a frame node moves the nodes inside it, through an `EditApplied` observer with its own `EditOrigin`. |
 | `cargo run --example reroute --features default_style` | Reroute dots for routing edges; right-click an edge to insert one where you clicked. |
 | `cargo run --example type_conversion --features default_style` | An `EditRequested` observer vetoes connections a node does not accept and inserts an "int to float" converter. |
 | `cargo run --example minimap --features default_style` | A minimap of the same graph, kept in sync from `NodePosition`s and `CanvasView`; click or drag it to move the view. |
 | `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble). |
 | `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
-| `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
+| `cargo run --example save_load --features default_style,scene` | Saving and loading as RON: a full snapshot (user components and entity references intact) or just the graph model, a few hundred bytes, rebuilt with ordinary spawns. |
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
 ![The styled example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png)
@@ -150,18 +150,16 @@ Each piece is opt-in on the canvas or the entity:
   `kit::input_dot`/`kit::output_dot` are rows without labels: no text to lay
   out, for very large graphs.
 
-### Keyboard and accessibility
+### Keyboard
 
 Add `NoodleKeyboardPlugin` and put `CanvasKeyboard` on a canvas. It builds on
 Bevy's `bevy_input_focus`: the canvas is a `TabGroup` and its nodes and ports
-get a `TabIndex`, so Tab and Shift+Tab move focus between them. The focused
-node is selected with Enter and moved with the arrow keys; Space on a port
-starts a connection and Space on a second port completes it (focusing a
-compatible port snaps the wire to it); Escape drops it. Every key is a field,
-and `None` unbinds it. Nodes and ports are named for screen readers with Bevy
-UI's `AccessibleLabel`: from a `Name`, or from kit titles and labels. With
-the default style, `FocusOutline` (part of `kit::canvas()`) outlines the
-keyboard focus.
+get a `TabIndex`, so Tab and Shift+Tab move focus between them. Enter selects
+the focused node and the arrow keys move it; with Ctrl/Cmd held they pan the
+view, and +/- zoom it. Space on a port starts a connection and Space on a
+second port completes it (focusing a port it may connect to snaps the wire);
+Escape drops it. Every key is a field, and `None` unbinds it. With the default
+style, `FocusOutline` (part of `kit::canvas()`) outlines the keyboard focus.
 
 ### Snapshots (`scene`)
 
