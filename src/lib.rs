@@ -1,89 +1,183 @@
-//! A generic, typed node graph editor for Bevy UI, in the spirit of
-//! [egui_node_graph2](https://github.com/trevyn/egui_node_graph2).
+//! A headless, entity-based node graph library for Bevy UI.
 //!
-//! The crate gives you the *editor*: nodes with typed input and output
-//! ports, wires, inline value widgets, a searchable node finder, selection,
-//! panning and zooming. What the graph *means*, and how it is evaluated or
-//! compiled, is up to your application.
+//! You build and style the nodes with ordinary Bevy UI; `bevy_noodle`
+//! handles the graph: ports, connections, dragging, selection, panning and
+//! zooming. The core draws nothing (no background, no wires) and binds no
+//! keys. An optional look lives behind the `default_style` feature.
 //!
-//! # Overview
+//! # The graph is entities
 //!
-//! 1. Describe your graph with a few traits:
-//!    * [`DataTypeTrait`] – the types flowing over wires (and their colors).
-//!    * [`WidgetValueTrait`] – the constant stored in each input, edited inline.
-//!    * [`NodeDataTrait`] – per-node user data (optionally custom node UI).
-//!    * [`NodeTemplateTrait`] – the node kinds users can create.
-//!    * [`NodeGraphSchema`] – a marker type tying them together.
-//! 2. Add [`NodeGraphPlugin::<YourSchema>`](NodeGraphPlugin) to your app.
-//! 3. Spawn a [`NodeGraphEditor`] as a UI node.
-//! 4. Read [`NodeGraphResponse`] messages to react to edits, and read or
-//!    modify [`NodeGraphEditor::state`] from any system.
+//! ```text
+//! NodeCanvas                 your UI node: the viewport
+//! └── CanvasContent          pans and zooms; holds the nodes
+//!     ├── GraphNode          your UI node: style it however you like
+//!     │   └── … Port         your UI node marking a connection point
+//!     └── GraphNode …
+//! Edge                       spawned on connect; draw it from EdgeGeometry
+//! ```
 //!
 //! ```ignore
 //! use bevy::prelude::*;
 //! use bevy_noodle::prelude::*;
 //!
-//! App::new()
-//!     .add_plugins((DefaultPlugins, NodeGraphPlugin::<MyGraph>::default()))
-//!     .add_systems(Startup, |mut commands: Commands| {
-//!         commands.spawn(Camera2d);
-//!         commands.spawn((
-//!             NodeGraphEditor::<MyGraph>::new(MyTemplate::ALL),
-//!             Node { width: percent(100), height: percent(100), ..default() },
-//!         ));
-//!     })
-//!     .run();
+//! const NUMBER: PortType = PortType::named("number");
+//!
+//! fn setup(mut commands: Commands) {
+//!     commands.spawn(Camera2d);
+//!     let canvas = commands.spawn((NodeCanvas, Node { width: percent(100), height: percent(100), ..default() })).id();
+//!     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
+//!     commands.spawn((
+//!         GraphNode,
+//!         NodePosition(Vec2::new(40.0, 40.0)),
+//!         ChildOf(content),
+//!         Node { padding: UiRect::all(px(8)), ..default() },
+//!         BackgroundColor(Color::srgb(0.2, 0.2, 0.25)),
+//!         children![
+//!             Text::new("Number"),
+//!             (Port::output(NUMBER), Node { width: px(10), height: px(10), ..default() }, BackgroundColor(Color::WHITE)),
+//!         ],
+//!     ));
+//! }
 //! ```
 //!
-//! See `examples/math_graph.rs` for a complete, evaluated graph.
+//! # Changing the graph
 //!
-//! # Controls
+//! Every change, from interaction or code, goes through
+//! [`GraphCommandsExt::graph_edit`]: built-in validation, then an
+//! [`EditRequested`] event your observers may veto or modify, then the
+//! change, then [`EditApplied`] (an entity event on the canvas and a message).
 //!
-//! | Action | Input |
-//! |---|---|
-//! | Add a node | Right-click the canvas, or drop a wire on empty canvas |
-//! | Connect | Drag from a port to a compatible port |
-//! | Disconnect | Drag a wire off its input |
-//! | Select | Click a node; Shift/Ctrl/Cmd+click to toggle; drag on the canvas to box-select |
-//! | Move | Drag a node (moves the whole selection) |
-//! | Delete | The × in the title bar, or Delete/Backspace |
-//! | Pan | Middle-drag, Space+drag, or two-finger scroll |
-//! | Zoom | Mouse wheel, Ctrl/Cmd+scroll, or pinch |
-//! | Frame all | Ctrl/Cmd+0 |
+//! # Plugins
 //!
-//! Number fields can also be scrubbed by dragging their label sideways.
+//! * [`NoodlePlugins`]: [`NoodleCorePlugin`] + [`NoodleInteractionPlugin`].
+//! * [`NoodleKeyBindingsPlugin`]: opt-in key bindings via [`CanvasKeymap`].
+//! * `NoodleDefaultStylePlugin` (feature `default_style`): wires, grid,
+//!   selection box, port highlighting, node-building helpers, node finder.
 
 // Bevy's `AsBindGroup` derive trips a recursion lint on recent compilers.
 #![recursion_limit = "256"]
+// Bevy systems routinely take many parameters and complex query types.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
-mod editor;
-pub mod graph;
-mod render;
-pub mod state;
+pub mod actions;
+pub mod components;
+pub mod edit;
+mod geometry;
+pub mod interaction;
+pub mod keymap;
+pub mod query;
+#[cfg(feature = "default_style")]
 pub mod style;
-pub mod traits;
 
-pub use editor::{NodeGraphEditor, NodeGraphPlugin, NodeGraphSystems};
-pub use graph::{
-    AnyParameterId, Graph, InputId, InputParam, InputParamKind, Node, NodeGraphError, NodeId,
-    OutputId, OutputParam,
-};
-pub use state::{
-    ConnectError, GraphEditorState, NodeGraphResponse, NodeResponse, PanZoom, RemovedNode,
-};
-pub use style::{NodeGraphSettings, NodeGraphStyle, ScrollBehavior};
-pub use traits::{
-    DataTypeOf, DataTypeTrait, GraphOf, NodeBodyContext, NodeDataTrait, NodeGraphSchema,
-    NodeTemplateTrait, NumberField, SchemaGraph, ValueEdit, ValueTypeOf, ValueWidget,
-    WidgetValueTrait,
-};
+use bevy::app::PluginGroupBuilder;
+use bevy::prelude::*;
+use bevy::ui::UiSystems;
 
-/// Everything needed to define and use a node graph.
+pub use actions::{ClearSelection, DeleteSelection, FrameAll, PanBy, SelectAll, ZoomBy};
+pub use components::*;
+pub use edit::{
+    EditApplied, EditOrigin, EditRejected, EditRequested, GraphCommandsExt, GraphEdit,
+    GraphWorldExt, RejectReason, SelectMode,
+};
+pub use interaction::{
+    CancelInteraction, CanvasInteraction, CanvasWantsInput, NoodleInteractionPlugin, PendingWire,
+    ScrollMode, SelectionBox, WireCandidate, WireDropped, WireSource, WireTarget,
+    canvas_wants_pointer_input,
+};
+pub use keymap::{CanvasAction, CanvasKeymap, KeyBinding, NoodleKeyBindingsPlugin};
+pub use query::GraphQuery;
+
+/// System sets, all in `PostUpdate`.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NoodleSystems {
+    /// Before UI layout: node positions, canvas view, edge geometry, drags.
+    Sync,
+    /// After [`Sync`](Self::Sync), before UI layout: drawing (the default
+    /// style runs here; put your own edge renderers here too).
+    Render,
+    /// After UI layout: port positions are measured.
+    Measure,
+}
+
+/// The core and pointer interaction. Add [`NoodleKeyBindingsPlugin`] and
+/// (with `default_style`) `NoodleDefaultStylePlugin` separately if wanted.
+pub struct NoodlePlugins;
+
+impl PluginGroup for NoodlePlugins {
+    fn build(self) -> PluginGroupBuilder {
+        PluginGroupBuilder::start::<Self>()
+            .add(NoodleCorePlugin)
+            .add(NoodleInteractionPlugin)
+    }
+}
+
+/// Graph components, the edit pipeline, canvas actions and geometry.
+pub struct NoodleCorePlugin;
+
+impl Plugin for NoodleCorePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<EditApplied>()
+            .register_type::<NodeCanvas>()
+            .register_type::<CanvasView>()
+            .register_type::<CanvasContent>()
+            .register_type::<GraphNode>()
+            .register_type::<NodePosition>()
+            .register_type::<NodeDragHandle>()
+            .register_type::<Port>()
+            .register_type::<PortTangent>()
+            .register_type::<PortAnchor>()
+            .register_type::<Edge>()
+            .register_type::<EdgeSource>()
+            .register_type::<EdgeTarget>()
+            .register_type::<OutgoingEdges>()
+            .register_type::<IncomingEdges>()
+            .register_type::<EdgeGeometry>()
+            .register_type::<CanvasInteraction>()
+            .register_type::<CanvasWantsInput>()
+            .register_type::<PendingWire>()
+            .register_type::<SelectionBox>()
+            .register_type::<WireSource>()
+            .register_type::<WireCandidate>()
+            .register_type::<WireTarget>()
+            .register_type::<CanvasKeymap>()
+            .configure_sets(
+                PostUpdate,
+                (NoodleSystems::Sync, NoodleSystems::Render)
+                    .chain()
+                    .before(UiSystems::Prepare),
+            )
+            .configure_sets(
+                PostUpdate,
+                NoodleSystems::Measure.in_set(UiSystems::PostLayout),
+            )
+            .add_systems(
+                PostUpdate,
+                (
+                    geometry::sync_node_positions,
+                    geometry::sync_canvas_views,
+                    geometry::update_edge_geometry,
+                )
+                    .chain()
+                    .in_set(NoodleSystems::Sync),
+            )
+            .add_systems(
+                PostUpdate,
+                geometry::measure_ports.in_set(NoodleSystems::Measure),
+            );
+        actions::plugin(app);
+    }
+}
+
+/// Everything needed to build and react to graphs.
 pub mod prelude {
+    #[cfg(feature = "default_style")]
+    pub use crate::style::{CanvasGrid, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
     pub use crate::{
-        AnyParameterId, DataTypeTrait, Graph, GraphEditorState, GraphOf, InputId, InputParamKind,
-        NodeBodyContext, NodeDataTrait, NodeGraphEditor, NodeGraphPlugin, NodeGraphResponse,
-        NodeGraphSchema, NodeGraphSettings, NodeGraphStyle, NodeId, NodeResponse,
-        NodeTemplateTrait, NumberField, OutputId, ValueEdit, ValueWidget, WidgetValueTrait,
+        CancelInteraction, CanvasContent, CanvasInteraction, CanvasKeymap, CanvasView,
+        ClearSelection, DeleteSelection, Edge, EdgeGeometry, EdgeSource, EdgeTarget, EditApplied,
+        EditOrigin, EditRequested, FrameAll, GraphCommandsExt, GraphEdit, GraphNode, GraphQuery,
+        GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition, NoodleCorePlugin,
+        NoodleInteractionPlugin, NoodleKeyBindingsPlugin, NoodlePlugins, PendingWire, Port,
+        PortDirection, PortType, SelectAll, SelectMode, WireDropped,
     };
 }

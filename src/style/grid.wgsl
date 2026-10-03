@@ -29,8 +29,16 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let minor_cov = max(grid_line(local.x, spacing, pixel), grid_line(local.y, spacing, pixel)) * minor_fade;
     let major_cov = max(grid_line(local.x, major_spacing, pixel), grid_line(local.y, major_spacing, pixel));
 
-    var rgb = background.rgb;
-    rgb = mix(rgb, minor.rgb, minor_cov * minor.a);
-    rgb = mix(rgb, major.rgb, major_cov * major.a);
-    return vec4<f32>(rgb, background.a);
+    // Composite lines over the (possibly transparent) background.
+    var color = background;
+    color = over(color, vec4<f32>(minor.rgb, minor.a * minor_cov));
+    color = over(color, vec4<f32>(major.rgb, major.a * major_cov));
+    return color;
+}
+
+// Non-premultiplied "source over destination".
+fn over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
+    let a = src.a + dst.a * (1.0 - src.a);
+    let rgb = (src.rgb * src.a + dst.rgb * dst.a * (1.0 - src.a)) / max(a, 1e-5);
+    return vec4<f32>(rgb, a);
 }

@@ -3,31 +3,29 @@
 [![crates.io](https://img.shields.io/crates/v/bevy_noodle.svg)](https://crates.io/crates/bevy_noodle)
 [![docs.rs](https://docs.rs/bevy_noodle/badge.svg)](https://docs.rs/bevy_noodle)
 
-A generic, typed node graph editor for [Bevy](https://bevyengine.org) UI, in the
-spirit of [egui_node_graph2](https://github.com/trevyn/egui_node_graph2).
+A headless, entity-based node graph library for [Bevy](https://bevyengine.org) UI.
+**You build and style the nodes; bevy_noodle handles the graph.**
 
-![Dragging a new wire in the math_graph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
+![Dragging a wire, with the optional default style](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
 
-The crate is the *editor*: nodes with typed input and output ports, wires, inline
-value widgets, a searchable node finder, selection, panning and zooming. What
-your graph *means* (a shader, a dialogue tree, an AI pipeline, a calculator) and
-how you evaluate or compile it is up to you.
-
-- **Typed ports.** Wires only connect compatible types, and you can define your own
-  compatibility rules (e.g. implicit conversions).
-- **Inline constants.** Unconnected inputs show a text, number, vector, checkbox or
-  choice widget. Number labels can be dragged sideways to scrub the value.
-- **Inputs with many wires**, constant-only parameters, and connection-only parameters.
-- **Custom node UI.** Spawn any Bevy UI at the bottom of a node.
-- **Node finder.** Right-click the canvas, or drop a wire on empty space. In the
-  second case only templates that accept the wire are listed, and the new node is
-  connected for you.
-- **Box selection, multi-node dragging, keyboard deletion, pan and zoom** (mouse,
-  trackpad scroll and pinch).
-- **Crisp rendering.** Wires and the grid are anti-aliased shaders.
-- **Pure-data graph.** The graph has no UI types inside, so you can build and evaluate
-  it headless. With the `serde` feature it serializes.
-- **Several editors at once**, of the same or of different graph types.
+- **Nodes, ports and edges are entities.** A node is your own UI entity tagged
+  `GraphNode`. Style it with any Bevy UI component, attach your own components,
+  query it, react to `Changed`.
+- **Nothing is drawn unless you ask.** The core spawns no background, no grid,
+  no wires and no chrome. It computes `EdgeGeometry` for every edge; draw edges
+  however you like (UI, gizmos, meshes), or opt in to the default look.
+- **No bindings forced.** The core reads no keyboard shortcuts. Editor
+  operations (delete selection, select all, frame all, pan, zoom) are events
+  you trigger from any input crate. Default key bindings are a separate, opt-in
+  plugin that only listens while its canvas has focus.
+- **One edit pipeline, with a veto.** Every change, from the pointer or your
+  code, goes through validation, then an `EditRequested` event your observers can
+  reject or rewrite, then `EditApplied` (an entity event and a message).
+- **Any pointer.** Built on `bevy_picking` events, so mouse, touch, pen and
+  render-to-texture all work.
+- **Configurable per canvas.** Every interaction can be switched off or
+  rebound, and `InteractionDisabled` turns off a whole canvas, node or port.
+- **Inspector-friendly.** All components derive and register `Reflect`.
 
 Requires Bevy **0.19**.
 
@@ -36,96 +34,50 @@ Requires Bevy **0.19**.
 ```toml
 [dependencies]
 bevy = "0.19"
-bevy_noodle = "0.1"
+bevy_noodle = "0.2"
 ```
 
-Describe your graph with four small trait impls, tie them together with a
-`NodeGraphSchema`, add the plugin and spawn the editor:
-
 ```rust
-use std::borrow::Cow;
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
 
-// What flows over wires (decides wire colors and what may connect).
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Number;
-
-impl DataTypeTrait for Number {
-    fn color(&self) -> Color { Color::srgb(0.3, 0.6, 1.0) }
-    fn name(&self) -> Cow<'_, str> { "number".into() }
-}
-
-// The constant stored in each input, edited inline when unconnected.
-#[derive(Clone)]
-struct Value(f64);
-
-impl WidgetValueTrait for Value {
-    fn value_widget(&self, _param_name: &str) -> ValueWidget {
-        ValueWidget::Number(NumberField::new(self.0))
-    }
-    fn apply_edit(&mut self, edit: ValueEdit) {
-        if let ValueEdit::Number { value, .. } = edit {
-            self.0 = value;
-        }
-    }
-}
-
-// The node kinds offered in the node finder.
-#[derive(Clone, Copy)]
-enum Template { Constant, Add }
-
-impl NodeTemplateTrait for Template {
-    type NodeData = NodeData;
-
-    fn node_finder_label(&self) -> Cow<'_, str> {
-        match self { Template::Constant => "Constant".into(), Template::Add => "Add".into() }
-    }
-    fn user_data(&self) -> NodeData { NodeData }
-    fn build_node(&self, graph: &mut GraphOf<NodeData>, node: NodeId) {
-        let kind = InputParamKind::ConnectionOrConstant;
-        match self {
-            Template::Constant => {
-                graph.add_input_param(node, "value", Number, Value(1.0), InputParamKind::ConstantOnly, true);
-            }
-            Template::Add => {
-                graph.add_input_param(node, "a", Number, Value(0.0), kind, true);
-                graph.add_input_param(node, "b", Number, Value(0.0), kind, true);
-            }
-        }
-        graph.add_output_param(node, "out", Number);
-    }
-}
-
-// Per-node user data.
-#[derive(Clone)]
-struct NodeData;
-
-impl NodeDataTrait for NodeData {
-    type DataType = Number;
-    type ValueType = Value;
-}
-
-// Ties the types together.
-struct MyGraph;
-
-impl NodeGraphSchema for MyGraph {
-    type NodeData = NodeData;
-    type NodeTemplate = Template;
-}
+const NUMBER: PortType = PortType::named("number");
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NodeGraphPlugin::<MyGraph>::default()))
-        .add_systems(Startup, |mut commands: Commands| {
-            commands.spawn(Camera2d);
-            commands.spawn(NodeGraphEditor::<MyGraph>::new([Template::Constant, Template::Add]));
-        })
+        .add_plugins((DefaultPlugins, NoodlePlugins))
+        .add_systems(Startup, setup)
         .run();
+}
+
+fn setup(mut commands: Commands) {
+    commands.spawn(Camera2d);
+
+    // The canvas is your UI node; its content child pans and zooms.
+    let canvas = commands
+        .spawn((NodeCanvas, Node { width: percent(100), height: percent(100), ..default() }))
+        .id();
+    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
+
+    // A node is any UI you like, marked `GraphNode`. Ports are any UI entities marked `Port`.
+    commands.spawn((
+        GraphNode,
+        NodePosition(Vec2::new(80.0, 120.0)),
+        ChildOf(content),
+        Node { padding: UiRect::all(px(10)), column_gap: px(8), ..default() },
+        BackgroundColor(Color::srgb(0.16, 0.18, 0.22)),
+        children![
+            (Text::new("Source"), Pickable::IGNORE),
+            (Port::output(NUMBER), Node { width: px(14), height: px(14), ..default() }, BackgroundColor(Color::WHITE)),
+        ],
+    ));
 }
 ```
 
-This is [`examples/minimal.rs`](examples/minimal.rs).
+Nodes can now be dragged, selected and connected. Edges exist as entities
+with an `EdgeGeometry`, but nothing draws them until you do (see
+[`examples/minimal.rs`](examples/minimal.rs), which uses gizmos) or you enable
+the default style.
 
 ## Examples
 
@@ -135,167 +87,184 @@ This is [`examples/minimal.rs`](examples/minimal.rs).
 cargo run --example minimal
 ```
 
-The smallest complete integration: two node kinds, inline number widgets, and
-responses logged to the console.
+No default style at all: hand-built nodes, edges drawn with gizmos from
+`EdgeGeometry`, and selection shown by the user's own system reacting to `Selected`.
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
+
+### styled
+
+```sh
+cargo run --example styled --features default_style
+```
+
+The optional default look, opted into piece by piece on the canvas:
+Bézier wires, a grid, a selection box, a node finder and default key bindings.
+
+![The styled example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png)
 
 ### math_graph
 
 ```sh
-cargo run --example math_graph
+cargo run --example math_graph --features default_style
 ```
 
-A port of egui_node_graph2's example over scalars and 2D vectors. It uses finder
-categories, vector widgets, and live evaluation: each node shows its computed
-value in a custom body.
+A live calculator. It shows the headless pattern end to end:
+- your own components on nodes (`MathOp`, `NumberValue`)
+- Bevy's text input inside a node
+- evaluation through `GraphQuery`
+- an `EditRequested` observer that rejects connections that would create a cycle
 
 ![The math_graph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/math_graph.png)
 
-### dialogue
-
-```sh
-cargo run --example dialogue
-```
-
-A dialogue tree editor. It shows multiline text, choice and checkbox widgets,
-constant-only parameters, inputs that take many wires, an undeletable Start
-node, `frame_all`, and walking the graph to build the script preview on the
-right.
-
-![The dialogue example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/dialogue.png)
-
 ## Concepts
 
-| egui_node_graph2 | bevy_noodle |
-|---|---|
-| `Graph<NodeData, DataType, ValueType>` | `Graph` (same shape: `nodes`, `inputs`, `outputs`, `connections`) |
-| `DataTypeTrait` | `DataTypeTrait` (`color`, `name`, plus an overridable `is_compatible_with`) |
-| `WidgetValueTrait::value_widget` draws a widget | `WidgetValueTrait::value_widget` *describes* one (`ValueWidget`), and `apply_edit` receives the edits |
-| `NodeDataTrait::bottom_ui` | `NodeDataTrait::spawn_body` (rebuilt when `body_revision` changes) |
-| `NodeTemplateTrait` | `NodeTemplateTrait` |
-| `NodeTemplateIter` | the template list passed to `NodeGraphEditor::new` |
-| `GraphEditorState` | `GraphEditorState` inside the `NodeGraphEditor` component |
-| `draw_graph_editor` returning `NodeResponse`s | `NodeGraphResponse` messages |
-| five generic parameters | one `NodeGraphSchema` marker type |
+### The graph is entities
 
-### Reading and changing the graph
-
-`NodeGraphEditor` is an ordinary component. Query it from any system. The graph,
-node positions, selection and camera live in `editor.state`, and changes made
-from code show up in the UI the same frame:
-
-```rust
-fn add_node_on_key(keys: Res<ButtonInput<KeyCode>>, mut editors: Query<&mut NodeGraphEditor<MyGraph>>) {
-    if keys.just_pressed(KeyCode::KeyN) {
-        let mut editor = editors.single_mut().unwrap();
-        let at = editor.pointer_world_position().unwrap_or_default();
-        editor.state.add_node(&Template::Add, at);
-    }
-}
+```text
+NodeCanvas                 your UI node: the viewport (no background)
+└── CanvasContent          pans and zooms; holds the nodes
+    ├── GraphNode          your UI node: style it however you like
+    │   └── … Port         your UI node marking a connection point
+    └── GraphNode …
+Edge                       spawned on connect: EdgeSource → output port, EdgeTarget → input port
 ```
 
-Other helpers: `try_connect`, `remove_node`, `select_only`, `frame_all`,
-`open_finder`, `port_screen_position` and `node_screen_rect`.
+You insert `NodeCanvas`, `CanvasContent`, `GraphNode` (+ `NodePosition`) and
+`Port`. On your entities, the library writes only `left`/`top` of each node's
+`Node` and the content's `UiTransform`.
 
-### Reacting to edits
+Edges are Bevy relationships (`EdgeSource`/`EdgeTarget`), so despawning a
+port or node automatically removes its edges.
 
-Every user action arrives as a `NodeGraphResponse<YourSchema>` message after it
-has been applied to the graph: connects and disconnects, created, deleted, moved
-and selected nodes, and `ValueChanged` for inline widget edits. This is the
-natural place to re-evaluate your graph:
+### Reading the graph
+
+`GraphQuery` is a system parameter with the lookups you need for evaluation:
+
+| Method | Returns |
+|---|---|
+| `nodes_of(canvas)` | the canvas' nodes |
+| `ports_of(node)`, `inputs_of(node)`, `outputs_of(node)` | a node's ports |
+| `sources_of(input)` | output ports feeding an input |
+| `targets_of(output)` | input ports an output feeds |
+| `edges_of(port)`, `edge_ports(edge)` | edges and their ends |
+| `node_of(entity)`, `canvas_of(entity)` | the node or canvas an entity is in |
+
+### Changing the graph
 
 ```rust
-fn evaluate(mut responses: MessageReader<NodeGraphResponse<MyGraph>>, editors: Query<&NodeGraphEditor<MyGraph>>) {
-    if responses.read().count() == 0 {
-        return;
-    }
-    for editor in &editors {
-        // Walk editor.graph(): follow graph.connection(input) to upstream outputs,
-        // or read graph.get_input(input).value for unconnected inputs.
-    }
-}
+commands.graph_edit(canvas, GraphEdit::Connect { from: output, to: input });
 ```
 
-### Inline widgets
+Edits are `Connect`, `Disconnect`, `MoveNodes`, `DeleteNodes` and `Select`.
+Spawning a node is not an edit: spawn it like any entity.
 
-| `ValueWidget` | UI | Edits |
-|---|---|---|
-| `None` | the parameter name only | none |
-| `Label(text)` | read-only text | none |
-| `Text { value, multiline }` | text field | `ValueEdit::Text` |
-| `Number(NumberField)` | number field, label scrubs | `ValueEdit::Number` |
-| `Numbers(Vec<NumberField>)` | a row of number fields (vectors, colors, ...) | `ValueEdit::Number { component, .. }` |
-| `Bool(b)` | checkbox | `ValueEdit::Bool` |
-| `Choice { options, selected }` | `<` value `>` cycler | `ValueEdit::Choice` |
+Every edit runs through one pipeline:
+1. **Validation.** Ports exist, directions differ, types match (equal
+   `PortType`s, or `PortType::ANY`), limits hold. A failure triggers
+   `EditRejected` with a reason.
+2. **`EditRequested`** is triggered on the canvas. Observers may `reject()`
+   it or rewrite `edit` (for example, snapping moves to a grid).
+3. **The edit is applied.**
+4. **`EditApplied`** is triggered on the canvas and written as a message, with
+   an `origin` (`Code`, `Interaction` or `Custom`) so undo stacks and netcode
+   can skip their own echoes.
 
-`NumberField` supports `range`, `speed` (scrub sensitivity), `decimals` and
-`integer` fields. Text fields are Bevy's own `EditableText`, so selection,
-clipboard and IME all work.
+Interactive moves stream `MoveNodes { is_final: false }` and end with one
+`is_final: true` edit carrying the gesture's `total`; record that one for undo.
 
-### Custom node UI
+```rust
+// Rules are just observers.
+app.add_observer(|mut request: On<EditRequested>, graph: GraphQuery| {
+    if let GraphEdit::Connect { from, to } = request.edit {
+        if would_create_cycle(&graph, from, to) {
+            request.reject();
+        }
+    }
+});
+```
 
-Implement `NodeDataTrait::spawn_body` to add anything under a node's parameters.
-Return a new `body_revision` whenever the body should be rebuilt; only the body
-is rebuilt, so the parameter widgets keep focus. See `math_graph`, which shows
-each node's evaluated value this way.
+### Actions: no bindings in the core
 
-### Styling and settings
+Editor operations are entity events. Trigger them from anything:
 
-Insert a `NodeGraphStyle` component on the editor entity to change colors, font,
-sizes and the grid. `NodeGraphEditor::with_settings` takes a `NodeGraphSettings`:
-zoom limits, scroll behavior (zoom or pan), whether a primary-button drag pans
-or box-selects, wire snapping distance, and whether dropping a wire opens the
-finder.
+```rust
+commands.trigger(DeleteSelection { canvas });
+commands.trigger(FrameAll { canvas, padding: 40.0 });
+```
 
-### Saving and loading
+The available actions are `DeleteSelection`, `SelectAll`, `ClearSelection`,
+`FrameAll`, `PanBy`, `ZoomBy` and `CancelInteraction`.
 
-Enable the `serde` feature, derive `Serialize`/`Deserialize` on your types, and
-persist `editor.state` (a `GraphEditorState`). Restore it with
-`NodeGraphEditor::new(templates).with_state(state)`.
+For keys, add `NoodleKeyBindingsPlugin` and a `CanvasKeymap` on the canvas:
 
-## Controls
+```rust
+CanvasKeymap::default()                          // Delete, Ctrl/Cmd+A, Escape, Ctrl/Cmd+0
+CanvasKeymap::empty().with(KeyBinding::new(KeyCode::KeyX, CanvasAction::DeleteSelection))
+```
 
-| Action | Input |
+Keys only reach a canvas while it has focus, and handled keys stop
+propagating, so your app's own shortcuts are unaffected.
+
+### Pointer interaction
+
+`CanvasInteraction` on each canvas configures:
+- `pan_button` (middle by default) and `box_select_button` (primary by default)
+- node dragging and connecting
+- picking up a wire by dragging it off an input
+- selection on press and raising pressed nodes
+- additive-selection and zoom modifier keys
+- `ScrollMode`, pinch zoom, zoom limits and the wire snap distance
+
+`CanvasInteraction::none()` turns everything off, so you can enable only what
+you want.
+
+**While dragging, the library sets state you can style or read:**
+- `WireSource`, `WireCandidate` and `WireTarget` markers on ports
+- `PendingWire` (with geometry) and `SelectionBox` on the canvas
+- `Selected` on selected nodes
+
+**Other signals:**
+- `WireDropped` fires when a wire is released over empty canvas.
+- `CanvasWantsInput` and the `canvas_wants_pointer_input` run condition tell
+  the rest of your app when the graph is using the pointer.
+
+### Optional default style (`default_style` feature)
+
+Nothing applies unless opted in per entity:
+
+| Add | To get |
 |---|---|
-| Add a node | Right-click the canvas, or drop a wire on empty canvas |
-| Connect | Drag from a port to a compatible port |
-| Disconnect | Drag a wire off its input |
-| Select | Click a node. Shift/Ctrl/Cmd+click toggles. Drag on empty canvas to box-select |
-| Move | Drag a node (moves the whole selection) |
-| Delete | The × in the title bar, or Delete/Backspace |
-| Pan | Middle-drag, Space+drag, or two-finger scroll |
-| Zoom | Mouse wheel, Ctrl/Cmd+scroll, or pinch |
-| Select all / frame all | Ctrl/Cmd+A, Ctrl/Cmd+0 |
-| Node finder | Type to filter, Enter adds the first match, Esc closes |
+| `EdgeStyle` on a canvas (or an edge, to override) | anti-aliased Bézier wires, plus the wire being dragged |
+| `CanvasGrid` on a canvas | a grid that pans and zooms (transparent background by default) |
+| `SelectionBoxStyle` on a canvas | a visible selection box |
+| `PortHighlight` + `PortColor` on a port | connection-state highlighting while dragging |
+| `SelectedBorderColor` on a node | a border that follows selection |
+| `NodeFinder` on a canvas | a searchable "add node" popup (right-click, or drop a wire on empty canvas; only templates that accept the wire are listed) |
 
-Keyboard shortcuts go to the editor under the pointer and are ignored while a
-text field has focus.
+`style::kit` has plain functions returning node bundles (`node`, `title`,
+`body`, `input`, `output`, `port_dot`). Use them, copy them, or ignore them.
 
-![The node finder, filtered to nodes that accept the dragged wire](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/node_finder.png)
+![The node finder, filtered to nodes that accept the dropped wire](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/node_finder.png)
 
-## How it works
+## Plugins
 
-- **Rendering is plain `bevy_ui`.** Each node is a UI hierarchy inside a "world"
-  container. Pan and zoom are one `UiTransform` on that container, so custom node
-  UI needs no special handling.
-- **Wires are `UiMaterial`s.** Each wire is one UI node covering the curve's bounding
-  box, with a fragment shader that draws an anti-aliased cubic Bézier. The grid is
-  a shader too.
-- **Port positions are read back after layout**, so wires attach to wherever the
-  ports actually end up, whatever your widgets do to the node's size.
-- **Views update incrementally.** A node's UI is rebuilt only when its structure
-  changes (parameters, connections, label). Value changes update widgets in place.
-- **Drags are robust to rebuilds.** Node and wire drags are tracked from the pointer
-  position, so they survive the node being rebuilt mid-drag.
+| Plugin | Contents |
+|---|---|
+| `NoodlePlugins` | Plugin group: `NoodleCorePlugin` + `NoodleInteractionPlugin`. Use `.disable::<NoodleInteractionPlugin>()` for a data-only graph. |
+| `NoodleKeyBindingsPlugin` | Opt-in, separate. |
+| `NoodleDefaultStylePlugin` | Opt-in, separate (feature `default_style`). |
+
+All systems run in `PostUpdate` in the `NoodleSystems::{Sync, Render, Measure}`
+sets around UI layout. Interaction is observer-driven, so idle canvases cost
+almost nothing.
 
 ## Known limitations
 
-- Text is rasterized at its unzoomed size, so it gets slightly soft when zoomed in
-  past 100%. Below 100% it stays sharp.
-- Wire and node dragging is implemented for the mouse pointer. Touch input is not
-  handled yet.
-- No undo/redo, copy/paste or node groups yet.
+- Text inside nodes is rasterized at its unzoomed size, so it softens when
+  zoomed in past 100%.
+- No built-in undo stack or serialization yet. `EditApplied` (with `origin`
+  and final moves) is designed for building them.
 
 ## License
 
