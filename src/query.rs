@@ -24,7 +24,7 @@ pub struct GraphQuery<'w, 's> {
             Option<&'static IncomingEdges>,
         ),
     >,
-    edges: Query<'w, 's, (&'static EdgeSource, &'static EdgeTarget)>,
+    edges: Query<'w, 's, (Entity, &'static EdgeSource, &'static EdgeTarget)>,
 }
 
 impl GraphQuery<'_, '_> {
@@ -39,7 +39,7 @@ impl GraphQuery<'_, '_> {
         let entity = self
             .edges
             .get(entity)
-            .map_or(entity, |(source, _)| source.0);
+            .map_or(entity, |(_, source, _)| source.0);
         self.nearest(entity, |e| self.canvases.contains(e))
     }
 
@@ -109,7 +109,16 @@ impl GraphQuery<'_, '_> {
         self.edges
             .get(edge)
             .ok()
-            .map(|(source, target)| (source.0, target.0))
+            .map(|(_, source, target)| (source.0, target.0))
+    }
+
+    /// Edges of a canvas (not of canvases nested inside it).
+    pub fn edges_in(&self, canvas: Entity) -> Vec<Entity> {
+        self.edges
+            .iter()
+            .filter(|(_, source, _)| self.canvas_of(source.0) == Some(canvas))
+            .map(|(edge, ..)| edge)
+            .collect()
     }
 
     /// The port at the other end of each edge of `port`: for an input, the

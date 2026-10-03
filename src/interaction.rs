@@ -2,12 +2,18 @@
 //! `bevy_picking` events (any pointer, any render target) and stateless: every
 //! drag is computed from the event's `delta`/`distance`. No keyboard bindings;
 //! modifier keys for additive selection and zoom are configurable.
+//!
+//! Edges with an [`EdgeHitbox`] are picked by a small backend running after
+//! Bevy's UI backend, so they get `Pointer` events like any UI entity.
 
 use bevy::input::gestures::PinchGesture;
 use bevy::input::mouse::MouseScrollUnit;
+use bevy::picking::backend::{HitData, PointerHits};
 use bevy::picking::hover::Hovered;
 use bevy::picking::pointer::{PointerButton, PointerId, PointerLocation};
+use bevy::picking::{Pickable, PickingSystems};
 use bevy::prelude::*;
+use bevy::ui::picking_backend::ui_picking;
 use bevy::ui::{
     ComputedNode, InteractionDisabled, Selected, UiScale, ui_transform::UiGlobalTransform,
 };
@@ -27,7 +33,11 @@ impl Plugin for NoodleInteractionPlugin {
             .add_observer(on_drag_enter)
             .add_observer(on_drag_leave)
             .add_observer(on_scroll)
-            .add_systems(Update, pinch_zoom);
+            .add_systems(Update, pinch_zoom)
+            .add_systems(
+                PreUpdate,
+                pick_edges.in_set(PickingSystems::Backend).after(ui_picking),
+            );
     }
 }
 
@@ -37,8 +47,8 @@ impl Plugin for NoodleInteractionPlugin {
 #[reflect(Component, Default)]
 #[require(Hovered)]
 pub struct CanvasInteraction {
-    /// Press a node to select it; press empty canvas to clear; drag on empty
-    /// canvas to box-select.
+    /// Press a node (or a pickable edge) to select it; press empty canvas to
+    /// clear; drag on empty canvas to box-select.
     pub select_button: Option<PointerButton>,
     /// Drag nodes (with the selection).
     pub drag_button: Option<PointerButton>,
@@ -148,6 +158,7 @@ struct Ctx<'w, 's> {
 enum Hop {
     Port(Entity),
     Node(Entity),
+    Edge(Entity),
     Canvas,
 }
 
@@ -158,6 +169,8 @@ impl Ctx<'_, '_> {
             Hop::Port(target)
         } else if self.graph.node_of(target) == Some(target) {
             Hop::Node(target)
+        } else if self.graph.edge_ports(target).is_some() {
+            Hop::Edge(target)
         } else if self.canvases.contains(target) {
             Hop::Canvas
         } else {
@@ -209,11 +222,15 @@ impl Ctx<'_, '_> {
         nodes
     }
 
-    /// Whether the event started on empty canvas (not inside one of its nodes).
+    /// Whether the event started on empty canvas (not on one of its nodes or edges).
     fn on_background(&self, canvas: Entity, original: Entity) -> bool {
-        self.graph
-            .node_of(original)
-            .is_none_or(|n| self.graph.canvas_of(n) != Some(canvas))
+        let own_edge = self.graph.edge_ports(original).is_some()
+            && self.graph.canvas_of(original) == Some(canvas);
+        !own_edge
+            && self
+                .graph
+                .node_of(original)
+                .is_none_or(|n| self.graph.canvas_of(n) != Some(canvas))
     }
 }
 
@@ -224,7 +241,7 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx, parents: Query<&ChildOf
     let settings = ctx.settings(canvas).clone();
     match hop {
         Hop::Port(_) if settings.connect_button == Some(press.button) => press.propagate(false),
-        Hop::Node(node) if settings.select_button == Some(press.button) => {
+        Hop::Node(node) | Hop::Edge(node) if settings.select_button == Some(press.button) => {
             press.propagate(false);
             let mode = if ctx.held(&settings.additive_keys) {
                 SelectMode::Toggle
@@ -241,6 +258,7 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx, parents: Query<&ChildOf
                 );
             }
             if settings.raise_on_press
+                && matches!(hop, Hop::Node(_))
                 && let Ok(parent) = parents.get(node)
             {
                 ctx.commands.entity(parent.parent()).add_child(node);
@@ -588,6 +606,125 @@ fn pinch_zoom(
     };
     let anchor = canvas_local(computed, transform, location.position);
     view.zoom_around(anchor, 1.0 + magnify, settings.zoom_min, settings.zoom_max);
+}
+
+/// Pointer hits on edges with an [`EdgeHitbox`]. An edge is hit only where
+/// its canvas is the topmost UI under the pointer (or, for edges above nodes,
+/// one of its nodes, but not a port), so overlays, clipping and ports keep
+/// working. Hits share the UI's layer, on top.
+#[allow(clippy::too_many_arguments, reason = "system parameters")]
+fn pick_edges(
+    mut messages: ParamSet<(MessageReader<PointerHits>, MessageWriter<PointerHits>)>,
+    pointers: Query<(&PointerId, &PointerLocation)>,
+    cameras: Query<&Camera>,
+    ui_nodes: Query<(), With<ComputedNode>>,
+    pickables: Query<&Pickable>,
+    parents: Query<&ChildOf>,
+    contents: Query<(&ComputedNode, &UiGlobalTransform), With<CanvasContent>>,
+    hitboxes: Query<(Entity, &EdgeHitbox)>,
+    graph: GraphQuery,
+) {
+    /// Minimum pick radius, in logical pixels.
+    const MIN_RADIUS: f32 = 4.0;
+    let ui_hits: Vec<PointerHits> = messages
+        .p0()
+        .read()
+        .filter(|hits| {
+            hits.picks
+                .first()
+                .is_some_and(|(e, _)| ui_nodes.contains(*e))
+        })
+        .cloned()
+        .collect();
+    if hitboxes.is_empty() {
+        return;
+    }
+    for hits in ui_hits {
+        // The topmost UI entity taking part in picking.
+        let Some((top, data)) = hits.picks.iter().find(|(e, _)| {
+            pickables
+                .get(*e)
+                .map_or(true, |p| p.is_hoverable || p.should_block_lower)
+        }) else {
+            continue;
+        };
+        let (Some(location), Ok(camera)) = (
+            pointers
+                .iter()
+                .find(|(id, _)| **id == hits.pointer)
+                .and_then(|(_, l)| l.location()),
+            cameras.get(data.camera),
+        ) else {
+            continue;
+        };
+        let mut point = location.position * camera.target_scaling_factor().unwrap_or(1.0);
+        if let Some(viewport) = camera.physical_viewport_rect() {
+            point -= viewport.min.as_vec2();
+        }
+        // The canvases around `top`, innermost first, and whether edges below
+        // nodes may be hit there (only over empty canvas). None over a port.
+        let mut canvases = Vec::new();
+        let (mut over_node, mut over_port) = (false, false);
+        for e in std::iter::once(*top).chain(parents.iter_ancestors(*top)) {
+            if graph.port(e).is_some() {
+                over_port = true;
+            } else if graph.node_of(e) == Some(e) {
+                over_node = true;
+            } else if graph.canvas_of(e) == Some(e) {
+                if !over_port {
+                    canvases.push((e, !over_node));
+                }
+                (over_node, over_port) = (false, false);
+            }
+        }
+        let mut picks = Vec::new();
+        for (level, (canvas, below_too)) in canvases.into_iter().enumerate() {
+            let Some((computed, transform)) =
+                graph.content_of(canvas).and_then(|c| contents.get(c).ok())
+            else {
+                continue;
+            };
+            let Some(inverse) = transform.try_inverse() else {
+                continue;
+            };
+            let local = inverse.transform_point2(point) * computed.inverse_scale_factor();
+            let min_radius = MIN_RADIUS / transform.matrix2.x_axis.length().max(1e-6);
+            for (edge, hitbox) in &hitboxes {
+                let radius = hitbox.radius.max(min_radius);
+                let bounds = hitbox
+                    .points
+                    .iter()
+                    .fold(Rect::EMPTY, |r, p| r.union_point(*p));
+                if (hitbox.below_nodes && !below_too)
+                    || !bounds.inflate(radius).contains(local)
+                    || graph.canvas_of(edge) != Some(canvas)
+                {
+                    continue;
+                }
+                let distance = hitbox.distance(local);
+                if distance <= radius {
+                    picks.push((level, distance, edge, local));
+                }
+            }
+        }
+        if picks.is_empty() {
+            continue;
+        }
+        // Outer graphs draw over the nodes holding inner ones; then nearest first.
+        picks.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.total_cmp(&b.1)));
+        let picks = picks
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, _, edge, local))| {
+                let depth = -1.0 + i as f32 * 1e-6;
+                let hit = HitData::new(data.camera, depth, Some(local.extend(0.0)), None);
+                (edge, hit)
+            })
+            .collect();
+        messages
+            .p1()
+            .write(PointerHits::new(hits.pointer, picks, hits.order));
+    }
 }
 
 /// Window position → canvas-local pixels.

@@ -11,9 +11,10 @@
 //! [`kit`] has functions returning ready-made node bundles.
 
 pub mod kit;
-pub(crate) mod render;
+mod render;
 
 use bevy::picking::Pickable;
+use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, Selected};
 
@@ -63,6 +64,10 @@ pub struct EdgeStyle {
     pub layer: EdgeLayer,
     /// End wires at port rims instead of centers.
     pub trim_to_ports: bool,
+    /// The color of a [`Selected`] edge. `None`: unchanged.
+    pub selected_color: Option<Color>,
+    /// Extra width while the pointer is over the edge.
+    pub hover_width: f32,
 }
 
 impl Default for EdgeStyle {
@@ -76,6 +81,8 @@ impl Default for EdgeStyle {
             flow_speed: 0.0,
             layer: EdgeLayer::AboveNodes,
             trim_to_ports: true,
+            selected_color: Some(Color::srgb_u8(250, 204, 92)),
+            hover_width: 2.0,
         }
     }
 }
@@ -149,11 +156,20 @@ pub struct SelectedBorderColor {
 
 /// Library-owned visuals, linked from what they draw.
 #[derive(Component)]
-struct EdgeVisual(Handle<WireMaterial>);
-#[derive(Component)]
 struct GridVisual(Entity);
 #[derive(Component)]
 struct BoxVisual(Entity);
+
+/// On a wire's UI node: the edge (or pending wire) it draws. The node is a
+/// sibling under the canvas content, so the edge itself stays a plain entity
+/// that pointer events can reach, and it is despawned with the edge.
+#[derive(Component)]
+#[relationship(relationship_target = EdgeVisual)]
+pub(crate) struct DrawsEdge(Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = DrawsEdge, linked_spawn)]
+pub(crate) struct EdgeVisual(Vec<Entity>);
 
 fn place(node: &mut Node, rect: Rect) {
     node.display = Display::Flex;
@@ -176,23 +192,34 @@ fn draw_edges(
             Option<&EdgeTarget>,
             Option<&PendingWire>,
             Option<&EdgeVisual>,
-            Option<&mut Node>,
-            Option<&mut ZIndex>,
+            Option<&mut EdgeHitbox>,
+            Has<Selected>,
+            Option<&PickingInteraction>,
         ),
         Or<(With<Edge>, With<PendingWire>)>,
     >,
+    mut visuals: Query<(
+        &mut Node,
+        &mut ZIndex,
+        &MaterialNode<WireMaterial>,
+        &ChildOf,
+    )>,
     ports: Query<(
         &Port,
         Option<&PortColor>,
         &ComputedNode,
         Option<&UiTransform>,
     )>,
-    parented: Query<(), With<ChildOf>>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
-    for (entity, geometry, own, source, target, wire, visual, node, z_index) in &mut edges {
+    for (entity, geometry, own, source, target, wire, visual, hitbox, selected, pointer) in
+        &mut edges
+    {
         let canvas = wire.map(|w| w.canvas).or_else(|| graph.canvas_of(entity));
         let Some(style) = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten())) else {
+            continue;
+        };
+        let Some(content) = canvas.and_then(|c| graph.content_of(c)) else {
             continue;
         };
         // Ports at each end of the curve (output → input), if any.
@@ -221,6 +248,7 @@ fn draw_edges(
             shape.start += shape.start_tangent * radius(start);
             shape.end += shape.end_tangent * radius(end);
         }
+        let points = shape.bezier(style.curvature);
         let port_color = [start, end]
             .into_iter()
             .flatten()
@@ -229,56 +257,67 @@ fn draw_edges(
             .color
             .or(port_color)
             .unwrap_or(Color::srgb(0.8, 0.82, 0.86));
+        let mut colors = [color, style.end_color.unwrap_or(color)];
+        if let (true, Some(highlight)) = (selected, style.selected_color) {
+            colors = [highlight; 2];
+        }
         let alpha = if wire.is_some() { 0.85 } else { 1.0 };
-        let colors =
-            [color, style.end_color.unwrap_or(color)].map(|c| c.with_alpha(c.alpha() * alpha));
+        let colors = colors.map(|c| c.with_alpha(c.alpha() * alpha));
+        let hovered = pointer.is_some_and(|p| *p != PickingInteraction::None);
+        let width = style.width + if hovered { style.hover_width } else { 0.0 };
         let dash = style.dash.unwrap_or_default().max(Vec2::ZERO);
-        let pattern = dash.extend(style.flow_speed);
-        let (rect, material) =
-            wire_material(shape.bezier(style.curvature), colors, style.width, pattern);
+        let (rect, material) = wire_material(points, colors, width, dash.extend(style.flow_speed));
         let z = match (wire, style.layer) {
             (Some(_), _) => ZIndex(i32::MAX),
             (None, EdgeLayer::AboveNodes) => ZIndex(i32::MAX - 1),
             (None, EdgeLayer::BelowNodes) => ZIndex(-1),
         };
-        match (visual, node) {
-            (Some(visual), Some(mut node)) => {
+        if wire.is_none() && geometry.valid {
+            let area = EdgeHitbox {
+                points,
+                radius: style.width / 2.0 + 3.0,
+                below_nodes: style.layer == EdgeLayer::BelowNodes,
+            };
+            match hitbox {
+                Some(mut hitbox) => _ = hitbox.set_if_neq(area),
+                None => _ = commands.entity(entity).insert(area),
+            }
+        }
+        let mut node = Node {
+            position_type: PositionType::Absolute,
+            display: Display::None,
+            ..default()
+        };
+        let visual = visual.and_then(|v| v.0.first().copied());
+        match visual.and_then(|v| Some((v, visuals.get_mut(v).ok()?))) {
+            Some((visual, (mut current, mut z_index, handle, parent))) => {
                 if geometry.valid {
-                    place(&mut node, rect);
+                    place(&mut current, rect);
                 } else {
-                    node.display = Display::None;
+                    current.display = Display::None;
                 }
-                if materials.get(&visual.0) != Some(&material)
-                    && let Some(mut current) = materials.get_mut(&visual.0)
+                if materials.get(&handle.0) != Some(&material)
+                    && let Some(mut current) = materials.get_mut(&handle.0)
                 {
                     *current = material;
                 }
-                z_index.map(|mut current| current.set_if_neq(z));
+                z_index.set_if_neq(z);
+                if parent.parent() != content {
+                    commands.entity(visual).insert(ChildOf(content));
+                }
             }
-            _ => {
-                let Some(content) = canvas.and_then(|c| graph.content_of(c)) else {
-                    continue;
-                };
-                let mut node = Node {
-                    position_type: PositionType::Absolute,
-                    display: Display::None,
-                    ..default()
-                };
+            None => {
                 if geometry.valid {
                     place(&mut node, rect);
                 }
-                let handle = materials.add(material);
-                commands.entity(entity).insert((
+                commands.spawn((
                     node,
-                    MaterialNode(handle.clone()),
-                    EdgeVisual(handle),
+                    MaterialNode(materials.add(material)),
                     z,
                     Pickable::IGNORE,
+                    DrawsEdge(entity),
+                    ChildOf(content),
                 ));
-                // Pending wires and edges spawned without a parent.
-                if !parented.contains(entity) {
-                    commands.entity(entity).insert(ChildOf(content));
-                }
             }
         }
     }

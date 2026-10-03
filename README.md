@@ -67,7 +67,7 @@ fn setup(mut commands: Commands) {
 | `cargo run --example edge_styles --features default_style` | Every `EdgeStyle` option: gradients, dashes, marching ants and travelling pulses, animated in the shader. Edges copy their look from the node they leave. |
 | `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
 | `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
-| `cargo run --example undo --features default_style,scene` | Undo and redo from whole-graph snapshots, recorded on `EditApplied`. |
+| `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
 | `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
 
 ![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
@@ -76,7 +76,7 @@ fn setup(mut commands: Commands) {
 ![The edge_styles example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/edge_styles.png)
 ![The subgraph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/subgraph.png)
 ![The scene_builder_3d example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png)
-![The undo example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/undo.png)
+![The editor example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/editor.png)
 ![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
 
 ## Concepts
@@ -90,9 +90,9 @@ NodeCanvas              your UI node: one graph and its viewport
 PendingWire             the wire being dragged; also has EdgeGeometry
 ```
 
-- **Reading.** `GraphQuery` is a system param: `nodes_of`, `ports_of`,
-  `inputs_of`, `outputs_of`, `peers_of`, `edges_of`, `edge_ports`, `node_of`,
-  `canvas_of`, `check_connection`.
+- **Reading.** `GraphQuery` is a system param: `nodes_of`, `edges_in`,
+  `ports_of`, `inputs_of`, `outputs_of`, `peers_of`, `edges_of`, `edge_ports`,
+  `node_of`, `canvas_of`, `check_connection`.
 - **Writing.** `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`.
   The other edits are `Disconnect`, `MoveNodes`, `DeleteNodes` and `Select`.
   Spawning a node is just a spawn.
@@ -103,9 +103,13 @@ PendingWire             the wire being dragged; also has EdgeGeometry
   with an `origin` (`Code`, `Interaction` or `Custom`), the `created` edge and
   the `(output, input)` `ports` of a connect or disconnect. Drags end with a
   `MoveNodes { is_final: true, total, .. }`.
-- **Interaction state** you can style: `Selected` on nodes, `WireCandidate` and
-  `WireTarget` on ports, `SelectionBox` on the canvas. A `WireDropped` event
-  fires when a wire is released over empty canvas.
+- **Interaction state** you can style: `Selected` on nodes and edges,
+  `WireCandidate` and `WireTarget` on ports, `SelectionBox` on the canvas. A
+  `WireDropped` event fires when a wire is released over empty canvas.
+- **Edges are pickable.** An edge with an `EdgeHitbox` (the default style adds
+  one) gets `Pointer` events like any UI entity, from a small picking backend
+  that respects overlays, clipping and ports. Clicking selects it, and
+  `DeleteNodes` removes listed edges along with nodes.
 - **Bindings** are just systems:
   `commands.graph_edit(canvas, GraphEdit::DeleteNodes { nodes: selected.iter().collect() })`.
 
@@ -114,8 +118,8 @@ PendingWire             the wire being dragged; also has EdgeGeometry
 Each piece is opt-in on the canvas or the entity:
 - **`EdgeStyle`:** wires drawn above or below the nodes, ending at port rims,
   with optional gradients (`end_color`), dashes (`dash`) and animated flow
-  (`flow_speed`), all in the shader. Put it on a canvas, or on a single edge
-  to override.
+  (`flow_speed`), all in the shader, and hover and selection highlights. Put
+  it on a canvas, or on a single edge to override.
 - **`CanvasGrid`:** a background grid.
 - **`SelectionBoxStyle`:** draws the selection box.
 - **`PortHighlight` + `PortColor`:** ports show connection and drag state.
@@ -124,11 +128,16 @@ Each piece is opt-in on the canvas or the entity:
 
 ### Snapshots (`scene`)
 
-`scene::snapshot(world, canvas)` captures a graph as a Bevy `DynamicWorld`:
-nodes, ports, edges, nested canvases, and your reflected components (entity
-references are remapped). `scene::restore(world, canvas, &snapshot)` replaces
-the graph with it. Use it for undo, copy and paste, or files via
-`DynamicWorld::serialize`. See the `undo` and `save_load` examples.
+Snapshots are Bevy `DynamicWorld`s of nodes, ports, edges, nested canvases and
+your reflected components, with entity references remapped:
+- `scene::snapshot(world, canvas)` captures a whole graph, and
+  `scene::restore(world, canvas, &snapshot)` puts it back (undo, loading).
+- `scene::snapshot_nodes(world, &nodes)` captures some nodes and the edges
+  between them, and `scene::insert(world, canvas, &snapshot)` adds them to any
+  graph (copy and paste).
+- Save to files with `DynamicWorld::serialize`.
+
+See the `editor` and `save_load` examples.
 
 ## Migrating from 0.2
 

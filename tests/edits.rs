@@ -396,3 +396,42 @@ fn re_adding_a_child_moves_it_last() {
     world.entity_mut(parent).add_child(first);
     assert_eq!(**world.get::<Children>(parent).unwrap(), [second, first]);
 }
+
+#[test]
+fn edges_can_be_selected_and_deleted_with_nodes() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (nb, b) = node(w, content, &[Port::input(NUM)]);
+    let (nc, cc) = node(w, content, &[Port::input(NUM), Port::output(NUM)]);
+    let connect = |w: &mut World, from, to| {
+        w.graph_edit(c, GraphEdit::Connect { from, to })
+            .unwrap()
+            .unwrap()
+    };
+    let e1 = connect(w, a[0], b[0]);
+    let e2 = connect(w, a[0], cc[0]);
+    let select = |w: &mut World, nodes, mode| {
+        w.graph_edit(c, GraphEdit::Select { nodes, mode }).unwrap();
+    };
+    select(w, vec![e1, nb], SelectMode::Replace);
+    assert!(w.get::<Selected>(e1).is_some() && w.get::<Selected>(nb).is_some());
+    select(w, vec![nc], SelectMode::Replace);
+    assert!(w.get::<Selected>(e1).is_none(), "replace clears edges too");
+    log(&mut app);
+
+    // Deleting a selection of one edge and one node.
+    let w = app.world_mut();
+    w.graph_edit(
+        c,
+        GraphEdit::DeleteNodes {
+            nodes: vec![e2, nb],
+        },
+    )
+    .unwrap();
+    assert!(w.get_entity(e1).is_err() && w.get_entity(e2).is_err());
+    assert!(w.get_entity(nb).is_err() && w.get_entity(nc).is_ok());
+    let log = log(&mut app);
+    assert_eq!(log.iter().filter(|l| *l == "applied disconnect").count(), 2);
+}

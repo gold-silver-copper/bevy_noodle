@@ -94,10 +94,10 @@ pub mod prelude {
     #[cfg(feature = "default_style")]
     pub use crate::style::{CanvasGrid, EdgeLayer, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
     pub use crate::{
-        CanvasContent, CanvasInteraction, CanvasView, Edge, EdgeGeometry, EdgeSource, EdgeTarget,
-        EditApplied, EditOrigin, EditRequested, FrameAll, GraphCommandsExt, GraphEdit, GraphNode,
-        GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition, NoodleCorePlugin,
-        NoodleInteractionPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortType,
-        SelectMode, WireDropped,
+        CanvasContent, CanvasInteraction, CanvasView, Edge, EdgeGeometry, EdgeHitbox, EdgeSource,
+        EdgeTarget, EditApplied, EditOrigin, EditRequested, FrameAll, GraphCommandsExt, GraphEdit,
+        GraphNode, GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition,
+        NoodleCorePlugin, NoodleInteractionPlugin, NoodlePlugins, PendingWire, Port, PortDirection,
+        PortType, SelectMode, WireDropped,
     };
 }

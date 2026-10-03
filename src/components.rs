@@ -206,6 +206,43 @@ pub struct OutgoingEdges(Vec<Entity>);
 #[relationship_target(relationship = EdgeTarget, linked_spawn)]
 pub struct IncomingEdges(Vec<Entity>);
 
+/// Makes an [`Edge`] pickable: it gets `Pointer` events (and can be selected)
+/// when the pointer is within `radius` of the cubic Bézier `points` (graph
+/// space). The default style keeps this in sync with what it draws; set it
+/// yourself for edges you draw.
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
+#[reflect(Component)]
+pub struct EdgeHitbox {
+    pub points: [Vec2; 4],
+    pub radius: f32,
+    /// Drawn under nodes, so only pickable over empty canvas.
+    pub below_nodes: bool,
+}
+
+impl EdgeHitbox {
+    /// A point on the curve, `t` in `0..=1`.
+    pub fn point(&self, t: f32) -> Vec2 {
+        let [p0, p1, p2, p3] = self.points;
+        let u = 1.0 - t;
+        p0 * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + p3 * (t * t * t)
+    }
+
+    /// Distance from `point` to the curve (sampled like the default wire shader).
+    pub fn distance(&self, point: Vec2) -> f32 {
+        const SAMPLES: usize = 32;
+        let mut previous = self.points[0];
+        (1..=SAMPLES)
+            .map(|i| {
+                let current = self.point(i as f32 / SAMPLES as f32);
+                let (pa, ba) = (point - previous, current - previous);
+                let h = (pa.dot(ba) / ba.length_squared().max(1e-6)).clamp(0.0, 1.0);
+                previous = current;
+                pa.distance(ba * h)
+            })
+            .fold(f32::MAX, f32::min)
+    }
+}
+
 /// Where an [`Edge`] or [`PendingWire`] runs, output → input, in graph space.
 /// Draw edges from it however you like.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]

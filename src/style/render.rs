@@ -75,15 +75,6 @@ impl UiMaterial for GridMaterial {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn cubic_bezier(points: [Vec2; 4], t: f32) -> Vec2 {
-    let u = 1.0 - t;
-    points[0] * (u * u * u)
-        + points[1] * (3.0 * u * u * t)
-        + points[2] * (3.0 * u * t * t)
-        + points[3] * (t * t * t)
-}
-
 /// A wire material for `points` (graph space), plus the node rect it needs.
 pub(crate) fn wire_material(
     points: [Vec2; 4],
@@ -113,7 +104,7 @@ pub(crate) fn wire_material(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::EdgeGeometry;
+    use crate::components::{EdgeGeometry, EdgeHitbox};
 
     #[test]
     fn wire_bounds_contain_the_curve() {
@@ -126,8 +117,13 @@ mod tests {
         };
         let points = geometry.bezier(0.5);
         let (rect, _) = wire_material(points, [Color::WHITE; 2], 3.0, Vec3::ZERO);
+        let curve = EdgeHitbox {
+            points,
+            radius: 0.0,
+            below_nodes: false,
+        };
         for step in 0..=20 {
-            assert!(rect.contains(cubic_bezier(points, step as f32 / 20.0)));
+            assert!(rect.contains(curve.point(step as f32 / 20.0)));
         }
     }
 }

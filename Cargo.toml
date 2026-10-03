@@ -50,7 +50,7 @@ name = "edge_styles"
 required-features = ["default_style"]
 
 [[example]]
-name = "undo"
+name = "editor"
 required-features = ["default_style", "scene"]
 
 [[example]]

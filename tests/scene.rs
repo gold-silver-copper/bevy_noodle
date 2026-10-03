@@ -111,3 +111,45 @@ fn snapshot_serializes_to_ron() {
         "{ron}"
     );
 }
+
+#[test]
+fn copy_some_nodes_and_paste_them_anywhere() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content, [out, inp]) = graph(w);
+    // A third node also fed by `out`, left out of the copy.
+    let third = w
+        .spawn((GraphNode, NodePosition::default(), ChildOf(content)))
+        .id();
+    let other_in = w
+        .spawn((Port::input(NUM), Node::default(), ChildOf(third)))
+        .id();
+    for to in [inp, other_in] {
+        w.graph_edit(canvas, GraphEdit::Connect { from: out, to })
+            .unwrap();
+    }
+    let node_of = |w: &World, port| w.get::<ChildOf>(port).unwrap().parent();
+    let copied = scene::snapshot_nodes(w, &[node_of(w, out), node_of(w, inp)]);
+    assert_eq!(copied.entities.len(), 5, "two nodes, two ports, one edge");
+
+    // Paste into the same graph: the copy is wired only to itself.
+    let map = scene::insert(w, canvas, &copied).unwrap();
+    let (new_out, new_in) = (map[&out], map[&inp]);
+    assert_eq!(w.get::<OutgoingEdges>(out).unwrap().len(), 2);
+    let new_edges: Vec<_> = w.get::<OutgoingEdges>(new_out).unwrap().iter().collect();
+    assert_eq!(new_edges.len(), 1);
+    assert_eq!(w.get::<EdgeTarget>(new_edges[0]).unwrap().0, new_in);
+    assert_eq!(w.get::<ChildOf>(new_edges[0]).unwrap().parent(), content);
+    assert_eq!(
+        w.get::<ChildOf>(node_of(w, new_out)).unwrap().parent(),
+        content
+    );
+
+    // And into another graph.
+    let other = w.spawn((NodeCanvas, Node::default())).id();
+    let other_content = w.spawn((CanvasContent, ChildOf(other))).id();
+    let map = scene::insert(w, other, &copied).unwrap();
+    let edge = w.get::<OutgoingEdges>(map[&out]).unwrap()[0];
+    assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), other_content);
+    assert_eq!(w.get::<Children>(other_content).unwrap().len(), 3);
+}

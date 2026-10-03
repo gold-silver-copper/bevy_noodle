@@ -1,16 +1,16 @@
 //! Graph snapshots with Bevy's [`DynamicWorld`] (feature `scene`): save and
-//! load, undo, copy between canvases.
+//! load, undo, copy and paste.
 //!
-//! A snapshot holds every entity under a canvas' [`CanvasContent`]: nodes,
-//! ports, edges, nested canvases, and every reflected component on them
+//! A snapshot holds nodes with everything inside them (ports, nested
+//! canvases) and the edges between them, with every reflected component
 //! (register your own with `#[derive(Reflect)] #[reflect(Component)]`),
-//! except derived state that is recomputed after a restore (computed layout,
+//! except derived state that is recomputed after an insert (computed layout,
 //! text layout, visibility, measured port anchors, edge geometry and visuals).
 //! Serialize it with [`DynamicWorld::serialize`] (Bevy's `serialize` feature).
-//! References to entities outside the graph are not kept.
+//! References to entities outside the snapshot are not kept.
 
 use bevy::camera::visibility::{InheritedVisibility, ViewVisibility};
-use bevy::ecs::entity::EntityHashMap;
+use bevy::ecs::entity::{EntityHashMap, EntityHashSet};
 use bevy::prelude::*;
 use bevy::text::{ComputedTextBlock, TextLayoutInfo};
 use bevy::ui::widget::TextNodeFlags;
@@ -20,23 +20,99 @@ use bevy::ui::{
 };
 use bevy::world_serialization::{DynamicWorld, DynamicWorldBuilder, WorldInstanceSpawnError};
 
-use crate::components::{CanvasContent, EdgeGeometry, PendingWire, PortAnchor};
+use crate::components::*;
 
-/// Capture the graph of `canvas`. `None` if it has no [`CanvasContent`].
+/// Capture the whole graph of `canvas`. `None` if it has no [`CanvasContent`].
 pub fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
     let content = content(world, canvas)?;
-    let registry = world.resource::<AppTypeRegistry>().read();
+    let roots = world.get::<Children>(content).map_or(&[][..], |c| c);
+    Some(build(world, subtrees(world, roots)))
+}
+
+/// Capture some nodes (e.g. the selection, to copy) with the edges between
+/// them. Edges to nodes left out are dropped.
+pub fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
+    let mut entities = subtrees(world, nodes);
+    let inside: EntityHashSet = entities.iter().copied().collect();
+    let edges = entities
+        .iter()
+        .filter_map(|e| world.get::<OutgoingEdges>(*e))
+        .flat_map(|edges| edges.iter())
+        .filter(|edge| {
+            world
+                .get::<EdgeTarget>(*edge)
+                .is_some_and(|target| inside.contains(&target.0))
+        })
+        .collect::<Vec<_>>();
+    entities.extend(edges);
+    build(world, entities)
+}
+
+/// Add a snapshot's entities to the graph of `canvas` (e.g. to paste), and
+/// return the map from snapshot entities to the new ones.
+pub fn insert(
+    world: &mut World,
+    canvas: Entity,
+    snapshot: &DynamicWorld,
+) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
+    let mut map = EntityHashMap::default();
+    let Some(content) = content(world, canvas) else {
+        return Ok(map);
+    };
+    snapshot.write_to_world(world, &mut map)?;
+    for entity in snapshot.entities.iter().map(|e| map[&e.entity]) {
+        // Top-level entities still point at the snapshot's content: adopt them.
+        let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
+        if parent.is_none_or(|p| world.get_entity(p).is_err()) {
+            world.entity_mut(content).add_child(entity);
+        }
+        // Writing skips relationship hooks; reinserting links edges to ports.
+        let ends = world
+            .get::<EdgeSource>(entity)
+            .zip(world.get::<EdgeTarget>(entity));
+        if let Some((source, target)) = ends.map(|(s, t)| (*s, *t)) {
+            world.entity_mut(entity).insert((source, target));
+        }
+    }
+    Ok(map)
+}
+
+/// Replace the graph of `canvas` with `snapshot` (e.g. to load or undo), and
+/// return the map from snapshot entities to the new ones.
+pub fn restore(
+    world: &mut World,
+    canvas: Entity,
+    snapshot: &DynamicWorld,
+) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
+    if let Some(content) = content(world, canvas) {
+        world.entity_mut(content).despawn_related::<Children>();
+    }
+    insert(world, canvas, snapshot)
+}
+
+/// `roots` and their descendants, minus visuals and wires being dragged.
+fn subtrees(world: &World, roots: &[Entity]) -> Vec<Entity> {
     let mut entities = Vec::new();
-    let mut stack = vec![content];
+    let mut stack: Vec<_> = roots.iter().rev().copied().collect();
     while let Some(entity) = stack.pop() {
+        #[cfg(feature = "default_style")]
+        if world.get::<crate::style::DrawsEdge>(entity).is_some() {
+            continue;
+        }
+        if world.get::<PendingWire>(entity).is_some() {
+            continue;
+        }
+        entities.push(entity);
         if let Some(children) = world.get::<Children>(entity) {
             stack.extend(children.iter().rev());
         }
-        if entity != content && world.get::<PendingWire>(entity).is_none() {
-            entities.push(entity);
-        }
     }
-    let builder = DynamicWorldBuilder::from_world(world, &registry)
+    entities
+}
+
+fn build(world: &World, entities: Vec<Entity>) -> DynamicWorld {
+    let registry = world.resource::<AppTypeRegistry>().read();
+    DynamicWorldBuilder::from_world(world, &registry)
         .deny_component::<ComputedNode>()
         .deny_component::<ComputedStackIndex>()
         .deny_component::<ComputedUiTargetCamera>()
@@ -49,33 +125,12 @@ pub fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
         .deny_component::<InheritedVisibility>()
         .deny_component::<ViewVisibility>()
         .deny_component::<EdgeGeometry>()
-        .deny_component::<PortAnchor>();
-    #[cfg(feature = "default_style")]
-    let builder = builder.deny_component::<MaterialNode<crate::style::render::WireMaterial>>();
-    Some(builder.extract_entities(entities.into_iter()).build())
-}
-
-/// Replace the graph of `canvas` with `snapshot`, returning the map from
-/// snapshot entities to the new ones.
-pub fn restore(
-    world: &mut World,
-    canvas: Entity,
-    snapshot: &DynamicWorld,
-) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
-    let mut map = EntityHashMap::default();
-    let Some(content) = content(world, canvas) else {
-        return Ok(map);
-    };
-    world.entity_mut(content).despawn_related::<Children>();
-    snapshot.write_to_world(world, &mut map)?;
-    // Top-level entities still point at the snapshot's content: adopt them.
-    for entity in snapshot.entities.iter().map(|e| map[&e.entity]) {
-        let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
-        if parent.is_none_or(|p| world.get_entity(p).is_err()) {
-            world.entity_mut(content).add_child(entity);
-        }
-    }
-    Ok(map)
+        .deny_component::<PortAnchor>()
+        // Rebuilt from the edges on insert.
+        .deny_component::<OutgoingEdges>()
+        .deny_component::<IncomingEdges>()
+        .extract_entities(entities.into_iter())
+        .build()
 }
 
 fn content(world: &World, canvas: Entity) -> Option<Entity> {

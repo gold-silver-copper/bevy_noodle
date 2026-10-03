@@ -29,11 +29,12 @@ pub enum GraphEdit {
         total: Vec2,
         is_final: bool,
     },
-    /// Despawn nodes with their ports and edges.
+    /// Despawn nodes with their ports and edges. Edges listed are
+    /// disconnected too, so a whole selection can be deleted at once.
     DeleteNodes {
         nodes: Vec<Entity>,
     },
-    /// Change which nodes carry [`Selected`].
+    /// Change which nodes and edges carry [`Selected`].
     Select {
         nodes: Vec<Entity>,
         mode: SelectMode,
@@ -248,8 +249,11 @@ fn run(
             None
         }
         GraphEdit::DeleteNodes { nodes } => {
+            // Listed edges are already gone.
             for node in nodes {
-                world.despawn(*node);
+                if let Ok(node) = world.get_entity_mut(*node) {
+                    node.despawn();
+                }
             }
             None
         }
@@ -335,24 +339,34 @@ fn plan_edit(
             };
         }
         GraphEdit::DeleteNodes { mut nodes } => {
+            let listed: Vec<_> = graph
+                .edges_in(canvas)
+                .into_iter()
+                .filter(|e| nodes.contains(e))
+                .collect();
             nodes.retain(mine);
             nodes.dedup();
-            if nodes.is_empty() {
+            if nodes.is_empty() && listed.is_empty() {
                 return Err(RejectReason::Empty);
             }
             let mut edges: Vec<_> = nodes
                 .iter()
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
+                .chain(listed.iter().copied())
                 .collect();
             edges.sort();
             edges.dedup();
             plan.disconnect = with_ports(&graph, edges);
+            // Listed edges stay listed: the edit is planned again after
+            // `EditRequested`.
+            nodes.extend(listed);
             plan.edit = GraphEdit::DeleteNodes { nodes };
         }
         GraphEdit::Select { mut nodes, mode } => {
-            nodes.retain(mine);
-            for node in graph.nodes_of(canvas) {
+            let edges = graph.edges_in(canvas);
+            nodes.retain(|e| mine(e) || edges.contains(e));
+            for node in graph.nodes_of(canvas).into_iter().chain(edges) {
                 let (listed, on) = (nodes.contains(&node), selected.contains(node));
                 let want = match mode {
                     SelectMode::Replace => listed,

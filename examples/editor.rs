@@ -1,12 +1,15 @@
-//! Undo and redo in ~60 lines of app code, with whole-graph snapshots
-//! (feature `scene`). Every applied edit that matters (not selection, and only
-//! the final step of a drag) records one; restoring one swaps the graph back.
+//! Editor commands from snapshots (feature `scene`), in plain app code:
 //!
-//! Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl+Y redoes. Right-click adds a
-//! node, Delete removes the selection: both are undoable.
+//! - Undo and redo: every applied edit that matters (not selection, and only
+//!   the final step of a drag) records a whole-graph snapshot; restoring one
+//!   swaps the graph back. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl+Y redoes.
+//! - Copy, paste and duplicate: Ctrl/Cmd+C snapshots the selected nodes with
+//!   the edges between them, Ctrl/Cmd+V inserts a copy, Ctrl/Cmd+D does both.
+//! - Click an edge to select it; Delete removes selected nodes and edges.
+//!   Right-click adds a node on empty canvas, or removes the edge under it.
 //!
 //! ```sh
-//! cargo run --example undo --features default_style,scene
+//! cargo run --example editor --features default_style,scene
 //! ```
 
 use bevy::prelude::*;
@@ -24,12 +27,13 @@ fn main() {
         .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .init_resource::<History>()
+        .init_resource::<Clipboard>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
             (
                 record_edits,
-                undo_redo,
+                shortcuts,
                 delete_selection,
                 show_history.run_if(resource_changed::<History>),
             ),
@@ -45,6 +49,10 @@ struct History {
     redo: Vec<DynamicWorld>,
     current: Option<DynamicWorld>,
 }
+
+/// Copied nodes, pasted with an offset.
+#[derive(Resource, Default)]
+struct Clipboard(Option<DynamicWorld>);
 
 #[derive(Resource)]
 struct Graph(Entity);
@@ -148,18 +156,70 @@ fn record(world: &mut World) {
     history.redo.clear();
 }
 
-fn undo_redo(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands) {
+fn shortcuts(keys: Res<ButtonInput<KeyCode>>, mut commands: Commands) {
     use KeyCode::*;
     if !keys.any_pressed([ControlLeft, ControlRight, SuperLeft, SuperRight]) {
         return;
     }
     let shift = keys.any_pressed([ShiftLeft, ShiftRight]);
-    let redo = match (keys.just_pressed(KeyZ), keys.just_pressed(KeyY)) {
-        (true, _) => shift,
-        (_, true) => true,
-        _ => return,
+    match () {
+        _ if keys.just_pressed(KeyZ) => commands.queue(move |w: &mut World| step(w, shift)),
+        _ if keys.just_pressed(KeyY) => commands.queue(|w: &mut World| step(w, true)),
+        _ if keys.just_pressed(KeyC) => commands.queue(copy),
+        _ if keys.just_pressed(KeyV) => commands.queue(paste),
+        _ if keys.just_pressed(KeyD) => commands.queue(|w: &mut World| {
+            copy(w);
+            paste(w);
+        }),
+        _ => {}
+    }
+}
+
+fn copy(world: &mut World) {
+    let mut selected = world.query_filtered::<Entity, (With<GraphNode>, With<Selected>)>();
+    let nodes: Vec<_> = selected.iter(world).collect();
+    if !nodes.is_empty() {
+        let copied = scene::snapshot_nodes(world, &nodes);
+        world.resource_mut::<Clipboard>().0 = Some(copied);
+    }
+}
+
+fn paste(world: &mut World) {
+    let canvas = world.resource::<Graph>().0;
+    let Some(copied) = world.resource_mut::<Clipboard>().0.take() else {
+        return;
     };
-    commands.queue(move |world: &mut World| step(world, redo));
+    let pasted = match scene::insert(world, canvas, &copied) {
+        Ok(map) => copied
+            .entities
+            .iter()
+            .map(|e| map[&e.entity])
+            .collect::<Vec<_>>(),
+        Err(error) => return error!("pasting failed: {error}"),
+    };
+    // Top-level pasted nodes (not ones inside a pasted node) move aside.
+    let top_level = |w: &World, e: Entity| {
+        w.get::<ChildOf>(e)
+            .is_some_and(|p| !pasted.contains(&p.parent()))
+    };
+    let mut nodes = Vec::new();
+    for &entity in &pasted {
+        if top_level(world, entity)
+            && let Some(mut position) = world.get_mut::<NodePosition>(entity)
+        {
+            position.0 += Vec2::splat(32.0);
+            nodes.push(entity);
+        }
+    }
+    // The next paste lands a step further along.
+    let next = scene::snapshot_nodes(world, &nodes);
+    world.resource_mut::<Clipboard>().0 = Some(next);
+    let select = GraphEdit::Select {
+        nodes,
+        mode: SelectMode::Replace,
+    };
+    world.graph_edit(canvas, select).ok();
+    record(world);
 }
 
 /// Move one snapshot between the stacks and put it on screen.
@@ -185,7 +245,7 @@ fn step(world: &mut World, redo: bool) {
 
 fn show_history(history: Res<History>, mut text: Single<&mut Text, With<HistoryText>>) {
     text.0 = format!(
-        "{} undo | {} redo    Ctrl/Cmd+Z: undo | Ctrl/Cmd+Shift+Z: redo | right-click: add | Delete: remove",
+        "{} undo | {} redo    Ctrl/Cmd + Z: undo, Shift+Z: redo, C: copy, V: paste, D: duplicate | Delete: remove | right-click: add node, remove edge",
         history.undo.len(),
         history.redo.len()
     );
@@ -201,9 +261,14 @@ fn add_on_right_click(
     let (Ok(view), Some(content)) = (views.get(canvas), graph.content_of(canvas)) else {
         return;
     };
-    if click.button == PointerButton::Secondary
-        && graph.node_of(click.original_event_target()).is_none()
-    {
+    let clicked = click.original_event_target();
+    if click.button != PointerButton::Secondary {
+        return;
+    }
+    if graph.edge_ports(clicked).is_some() {
+        // Edges get pointer events like any UI entity.
+        commands.graph_edit(canvas, GraphEdit::Disconnect { edge: clicked });
+    } else if graph.node_of(clicked).is_none() {
         let at = view.canvas_to_graph(click.pointer_location.position);
         spawn_number(&mut commands, content, at);
         // Spawning is not a graph edit, so record it here.
@@ -211,6 +276,7 @@ fn add_on_right_click(
     }
 }
 
+/// Selected nodes and edges.
 fn delete_selection(
     keys: Res<ButtonInput<KeyCode>>,
     selected: Query<Entity, With<Selected>>,
