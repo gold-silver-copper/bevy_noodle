@@ -124,7 +124,8 @@ Each piece is opt-in on the canvas or the entity:
 - **`SelectionBoxStyle`:** draws the selection box.
 - **`PortHighlight` + `PortColor`:** ports show connection and drag state.
 - **`SelectedBorderColor`:** a node border that follows selection.
-- **`style::kit`:** plain functions returning node bundles.
+- **`style::kit`:** plain functions returning bundles: `kit::canvas()` (an
+  interactive canvas with the whole look) and node, title, body and port rows.
 
 ### Snapshots (`scene`)
 

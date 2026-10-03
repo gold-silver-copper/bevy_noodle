@@ -12,7 +12,7 @@
 use bevy::color::palettes::tailwind::*;
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
-use bevy_noodle::style::{SelectionBoxStyle, kit};
+use bevy_noodle::style::kit;
 
 fn main() {
     App::new()
@@ -93,21 +93,7 @@ fn looks() -> [(&'static str, Color, EdgeStyle); 7] {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands
-        .spawn((
-            NodeCanvas,
-            CanvasInteraction::default(),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                ..default()
-            },
-            // Used by edges without a style of their own.
-            EdgeStyle::default(),
-            CanvasGrid::default(),
-            SelectionBoxStyle::default(),
-        ))
-        .id();
+    let canvas = commands.spawn(kit::canvas()).id();
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let mut pairs = Vec::new();
     for (i, (name, color, style)) in looks().into_iter().enumerate() {

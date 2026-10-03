@@ -10,12 +10,31 @@
 use bevy::picking::Pickable;
 use bevy::prelude::*;
 
-use super::{PortColor, PortHighlight, SelectedBorderColor};
-use crate::components::{GraphNode, NodePosition, Port, PortDirection, PortType};
+use super::{
+    CanvasGrid, EdgeStyle, PortColor, PortHighlight, SelectedBorderColor, SelectionBoxStyle,
+};
+use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection, PortType};
+use crate::interaction::CanvasInteraction;
 
 const BORDER: f32 = 1.5;
 const PADDING: f32 = 10.0;
 const PORT_RADIUS: f32 = 6.0;
+
+/// An interactive canvas filling its parent, with the whole default look.
+/// Insert a different `Node` (or any piece) afterwards to change it.
+pub fn canvas() -> impl Bundle {
+    let fill = Node {
+        width: percent(100),
+        height: percent(100),
+        ..default()
+    };
+    let look = (
+        EdgeStyle::default(),
+        CanvasGrid::default(),
+        SelectionBoxStyle::default(),
+    );
+    (NodeCanvas, CanvasInteraction::default(), fill, look)
+}
 
 /// A node frame at `position` whose border follows selection.
 pub fn node(position: Vec2) -> impl Bundle {

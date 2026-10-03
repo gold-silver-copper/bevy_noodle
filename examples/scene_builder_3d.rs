@@ -14,7 +14,7 @@ use std::f32::consts::TAU;
 
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
-use bevy_noodle::style::{SelectedBorderColor, SelectionBoxStyle, kit};
+use bevy_noodle::style::{SelectedBorderColor, kit};
 
 const SHAPE: PortType = PortType::named("shape");
 const PAINT: PortType = PortType::named("paint");
@@ -110,22 +110,17 @@ fn setup(
     ));
 
     // The graph panel: a canvas like any other, with a translucent background.
+    let panel = Node {
+        width: px(640),
+        height: percent(100),
+        border: UiRect::right(px(1)),
+        ..default()
+    };
+    let background = BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82));
+    let border = BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1));
     let canvas = commands
-        .spawn((
-            NodeCanvas,
-            CanvasInteraction::default(),
-            Node {
-                width: px(640),
-                height: percent(100),
-                border: UiRect::right(px(1)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82)),
-            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1)),
-            EdgeStyle::default(),
-            CanvasGrid::default(),
-            SelectionBoxStyle::default(),
-        ))
+        .spawn(kit::canvas())
+        .insert((panel, background, border))
         .id();
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let coral = Color::srgb(0.98, 0.45, 0.4);

@@ -1,6 +1,7 @@
 //! The components that make up a graph. You insert [`NodeCanvas`],
 //! [`CanvasContent`], [`GraphNode`] and [`Port`]; the library manages edges.
 
+use bevy::math::cubic_splines::CubicSegment;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
 
@@ -220,25 +221,16 @@ pub struct EdgeHitbox {
 }
 
 impl EdgeHitbox {
-    /// A point on the curve, `t` in `0..=1`.
-    pub fn point(&self, t: f32) -> Vec2 {
-        let [p0, p1, p2, p3] = self.points;
-        let u = 1.0 - t;
-        p0 * (u * u * u) + p1 * (3.0 * u * u * t) + p2 * (3.0 * u * t * t) + p3 * (t * t * t)
+    pub fn curve(&self) -> CubicSegment<Vec2> {
+        CubicSegment::new_bezier(self.points)
     }
 
-    /// Distance from `point` to the curve (sampled like the default wire shader).
+    /// Distance from `point` to the curve, sampled like the default wire shader.
     pub fn distance(&self, point: Vec2) -> f32 {
-        const SAMPLES: usize = 32;
-        let mut previous = self.points[0];
-        (1..=SAMPLES)
-            .map(|i| {
-                let current = self.point(i as f32 / SAMPLES as f32);
-                let (pa, ba) = (point - previous, current - previous);
-                let h = (pa.dot(ba) / ba.length_squared().max(1e-6)).clamp(0.0, 1.0);
-                previous = current;
-                pa.distance(ba * h)
-            })
+        let samples: Vec<Vec2> = self.curve().iter_positions(32).collect();
+        let segments = samples.windows(2).map(|s| Segment2d::new(s[0], s[1]));
+        segments
+            .map(|s| s.closest_point(point).distance(point))
             .fold(f32::MAX, f32::min)
     }
 }

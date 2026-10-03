@@ -117,58 +117,47 @@ pub enum RejectReason {
     Rejected,
 }
 
+/// What applying an edit returns: the edge a connect created, or why it was refused.
+pub type EditResult = Result<Option<Entity>, RejectReason>;
+
 /// Queue graph edits from [`Commands`].
 pub trait GraphCommandsExt {
-    fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit);
     fn graph_edit_with_origin(&mut self, canvas: Entity, edit: GraphEdit, origin: EditOrigin);
-}
 
-impl GraphCommandsExt for Commands<'_, '_> {
     fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code);
     }
+}
 
+impl GraphCommandsExt for Commands<'_, '_> {
     fn graph_edit_with_origin(&mut self, canvas: Entity, edit: GraphEdit, origin: EditOrigin) {
-        self.queue(move |world: &mut World| {
-            let _ = world.graph_edit_with_origin(canvas, edit, origin);
-        });
+        self.queue(move |world: &mut World| _ = world.graph_edit_with_origin(canvas, edit, origin));
     }
 }
 
-/// Apply graph edits immediately. Returns the created edge for a connect.
+/// Apply graph edits immediately.
 pub trait GraphWorldExt {
-    fn graph_edit(
-        &mut self,
-        canvas: Entity,
-        edit: GraphEdit,
-    ) -> Result<Option<Entity>, RejectReason>;
     fn graph_edit_with_origin(
         &mut self,
         canvas: Entity,
         edit: GraphEdit,
         origin: EditOrigin,
-    ) -> Result<Option<Entity>, RejectReason>;
+    ) -> EditResult;
+
+    fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) -> EditResult {
+        self.graph_edit_with_origin(canvas, edit, EditOrigin::Code)
+    }
 }
 
 impl GraphWorldExt for World {
-    fn graph_edit(
-        &mut self,
-        canvas: Entity,
-        edit: GraphEdit,
-    ) -> Result<Option<Entity>, RejectReason> {
-        self.graph_edit_with_origin(canvas, edit, EditOrigin::Code)
-    }
-
     fn graph_edit_with_origin(
         &mut self,
         canvas: Entity,
         edit: GraphEdit,
         origin: EditOrigin,
-    ) -> Result<Option<Entity>, RejectReason> {
+    ) -> EditResult {
         let result = run(self, canvas, edit.clone(), origin);
-        if let Err(reason) = result
-            && self.get_entity(canvas).is_ok()
-        {
+        if let (Err(reason), Ok(_)) = (result, self.get_entity(canvas)) {
             self.trigger(EditRejected {
                 canvas,
                 edit,
@@ -190,20 +179,18 @@ struct Plan {
     select: Vec<(Entity, bool)>,
 }
 
-fn run(
-    world: &mut World,
-    canvas: Entity,
-    edit: GraphEdit,
-    origin: EditOrigin,
-) -> Result<Option<Entity>, RejectReason> {
+fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -> EditResult {
+    // Planned before `EditRequested`, so observers see the normalized edit,
+    // and again after, as they may have changed it or the world.
     let plan = |world: &mut World, edit| {
         world
             .run_system_cached_with(plan_edit, (canvas, edit))
             .map_err(|_| RejectReason::InvalidEntity)?
     };
+    let edit = plan(world, edit)?.edit;
     let mut request = EditRequested {
         canvas,
-        edit: plan(world, edit)?.edit,
+        edit,
         origin,
         rejected: false,
     };
@@ -217,28 +204,36 @@ fn run(
         disconnect,
         select,
     } = plan(world, request.edit)?;
+    let applied = |world: &mut World, edit, created, ports| {
+        let event = EditApplied {
+            canvas,
+            edit,
+            origin,
+            created,
+            ports,
+        };
+        world.trigger(event.clone());
+        world.write_message(event);
+    };
     for (edge, ports) in disconnect {
         world.despawn(edge);
-        let edit = GraphEdit::Disconnect { edge };
-        applied(world, canvas, edit, origin, None, Some(ports));
+        applied(world, GraphEdit::Disconnect { edge }, None, Some(ports));
     }
-    let mut ports = None;
-    let created = match &edit {
+    let (mut created, mut ports) = (None, None);
+    match &edit {
         GraphEdit::Connect { from, to } => {
-            ports = Some((*from, *to));
             let mut edge = world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to)));
             if let Some(content) = content {
                 edge.insert(ChildOf(content));
             }
-            Some(edge.id())
+            (created, ports) = (Some(edge.id()), Some((*from, *to)));
         }
         GraphEdit::Disconnect { edge } => {
-            ports = world
+            let ends = world
                 .get::<EdgeSource>(*edge)
-                .zip(world.get::<EdgeTarget>(*edge))
-                .map(|(s, t)| (s.0, t.0));
+                .zip(world.get::<EdgeTarget>(*edge));
+            ports = ends.map(|(s, t)| (s.0, t.0));
             world.despawn(*edge);
-            None
         }
         GraphEdit::MoveNodes { nodes, delta, .. } => {
             for node in nodes {
@@ -246,128 +241,65 @@ fn run(
                     position.0 += *delta;
                 }
             }
-            None
         }
-        GraphEdit::DeleteNodes { nodes } => {
-            // Listed edges are already gone.
-            for node in nodes {
-                if let Ok(node) = world.get_entity_mut(*node) {
-                    node.despawn();
-                }
-            }
-            None
-        }
+        // Listed edges are already gone.
+        GraphEdit::DeleteNodes { nodes } => nodes.iter().for_each(|n| _ = world.try_despawn(*n)),
         GraphEdit::Select { .. } => {
             for (node, on) in select {
-                if on {
-                    world.entity_mut(node).insert(Selected);
-                } else {
-                    world.entity_mut(node).remove::<Selected>();
+                match on {
+                    true => _ = world.entity_mut(node).insert(Selected),
+                    false => _ = world.entity_mut(node).remove::<Selected>(),
                 }
             }
-            None
         }
-    };
-    applied(world, canvas, edit, origin, created, ports);
+    }
+    applied(world, edit, created, ports);
     Ok(created)
 }
 
-fn applied(
-    world: &mut World,
-    canvas: Entity,
-    edit: GraphEdit,
-    origin: EditOrigin,
-    created: Option<Entity>,
-    ports: Option<(Entity, Entity)>,
-) {
-    let event = EditApplied {
-        canvas,
-        edit,
-        origin,
-        created,
-        ports,
-    };
-    world.trigger(event.clone());
-    world.write_message(event);
-}
-
 fn plan_edit(
-    In((canvas, edit)): In<(Entity, GraphEdit)>,
+    In((canvas, mut edit)): In<(Entity, GraphEdit)>,
     graph: GraphQuery,
     selected: Query<(), With<Selected>>,
 ) -> Result<Plan, RejectReason> {
     if graph.canvas_of(canvas) != Some(canvas) {
         return Err(RejectReason::InvalidEntity);
     }
-    let mine = |node: &Entity| {
-        graph.node_of(*node) == Some(*node) && graph.canvas_of(*node) == Some(canvas)
-    };
-    let mut plan = Plan {
-        edit: edit.clone(),
-        content: graph.content_of(canvas),
-        disconnect: Vec::new(),
-        select: Vec::new(),
-    };
-    match edit {
+    let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && graph.canvas_of(*e) == Some(canvas);
+    let edges = graph.edges_in(canvas);
+    let (mut disconnect, mut select) = (Vec::new(), Vec::new());
+    match &mut edit {
         GraphEdit::Connect { from, to } => {
-            let (from, to, replaces) = graph.check_connection(from, to, canvas)?;
-            plan.edit = GraphEdit::Connect { from, to };
-            plan.disconnect = with_ports(&graph, replaces);
+            let replaces;
+            (*from, *to, replaces) = graph.check_connection(*from, *to, canvas)?;
+            disconnect = replaces;
         }
-        GraphEdit::Disconnect { edge } => match graph.edge_ports(edge) {
-            None => return Err(RejectReason::InvalidEntity),
-            Some(_) if graph.canvas_of(edge) != Some(canvas) => {
-                return Err(RejectReason::NotInCanvas);
-            }
-            Some(_) => {}
-        },
-        GraphEdit::MoveNodes {
-            mut nodes,
-            delta,
-            total,
-            is_final,
-        } => {
-            nodes.retain(mine);
-            if nodes.is_empty() {
-                return Err(RejectReason::Empty);
-            }
-            plan.edit = GraphEdit::MoveNodes {
-                nodes,
-                delta,
-                total,
-                is_final,
-            };
+        GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
+            return Err(RejectReason::InvalidEntity);
         }
-        GraphEdit::DeleteNodes { mut nodes } => {
-            let listed: Vec<_> = graph
-                .edges_in(canvas)
-                .into_iter()
-                .filter(|e| nodes.contains(e))
-                .collect();
-            nodes.retain(mine);
+        GraphEdit::Disconnect { edge } if !edges.contains(edge) => {
+            return Err(RejectReason::NotInCanvas);
+        }
+        GraphEdit::Disconnect { .. } => {}
+        GraphEdit::MoveNodes { nodes, .. } => nodes.retain(mine),
+        GraphEdit::DeleteNodes { nodes } => {
+            // Nodes go with their edges; listed edges go too.
+            nodes.retain(|e| mine(e) || edges.contains(e));
+            nodes.sort();
             nodes.dedup();
-            if nodes.is_empty() && listed.is_empty() {
-                return Err(RejectReason::Empty);
-            }
-            let mut edges: Vec<_> = nodes
+            disconnect = nodes
                 .iter()
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
-                .chain(listed.iter().copied())
                 .collect();
-            edges.sort();
-            edges.dedup();
-            plan.disconnect = with_ports(&graph, edges);
-            // Listed edges stay listed: the edit is planned again after
-            // `EditRequested`.
-            nodes.extend(listed);
-            plan.edit = GraphEdit::DeleteNodes { nodes };
+            disconnect.extend(nodes.iter().filter(|e| edges.contains(e)));
+            disconnect.sort();
+            disconnect.dedup();
         }
-        GraphEdit::Select { mut nodes, mode } => {
-            let edges = graph.edges_in(canvas);
+        GraphEdit::Select { nodes, mode } => {
             nodes.retain(|e| mine(e) || edges.contains(e));
-            for node in graph.nodes_of(canvas).into_iter().chain(edges) {
-                let (listed, on) = (nodes.contains(&node), selected.contains(node));
+            for item in graph.nodes_of(canvas).into_iter().chain(edges) {
+                let (listed, on) = (nodes.contains(&item), selected.contains(item));
                 let want = match mode {
                     SelectMode::Replace => listed,
                     SelectMode::Add => on || listed,
@@ -375,18 +307,24 @@ fn plan_edit(
                     SelectMode::Toggle => on != listed,
                 };
                 if want != on {
-                    plan.select.push((node, want));
+                    select.push((item, want));
                 }
             }
-            plan.edit = GraphEdit::Select { nodes, mode };
         }
     }
-    Ok(plan)
-}
-
-fn with_ports(graph: &GraphQuery, edges: Vec<Entity>) -> Vec<(Entity, (Entity, Entity))> {
-    edges
+    if let GraphEdit::MoveNodes { nodes, .. } | GraphEdit::DeleteNodes { nodes } = &edit
+        && nodes.is_empty()
+    {
+        return Err(RejectReason::Empty);
+    }
+    let disconnect = disconnect
         .into_iter()
         .filter_map(|e| Some((e, graph.edge_ports(e)?)))
-        .collect()
+        .collect();
+    Ok(Plan {
+        edit,
+        content: graph.content_of(canvas),
+        disconnect,
+        select,
+    })
 }

@@ -64,31 +64,29 @@ pub(crate) fn update_edge_geometry(
     ports: Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
     nodes: Query<&NodePosition>,
 ) {
-    if !changed.is_empty() {
-        for (source, target, mut current) in &mut edges {
-            let ends = endpoint(source.0, &ports, &nodes).zip(endpoint(target.0, &ports, &nodes));
-            current.set_if_neq(
-                ends.map_or_else(EdgeGeometry::default, |(a, b)| EdgeGeometry::between(a, b)),
-            );
-        }
+    let end = |port| endpoint(port, &ports, &nodes);
+    for (source, target, mut current) in edges.iter_mut().filter(|_| !changed.is_empty()) {
+        let ends = end(source.0).zip(end(target.0));
+        current.set_if_neq(ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b)));
     }
     // The dragged wire runs output → input; the pointer stands in for the free end.
     for (wire, mut current) in &mut wires {
-        let Some(fixed) = endpoint(wire.from, &ports, &nodes) else {
+        let Some(fixed) = end(wire.from) else {
             continue;
         };
         let free = wire
             .target
-            .and_then(|t| endpoint(t, &ports, &nodes))
+            .and_then(end)
             .unwrap_or((wire.pointer, -fixed.1));
         let from_output = ports
             .get(wire.from)
             .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
-        current.set_if_neq(if from_output {
-            EdgeGeometry::between(fixed, free)
+        let (a, b) = if from_output {
+            (fixed, free)
         } else {
-            EdgeGeometry::between(free, fixed)
-        });
+            (free, fixed)
+        };
+        current.set_if_neq(EdgeGeometry::between(a, b));
     }
 }
 
@@ -109,7 +107,8 @@ pub(crate) fn measure_ports(
         let content = parents
             .iter_ancestors(entity)
             .find_map(|e| contents.get(e).ok());
-        let center = content
+        // The center in content space, which is graph space once unscaled.
+        let position = content
             .and_then(|content| content.try_inverse())
             .filter(|_| computed.size() != Vec2::ZERO)
             .map(|inverse| {
@@ -118,37 +117,46 @@ pub(crate) fn measure_ports(
         let origin = node
             .and_then(|n| graph_nodes.get(n).ok().flatten())
             .map_or(Vec2::ZERO, |p| p.0);
+        let offset = position.unwrap_or_default() - origin;
         anchor.set_if_neq(PortAnchor {
             node,
-            offset: center.unwrap_or_default() - origin,
-            position: center,
+            offset,
+            position,
         });
     }
 }
 
-/// Disconnects edges whose ports ended up in different graphs (after
-/// re-parenting). Only runs when something was re-parented.
-pub(crate) fn drop_cross_graph_edges(
-    moved: Query<(), Changed<ChildOf>>,
-    edges: Query<(Entity, &EdgeSource, &EdgeTarget, Option<&ChildOf>)>,
+/// After re-parenting, the edges of the ports inside what moved follow it into
+/// another graph (both ends moved) or are disconnected. Checked once per frame,
+/// so moving both ends one after the other keeps the edge.
+pub(crate) fn follow_reparented(
+    moved: Query<Entity, Changed<ChildOf>>,
     graph: GraphQuery,
+    children: Query<&Children>,
+    parents: Query<&ChildOf>,
     mut commands: Commands,
 ) {
-    if moved.is_empty() {
-        return;
-    }
-    for (edge, source, target, parent) in &edges {
-        let canvas = graph.canvas_of(source.0);
-        if canvas != graph.canvas_of(target.0) {
-            match canvas {
-                Some(canvas) => commands.graph_edit(canvas, GraphEdit::Disconnect { edge }),
-                None => commands.entity(edge).despawn(),
+    let subtrees = moved
+        .iter()
+        .flat_map(|e| std::iter::once(e).chain(children.iter_descendants(e)));
+    let mut edges: Vec<_> = subtrees.flat_map(|e| graph.edges_of(e)).collect();
+    edges.sort();
+    edges.dedup();
+    for edge in edges {
+        let Some((source, target)) = graph.edge_ports(edge) else {
+            continue;
+        };
+        match (graph.canvas_of(source), graph.canvas_of(target)) {
+            (Some(canvas), other) if other != Some(canvas) => {
+                commands.graph_edit(canvas, GraphEdit::Disconnect { edge });
             }
-        } else if let Some(content) = canvas.and_then(|c| graph.content_of(c))
-            && parent.is_some_and(|p| p.parent() != content)
-        {
-            // Both ends moved to another graph together: follow them.
-            commands.entity(edge).insert(ChildOf(content));
+            (None, _) => commands.entity(edge).despawn(),
+            (Some(canvas), _) => {
+                let content = graph.content_of(canvas);
+                if content.is_some_and(|c| parents.get(edge).is_ok_and(|p| p.parent() != c)) {
+                    commands.entity(edge).insert(ChildOf(content.unwrap()));
+                }
+            }
         }
     }
 }
@@ -162,12 +170,13 @@ pub(crate) fn frame_all(
     let Ok((mut view, canvas)) = canvases.get_mut(event.canvas) else {
         return;
     };
-    let bounds = graph
+    let nodes = graph
         .nodes_of(event.canvas)
         .into_iter()
-        .filter_map(|node| nodes.get(node).ok())
-        .map(|(p, c)| Rect::from_corners(p.0, p.0 + c.size() * c.inverse_scale_factor()))
-        .reduce(|a, b| a.union(b));
+        .filter_map(|n| nodes.get(n).ok());
+    let rects =
+        nodes.map(|(p, c)| Rect::from_corners(p.0, p.0 + c.size() * c.inverse_scale_factor()));
+    let bounds = rects.reduce(|a, b| a.union(b));
     let size = canvas.size() * canvas.inverse_scale_factor();
     let Some(bounds) = bounds.filter(|_| size.min_element() > 0.0) else {
         return;

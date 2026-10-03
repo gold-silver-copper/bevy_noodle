@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use bevy::text::{EditableText, EditableTextFilter, LineBreak};
 use bevy_noodle::prelude::*;
-use bevy_noodle::style::{SelectionBoxStyle, kit};
+use bevy_noodle::style::kit;
 
 const NUMBER: PortType = PortType::named("number");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
@@ -45,20 +45,7 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands
-        .spawn((
-            NodeCanvas,
-            CanvasInteraction::default(),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                ..default()
-            },
-            EdgeStyle::default(),
-            CanvasGrid::default(),
-            SelectionBoxStyle::default(),
-        ))
-        .id();
+    let canvas = commands.spawn(kit::canvas()).id();
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let nodes = [
         (MathOp::Number, 60.0, 60.0, 2.0),

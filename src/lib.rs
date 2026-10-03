@@ -82,7 +82,7 @@ impl Plugin for NoodleCorePlugin {
             )
             .add_systems(
                 PostUpdate,
-                (drop_cross_graph_edges, sync_layout, update_edge_geometry)
+                (follow_reparented, sync_layout, update_edge_geometry)
                     .chain()
                     .in_set(NoodleSystems::Sync),
             )

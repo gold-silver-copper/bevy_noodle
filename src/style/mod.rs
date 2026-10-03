@@ -8,7 +8,7 @@
 //! | [`PortHighlight`] + [`PortColor`] | ports reflecting connection and drag state      |
 //! | [`SelectedBorderColor`] on a node | a border following `Selected`                   |
 //!
-//! [`kit`] has functions returning ready-made node bundles.
+//! [`kit`] has functions returning ready-made canvas and node bundles.
 
 pub mod kit;
 mod render;
@@ -171,12 +171,26 @@ pub(crate) struct DrawsEdge(Entity);
 #[relationship_target(relationship = DrawsEdge, linked_spawn)]
 pub(crate) struct EdgeVisual(Vec<Entity>);
 
-fn place(node: &mut Node, rect: Rect) {
-    node.display = Display::Flex;
-    node.left = Val::Px(rect.min.x);
-    node.top = Val::Px(rect.min.y);
-    node.width = Val::Px(rect.width());
-    node.height = Val::Px(rect.height());
+/// Shows `node` at `rect` (local pixels of its parent), or hides it.
+fn place(node: &mut Node, rect: Option<Rect>) {
+    node.position_type = PositionType::Absolute;
+    node.display = if rect.is_some() {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    let rect = rect.unwrap_or_default();
+    (node.left, node.top) = (px(rect.min.x), px(rect.min.y));
+    (node.width, node.height) = (px(rect.width()), px(rect.height()));
+}
+
+/// Replaces an asset only when it changed, so unchanged frames upload nothing.
+fn update<M: Asset + PartialEq>(assets: &mut Assets<M>, handle: &Handle<M>, value: M) {
+    if assets.get(handle) != Some(&value)
+        && let Some(mut current) = assets.get_mut(handle)
+    {
+        *current = value;
+    }
 }
 
 fn draw_edges(
@@ -188,8 +202,6 @@ fn draw_edges(
             Entity,
             &EdgeGeometry,
             Option<&EdgeStyle>,
-            Option<&EdgeSource>,
-            Option<&EdgeTarget>,
             Option<&PendingWire>,
             Option<&EdgeVisual>,
             Option<&mut EdgeHitbox>,
@@ -212,14 +224,10 @@ fn draw_edges(
     )>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
-    for (entity, geometry, own, source, target, wire, visual, hitbox, selected, pointer) in
-        &mut edges
-    {
+    for (entity, geometry, own, wire, visual, hitbox, selected, pointer) in &mut edges {
         let canvas = wire.map(|w| w.canvas).or_else(|| graph.canvas_of(entity));
-        let Some(style) = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten())) else {
-            continue;
-        };
-        let Some(content) = canvas.and_then(|c| graph.content_of(c)) else {
+        let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
+        let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
         };
         // Ports at each end of the curve (output → input), if any.
@@ -232,16 +240,16 @@ fn draw_edges(
                 (Some(w.from), w.target)
             }
             Some(w) => (w.target, Some(w.from)),
-            None => (source.map(|s| s.0), target.map(|t| t.0)),
+            None => graph
+                .edge_ports(entity)
+                .map_or((None, None), |(s, t)| (Some(s), Some(t))),
         };
-        let radius = |port: Option<Entity>| {
-            let Some((_, _, computed, transform)) = port.and_then(|p| ports.get(p).ok()) else {
-                return 0.0;
-            };
-            computed.size().min_element()
-                * computed.inverse_scale_factor()
-                * transform.map_or(1.0, |t| t.scale.x)
-                / 2.0
+        let port = |p: Option<Entity>| p.and_then(|p| ports.get(p).ok());
+        let radius = |p| {
+            port(p).map_or(0.0, |(_, _, computed, transform)| {
+                let scale = transform.map_or(1.0, |t| t.scale.x);
+                computed.size().min_element() * computed.inverse_scale_factor() * scale / 2.0
+            })
         };
         let mut shape = *geometry;
         if style.trim_to_ports {
@@ -251,8 +259,7 @@ fn draw_edges(
         let points = shape.bezier(style.curvature);
         let port_color = [start, end]
             .into_iter()
-            .flatten()
-            .find_map(|p| ports.get(p).ok().and_then(|p| p.1.map(|c| c.0)));
+            .find_map(|p| port(p)?.1.map(|c| c.0));
         let color = style
             .color
             .or(port_color)
@@ -265,60 +272,56 @@ fn draw_edges(
         let colors = colors.map(|c| c.with_alpha(c.alpha() * alpha));
         let hovered = pointer.is_some_and(|p| *p != PickingInteraction::None);
         let width = style.width + if hovered { style.hover_width } else { 0.0 };
-        let dash = style.dash.unwrap_or_default().max(Vec2::ZERO);
-        let (rect, material) = wire_material(points, colors, width, dash.extend(style.flow_speed));
+        let pattern = style
+            .dash
+            .unwrap_or_default()
+            .max(Vec2::ZERO)
+            .extend(style.flow_speed);
+        let (rect, material) = wire_material(points, colors, width, pattern);
         let z = match (wire, style.layer) {
             (Some(_), _) => ZIndex(i32::MAX),
             (None, EdgeLayer::AboveNodes) => ZIndex(i32::MAX - 1),
             (None, EdgeLayer::BelowNodes) => ZIndex(-1),
         };
         if wire.is_none() && geometry.valid {
+            let radius = style.width / 2.0 + 3.0;
+            let below_nodes = style.layer == EdgeLayer::BelowNodes;
             let area = EdgeHitbox {
                 points,
-                radius: style.width / 2.0 + 3.0,
-                below_nodes: style.layer == EdgeLayer::BelowNodes,
+                radius,
+                below_nodes,
             };
             match hitbox {
                 Some(mut hitbox) => _ = hitbox.set_if_neq(area),
                 None => _ = commands.entity(entity).insert(area),
             }
         }
-        let mut node = Node {
-            position_type: PositionType::Absolute,
-            display: Display::None,
-            ..default()
-        };
+        // Wires are drawn by their own UI node, so the edge itself can be picked.
         let visual = visual.and_then(|v| v.0.first().copied());
-        match visual.and_then(|v| Some((v, visuals.get_mut(v).ok()?))) {
-            Some((visual, (mut current, mut z_index, handle, parent))) => {
-                if geometry.valid {
-                    place(&mut current, rect);
-                } else {
-                    current.display = Display::None;
-                }
-                if materials.get(&handle.0) != Some(&material)
-                    && let Some(mut current) = materials.get_mut(&handle.0)
-                {
-                    *current = material;
-                }
-                z_index.set_if_neq(z);
-                if parent.parent() != content {
-                    commands.entity(visual).insert(ChildOf(content));
-                }
-            }
-            None => {
-                if geometry.valid {
-                    place(&mut node, rect);
-                }
-                commands.spawn((
-                    node,
-                    MaterialNode(materials.add(material)),
-                    z,
-                    Pickable::IGNORE,
-                    DrawsEdge(entity),
-                    ChildOf(content),
-                ));
-            }
+        let Some((visual, (mut node, mut z_index, handle, parent))) =
+            visual.and_then(|v| Some((v, visuals.get_mut(v).ok()?)))
+        else {
+            let wire = (
+                MaterialNode(materials.add(material)),
+                DrawsEdge(entity),
+                ChildOf(content),
+            );
+            commands.spawn((
+                Node {
+                    display: Display::None,
+                    ..default()
+                },
+                z,
+                Pickable::IGNORE,
+                wire,
+            ));
+            continue;
+        };
+        place(&mut node, geometry.valid.then_some(rect));
+        update(&mut materials, &handle.0, material);
+        z_index.set_if_neq(z);
+        if parent.parent() != content {
+            commands.entity(visual).insert(ChildOf(content));
         }
     }
 }
@@ -343,43 +346,28 @@ fn draw_grids(
             }
             continue;
         };
-        let size = computed.size() * computed.inverse_scale_factor();
+        let size = (computed.size() * computed.inverse_scale_factor()).max(Vec2::ONE);
         let linear = |c: Color| c.to_linear().to_vec4();
         let material = GridMaterial {
             background: linear(grid.background),
             minor: linear(grid.minor),
             major: linear(grid.major),
             view: Vec4::new(view.pan.x, view.pan.y, view.zoom, grid.spacing.max(1.0)),
-            extent: Vec4::new(
-                size.x.max(1.0),
-                size.y.max(1.0),
-                grid.major_every.max(1) as f32,
-                0.0,
-            ),
+            extent: Vec4::new(size.x, size.y, grid.major_every.max(1) as f32, 0.0),
         };
         match visual.and_then(|v| grids.get(v.0).ok()) {
-            Some(handle) => {
-                if materials.get(&handle.0) != Some(&material)
-                    && let Some(mut current) = materials.get_mut(&handle.0)
-                {
-                    *current = material;
-                }
-            }
+            Some(handle) => update(&mut materials, &handle.0, material),
             None => {
+                let (width, height) = (percent(100), percent(100));
                 let fill = Node {
                     position_type: PositionType::Absolute,
-                    width: percent(100),
-                    height: percent(100),
+                    width,
+                    height,
                     ..default()
                 };
+                let fill = (fill, MaterialNode(materials.add(material)), ZIndex(-1));
                 let child = commands
-                    .spawn((
-                        fill,
-                        MaterialNode(materials.add(material)),
-                        ZIndex(-1),
-                        Pickable::IGNORE,
-                        ChildOf(canvas),
-                    ))
+                    .spawn((fill, Pickable::IGNORE, ChildOf(canvas)))
                     .id();
                 commands.entity(canvas).insert(GridVisual(child));
             }
@@ -398,29 +386,26 @@ fn draw_selection_boxes(
     mut nodes: Query<&mut Node>,
 ) {
     for (canvas, style, selection, visual) in &canvases {
-        match (selection, visual.and_then(|v| nodes.get_mut(v.0).ok())) {
-            (Some(selection), Some(mut node)) => place(&mut node, selection.0),
-            (None, Some(mut node)) => node.display = Display::None,
-            (Some(selection), None) => {
-                let mut node = Node {
-                    position_type: PositionType::Absolute,
+        match visual.and_then(|v| nodes.get_mut(v.0).ok()) {
+            Some(mut node) => place(&mut node, selection.map(|s| s.0)),
+            None if selection.is_some() => {
+                let node = Node {
                     border: UiRect::all(px(1)),
+                    display: Display::None,
                     ..default()
                 };
-                place(&mut node, selection.0);
-                let child = commands
-                    .spawn((
-                        node,
-                        BackgroundColor(style.fill),
-                        BorderColor::all(style.border),
-                        ZIndex(i32::MAX),
-                        Pickable::IGNORE,
-                        ChildOf(canvas),
-                    ))
-                    .id();
+                let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
+                let visual = (
+                    node,
+                    colors,
+                    ZIndex(i32::MAX),
+                    Pickable::IGNORE,
+                    ChildOf(canvas),
+                );
+                let child = commands.spawn(visual).id();
                 commands.entity(canvas).insert(BoxVisual(child));
             }
-            (None, None) => {}
+            None => {}
         }
     }
 }
@@ -443,28 +428,11 @@ fn highlight_ports(
     wires: Query<&PendingWire>,
 ) {
     let sources: Vec<Entity> = wires.iter().map(|w| w.from).collect();
-    for (
-        port,
-        color,
-        outgoing,
-        incoming,
-        candidate,
-        target,
-        mut background,
-        mut border,
-        mut transform,
-    ) in &mut ports
+    for (port, color, outgoing, incoming, candidate, target, mut fill, mut border, mut transform) in
+        &mut ports
     {
         let connected =
             outgoing.is_some_and(|e| !e.is_empty()) || incoming.is_some_and(|e| !e.is_empty());
-        let (fill, outline) = (
-            if connected {
-                color.0
-            } else {
-                color.0.darker(0.35)
-            },
-            color.0,
-        );
         let (alpha, scale) = match (
             target || sources.contains(&port),
             candidate,
@@ -475,8 +443,13 @@ fn highlight_ports(
             (_, _, false) => (0.3, 0.85),
             _ => (1.0, 1.0),
         };
-        background.set_if_neq(BackgroundColor(fill.with_alpha(fill.alpha() * alpha)));
-        border.set_if_neq(BorderColor::all(outline.with_alpha(alpha)));
+        let inner = if connected {
+            color.0
+        } else {
+            color.0.darker(0.35)
+        };
+        fill.set_if_neq(BackgroundColor(inner.with_alpha(inner.alpha() * alpha)));
+        border.set_if_neq(BorderColor::all(color.0.with_alpha(alpha)));
         if transform.scale != Vec2::splat(scale) {
             transform.scale = Vec2::splat(scale);
         }
@@ -485,10 +458,11 @@ fn highlight_ports(
 
 fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut BorderColor)>) {
     for (colors, selected, mut border) in &mut nodes {
-        border.set_if_neq(BorderColor::all(if selected {
+        let color = if selected {
             colors.selected
         } else {
             colors.normal
-        }));
+        };
+        border.set_if_neq(BorderColor::all(color));
     }
 }

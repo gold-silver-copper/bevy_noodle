@@ -77,14 +77,14 @@ impl GraphQuery<'_, '_> {
     }
 
     pub fn inputs_of(&self, node: Entity) -> Vec<Entity> {
-        self.ports_of_direction(node, PortDirection::Input)
+        self.ports_toward(node, PortDirection::Input)
     }
 
     pub fn outputs_of(&self, node: Entity) -> Vec<Entity> {
-        self.ports_of_direction(node, PortDirection::Output)
+        self.ports_toward(node, PortDirection::Output)
     }
 
-    fn ports_of_direction(&self, node: Entity, direction: PortDirection) -> Vec<Entity> {
+    fn ports_toward(&self, node: Entity, direction: PortDirection) -> Vec<Entity> {
         let mut ports = self.ports_of(node);
         ports.retain(|p| self.port(*p).is_some_and(|p| p.direction == direction));
         ports
@@ -95,9 +95,8 @@ impl GraphQuery<'_, '_> {
         let Ok((_, outgoing, incoming)) = self.ports.get(port) else {
             return Vec::new();
         };
+        let incoming = incoming.map(|e| e.as_slice()).into_iter();
         incoming
-            .map(|e| e.as_slice())
-            .into_iter()
             .chain(outgoing.map(|e| e.as_slice()))
             .flatten()
             .copied()

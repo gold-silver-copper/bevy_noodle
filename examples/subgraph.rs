@@ -12,7 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
-use bevy_noodle::style::{SelectionBoxStyle, kit};
+use bevy_noodle::style::kit;
 
 const NUMBER: PortType = PortType::named("number");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
@@ -46,50 +46,38 @@ enum Op {
     Print(Entity),
 }
 
-fn canvas(at: Option<(Vec2, f32)>) -> impl Bundle {
-    let node = match at {
-        None => Node {
-            width: percent(100),
-            height: percent(100),
-            ..default()
-        },
-        // Nested: a fixed-size viewport that clips its graph.
-        Some(_) => Node {
-            width: px(540),
-            height: px(240),
-            margin: UiRect::vertical(px(6)),
-            overflow: Overflow::clip(),
-            border_radius: BorderRadius::all(px(6)),
-            ..default()
-        },
-    };
-    let (pan, zoom) = at.unwrap_or((Vec2::ZERO, 1.0));
-    let grid = CanvasGrid {
-        background: if at.is_some() {
-            Color::srgb_u8(30, 32, 37)
-        } else {
-            Color::NONE
-        },
+/// A nested canvas: a fixed-size viewport clipping its graph, zoomed out,
+/// with a darker grid.
+fn nested() -> impl Bundle {
+    let viewport = Node {
+        width: px(540),
+        height: px(240),
+        margin: UiRect::vertical(px(6)),
+        overflow: Overflow::clip(),
+        border_radius: BorderRadius::all(px(6)),
         ..default()
     };
+    let view = CanvasView {
+        pan: Vec2::ZERO,
+        zoom: 0.7,
+    };
     (
-        NodeCanvas,
-        CanvasView { pan, zoom },
-        CanvasInteraction::default(),
-        node,
-        EdgeStyle::default(),
-        grid,
-        SelectionBoxStyle::default(),
+        viewport,
+        view,
+        CanvasGrid {
+            background: Color::srgb_u8(30, 32, 37),
+            ..default()
+        },
     )
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let outer = commands.spawn(canvas(None)).id();
+    let outer = commands.spawn(kit::canvas()).id();
     let outer_content = commands.spawn((CanvasContent, ChildOf(outer))).id();
 
     // The group: ports on its frame, a canvas in its body.
-    let inner = commands.spawn(canvas(Some((Vec2::ZERO, 0.7)))).id();
+    let inner = commands.spawn(kit::canvas()).insert(nested()).id();
     let inner_content = commands.spawn((CanvasContent, ChildOf(inner))).id();
     let body = commands
         .spawn(kit::body(children![

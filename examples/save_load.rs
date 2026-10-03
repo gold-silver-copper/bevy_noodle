@@ -18,7 +18,7 @@ use bevy::ui::Selected;
 use bevy::world_serialization::serde::WorldDeserializer;
 use bevy_noodle::prelude::*;
 use bevy_noodle::scene;
-use bevy_noodle::style::{SelectionBoxStyle, kit};
+use bevy_noodle::style::kit;
 use serde::de::DeserializeSeed;
 
 const NUMBER: PortType = PortType::named("number");
@@ -57,20 +57,7 @@ fn file() -> PathBuf {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands
-        .spawn((
-            NodeCanvas,
-            CanvasInteraction::default(),
-            Node {
-                width: percent(100),
-                height: percent(100),
-                ..default()
-            },
-            EdgeStyle::default(),
-            CanvasGrid::default(),
-            SelectionBoxStyle::default(),
-        ))
-        .id();
+    let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let numbers = [(2.0, 100.0), (3.5, 230.0), (4.0, 360.0)]

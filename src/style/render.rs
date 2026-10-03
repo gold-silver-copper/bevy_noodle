@@ -104,7 +104,8 @@ pub(crate) fn wire_material(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{EdgeGeometry, EdgeHitbox};
+    use crate::components::EdgeGeometry;
+    use bevy::math::cubic_splines::CubicSegment;
 
     #[test]
     fn wire_bounds_contain_the_curve() {
@@ -117,13 +118,9 @@ mod tests {
         };
         let points = geometry.bezier(0.5);
         let (rect, _) = wire_material(points, [Color::WHITE; 2], 3.0, Vec3::ZERO);
-        let curve = EdgeHitbox {
-            points,
-            radius: 0.0,
-            below_nodes: false,
-        };
-        for step in 0..=20 {
-            assert!(rect.contains(curve.point(step as f32 / 20.0)));
+        let curve = CubicSegment::new_bezier(points);
+        for point in curve.iter_positions(20) {
+            assert!(rect.contains(point));
         }
     }
 }
