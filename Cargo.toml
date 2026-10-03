@@ -1,0 +1,33 @@
+[package]
+name = "bevy_noodle"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A generic, typed node graph editor for Bevy UI, in the spirit of egui_node_graph2."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/gold-silver-copper/bevy_noodle"
+documentation = "https://docs.rs/bevy_noodle"
+keywords = ["bevy", "node-graph", "node-editor", "visual-scripting", "ui"]
+categories = ["game-development", "gui", "visualization"]
+include = ["Cargo.toml", "README.md", "LICENSE", "src/**", "examples/**"]
+
+[features]
+default = []
+# Serialize/deserialize the graph and editor state (positions, pan/zoom, ...).
+serde = ["dep:serde", "slotmap/serde", "bevy/serialize"]
+
+[dependencies]
+bevy = { version = "0.19", default-features = false, features = [
+    "ui_api",
+    "ui_bevy_render",
+    "bevy_picking",
+    "ui_picking",
+    "bevy_ui_widgets",
+] }
+slotmap = "1.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+[dev-dependencies]
+bevy = "0.19"
+serde_json = "1.0"
