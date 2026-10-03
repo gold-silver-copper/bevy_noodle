@@ -15,12 +15,21 @@ use bevy::picking::Pickable;
 use bevy::prelude::*;
 
 use super::{
-    CanvasGrid, EdgeStyle, PortColor, PortHighlight, SelectedBorderColor, SelectionBoxStyle,
+    CanvasGrid, EdgeStyle, FocusOutline, PortColor, PortHighlight, SelectedBorderColor,
+    SelectionBoxStyle,
 };
 use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection, PortType};
 use crate::interaction::CanvasInteraction;
 
 const BORDER: f32 = 1.5;
+/// Marks a kit title: it names its node for screen readers.
+#[derive(Component)]
+pub(crate) struct Title;
+
+/// Marks a kit row's label: it names the row's port for screen readers.
+#[derive(Component)]
+pub(crate) struct Label;
+
 /// Horizontal padding of rows inside a node.
 pub const PADDING: f32 = 10.0;
 const PORT_RADIUS: f32 = 6.0;
@@ -41,6 +50,7 @@ pub fn canvas() -> impl Bundle {
         EdgeStyle::default(),
         CanvasGrid::default(),
         SelectionBoxStyle::default(),
+        FocusOutline::default(),
     );
     (NodeCanvas, CanvasInteraction::default(), fill, look)
 }
@@ -87,6 +97,7 @@ pub fn title(text: impl Into<String>) -> impl Bundle {
     };
     let background = BackgroundColor(Color::srgb_u8(60, 63, 71));
     (
+        Title,
         Text::new(text),
         TextFont::from_font_size(14.0),
         node,
@@ -140,6 +151,7 @@ fn row(
         ..default()
     };
     let text = (
+        Label,
         Text::new(label),
         TextFont::from_font_size(13.0),
         TextColor(Color::srgb_u8(214, 218, 224)),

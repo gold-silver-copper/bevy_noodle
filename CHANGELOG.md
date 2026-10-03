@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Keyboard use and accessibility, opt-in per canvas: `NoodleKeyboardPlugin`
+  and `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape),
+  built on `bevy_input_focus`; `AccessibleLabel`s for nodes and ports; a
+  `FocusOutline` in the default style. Example: `keyboard`.
+
 ## 0.3.0
 
 A smaller, Bevy-native core: you build and style the nodes and edges, the

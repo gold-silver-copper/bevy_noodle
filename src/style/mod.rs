@@ -13,6 +13,8 @@
 pub mod kit;
 mod render;
 
+use bevy::input_focus::tab_navigation::TabIndex;
+use bevy::input_focus::{FocusGained, FocusLost, InputFocusVisible};
 use bevy::picking::Pickable;
 use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
@@ -27,17 +29,21 @@ pub struct NoodleDefaultStylePlugin;
 
 impl Plugin for NoodleDefaultStylePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialsPlugin).add_systems(
-            PostUpdate,
-            (
-                draw_edges,
-                draw_grids,
-                draw_selection_boxes,
-                highlight_ports,
-                selected_borders,
+        app.add_plugins(MaterialsPlugin)
+            .add_systems(
+                PostUpdate,
+                (
+                    draw_edges,
+                    draw_grids,
+                    draw_selection_boxes,
+                    highlight_ports,
+                    selected_borders,
+                    label_kit,
+                )
+                    .in_set(NoodleSystems::Render),
             )
-                .in_set(NoodleSystems::Render),
-        );
+            .add_observer(outline_focus)
+            .add_observer(clear_focus_outline);
     }
 }
 
@@ -157,6 +163,26 @@ impl Default for SelectionBoxStyle {
         Self {
             fill: Color::srgba(0.43, 0.59, 0.86, 0.12),
             border: Color::srgba(0.43, 0.59, 0.86, 0.8),
+        }
+    }
+}
+
+/// On a canvas: an outline on its node or port with keyboard focus (see
+/// [`CanvasKeyboard`](crate::CanvasKeyboard)).
+#[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
+#[reflect(Component, Default)]
+pub struct FocusOutline {
+    /// Outline color.
+    pub color: Color,
+    /// Outline width, in logical pixels.
+    pub width: f32,
+}
+
+impl Default for FocusOutline {
+    fn default() -> Self {
+        Self {
+            color: Color::srgb_u8(120, 180, 255),
+            width: 2.0,
         }
     }
 }
@@ -484,3 +510,59 @@ fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut 
         border.set_if_neq(BorderColor::all(color));
     }
 }
+
+/// Kit nodes and ports made focusable by a keyboard canvas are named for
+/// screen readers: nodes by their title, ports by their row's label.
+fn label_kit(
+    mut commands: Commands,
+    focusable: Query<(Entity, &ChildOf), (Added<TabIndex>, Without<AccessibleLabel>)>,
+    children: Query<&Children>,
+    texts: Query<(&Text, Has<kit::Title>), Or<(With<kit::Title>, With<kit::Label>)>>,
+) {
+    for (entity, parent) in &focusable {
+        // A kit title among the entity's children, or a label beside it in a row.
+        let find = |of: Entity, title: bool| {
+            let kids = children.get(of).into_iter().flatten();
+            kids.filter_map(|c| texts.get(*c).ok())
+                .find(|t| t.1 == title)
+                .map(|t| t.0.0.clone())
+        };
+        if let Some(name) = find(entity, true).or_else(|| find(parent.parent(), false)) {
+            commands.entity(entity).insert(AccessibleLabel::new(name));
+        }
+    }
+}
+
+/// Keyboard focus on a node or port of a canvas with [`FocusOutline`] shows it.
+fn outline_focus(
+    gained: On<FocusGained>,
+    graph: GraphQuery,
+    styles: Query<&FocusOutline>,
+    visible: Res<InputFocusVisible>,
+    mut commands: Commands,
+) {
+    let entity = gained.original_event_target();
+    let style = graph.canvas_of(entity).and_then(|c| styles.get(c).ok());
+    let item = graph.node_of(entity) == Some(entity) || graph.port(entity).is_some();
+    if let (Some(style), true, true, true) =
+        (style, item, visible.0, gained.event_target() == entity)
+    {
+        let outline = Outline::new(px(style.width), px(2), style.color);
+        commands.entity(entity).insert((outline, Outlined));
+    }
+}
+
+fn clear_focus_outline(
+    lost: On<FocusLost>,
+    outlined: Query<(), With<Outlined>>,
+    mut commands: Commands,
+) {
+    let entity = lost.original_event_target();
+    if outlined.contains(entity) {
+        commands.entity(entity).remove::<(Outline, Outlined)>();
+    }
+}
+
+/// On entities whose `Outline` shows keyboard focus.
+#[derive(Component)]
+struct Outlined;

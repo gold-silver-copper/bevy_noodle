@@ -25,6 +25,7 @@ pub mod components;
 pub mod edit;
 mod geometry;
 pub mod interaction;
+pub mod keyboard;
 pub mod query;
 #[cfg(feature = "scene")]
 pub mod scene;
@@ -39,6 +40,7 @@ pub use components::*;
 pub use edit::*;
 pub use geometry::FrameAll;
 pub use interaction::*;
+pub use keyboard::*;
 pub use query::GraphQuery;
 
 /// System sets, all in `PostUpdate`.
@@ -96,10 +98,11 @@ pub mod prelude {
     #[cfg(feature = "default_style")]
     pub use crate::style::{CanvasGrid, EdgeLayer, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
     pub use crate::{
-        CanvasContent, CanvasInteraction, CanvasView, Edge, EdgeGeometry, EdgeHitbox, EdgeSource,
-        EdgeTarget, EditApplied, EditOrigin, EditRequested, FrameAll, GraphCommandsExt, GraphEdit,
-        GraphNode, GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition,
-        NoodleCorePlugin, NoodleInteractionPlugin, NoodlePlugins, PendingWire, Port, PortDirection,
-        PortType, SelectMode, WireDropped,
+        CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Edge, EdgeGeometry,
+        EdgeHitbox, EdgeSource, EdgeTarget, EditApplied, EditOrigin, EditRequested, FrameAll,
+        GraphCommandsExt, GraphEdit, GraphNode, GraphQuery, GraphWorldExt, NodeCanvas,
+        NodeDragHandle, NodePosition, NoodleCorePlugin, NoodleInteractionPlugin,
+        NoodleKeyboardPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortType,
+        SelectMode, WireDropped,
     };
 }

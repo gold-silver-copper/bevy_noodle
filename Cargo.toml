@@ -74,5 +74,9 @@ required-features = ["default_style"]
 name = "stress"
 required-features = ["default_style"]
 
+[[example]]
+name = "keyboard"
+required-features = ["default_style"]
+
 [package.metadata.docs.rs]
 all-features = true

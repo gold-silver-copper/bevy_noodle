@@ -1,0 +1,141 @@
+//! Keyboard use, headless: keys go through Bevy's input focus dispatch, as in
+//! an app.
+
+use bevy::input::ButtonState;
+use bevy::input::keyboard::{Key, KeyboardInput};
+use bevy::input_focus::tab_navigation::{TabGroup, TabIndex};
+use bevy::input_focus::{FocusCause, InputDispatchPlugin, InputFocus, InputFocusPlugin};
+use bevy::picking::hover::HoverMap;
+use bevy::prelude::*;
+use bevy::ui::{Selected, UiScale};
+use bevy::window::PrimaryWindow;
+use bevy_noodle::prelude::*;
+
+const NUM: PortType = PortType::named("num");
+
+struct Graph {
+    canvas: Entity,
+    nodes: [Entity; 2],
+    /// Node 0's output and node 1's input.
+    ports: [Entity; 2],
+}
+
+fn app() -> (App, Graph) {
+    let mut app = App::new();
+    app.add_plugins((
+        MinimalPlugins,
+        bevy::input::InputPlugin,
+        InputFocusPlugin,
+        InputDispatchPlugin,
+        NoodlePlugins,
+        NoodleKeyboardPlugin,
+    ))
+    .init_resource::<UiScale>()
+    .init_resource::<HoverMap>();
+    let w = app.world_mut();
+    w.spawn((Window::default(), PrimaryWindow));
+    let canvas = w
+        .spawn((NodeCanvas, CanvasKeyboard::default(), Node::default()))
+        .id();
+    let content = w.spawn((CanvasContent, ChildOf(canvas))).id();
+    let spawn = |w: &mut World, port: Port, name: &str| {
+        let node = (
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            Name::new(name.to_owned()),
+        );
+        let node = w.spawn((node, ChildOf(content))).id();
+        (node, w.spawn((port, Node::default(), ChildOf(node))).id())
+    };
+    let (a, out) = spawn(w, Port::output(NUM), "Source");
+    let (b, inp) = spawn(w, Port::input(NUM), "Sink");
+    app.update();
+    let graph = Graph {
+        canvas,
+        nodes: [a, b],
+        ports: [out, inp],
+    };
+    (app, graph)
+}
+
+/// Focuses `entity`, presses `key` there, and runs a frame.
+fn press(app: &mut App, entity: Entity, key: KeyCode) {
+    let w = app.world_mut();
+    w.resource_mut::<InputFocus>()
+        .set(entity, FocusCause::Navigated);
+    let window = w
+        .query_filtered::<Entity, With<PrimaryWindow>>()
+        .single(w)
+        .unwrap();
+    for state in [ButtonState::Pressed, ButtonState::Released] {
+        let logical_key = Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified);
+        w.write_message(KeyboardInput {
+            key_code: key,
+            logical_key,
+            state,
+            text: None,
+            repeat: false,
+            window,
+        });
+    }
+    app.update();
+}
+
+#[test]
+fn nodes_and_ports_become_tabbable_and_named() {
+    let (app, g) = app();
+    let w = app.world();
+    assert!(w.get::<TabGroup>(g.canvas).is_some());
+    for entity in g.nodes.into_iter().chain(g.ports) {
+        assert!(w.get::<TabIndex>(entity).is_some());
+    }
+    let label = w.get::<AccessibleLabel>(g.nodes[0]).map(|l| l.0.clone());
+    assert_eq!(label.as_deref(), Some("Source"));
+}
+
+#[test]
+fn enter_selects_and_arrows_move() {
+    let (mut app, g) = app();
+    press(&mut app, g.nodes[0], KeyCode::Enter);
+    assert!(app.world().get::<Selected>(g.nodes[0]).is_some());
+    press(&mut app, g.nodes[0], KeyCode::ArrowRight);
+    press(&mut app, g.nodes[0], KeyCode::ArrowDown);
+    let position = app.world().get::<NodePosition>(g.nodes[0]).unwrap().0;
+    assert_eq!(position, Vec2::new(10.0, 10.0));
+    assert_eq!(
+        app.world().get::<NodePosition>(g.nodes[1]).unwrap().0,
+        Vec2::ZERO
+    );
+}
+
+#[test]
+fn space_on_two_ports_connects_them() {
+    let (mut app, g) = app();
+    press(&mut app, g.ports[0], KeyCode::Space);
+    let mut wires = app.world_mut().query::<&PendingWire>();
+    assert_eq!(wires.iter(app.world()).count(), 1);
+    // Focusing a compatible port snaps the wire to it.
+    let w = app.world_mut();
+    w.resource_mut::<InputFocus>()
+        .set(g.ports[1], FocusCause::Navigated);
+    app.update();
+    let wire = *wires.single(app.world()).unwrap();
+    assert_eq!(wire.target, Some(g.ports[1]));
+
+    press(&mut app, g.ports[1], KeyCode::Space);
+    let w = app.world_mut();
+    let targets: Vec<_> = w.query::<&EdgeTarget>().iter(w).map(|t| t.0).collect();
+    assert_eq!(targets, [g.ports[1]]);
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+}
+
+#[test]
+fn escape_cancels_a_connection() {
+    let (mut app, g) = app();
+    press(&mut app, g.ports[0], KeyCode::Space);
+    press(&mut app, g.ports[0], KeyCode::Escape);
+    let w = app.world_mut();
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
+}

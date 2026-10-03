@@ -69,6 +69,7 @@ fn setup(mut commands: Commands) {
 | `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. |
 | `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities (shapes, colors, spin, rings) whenever an edit applies. |
 | `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots, copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. |
+| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes and ports, Enter to select, arrows to move, Space on two ports to connect, with screen-reader labels and a focus outline. |
 | `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
 | `cargo run --example save_load --features default_style,scene` | Saving to and loading from a RON file, with user components and entity references intact. |
 
@@ -81,6 +82,7 @@ fn setup(mut commands: Commands) {
 ![The editor example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/editor.png)
 ![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
 ![The stress example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/stress.png)
+![The keyboard example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/keyboard.png)
 
 ## Concepts
 
@@ -129,6 +131,19 @@ Each piece is opt-in on the canvas or the entity:
 - **`SelectedBorderColor`:** a node border that follows selection.
 - **`style::kit`:** plain functions returning bundles: `kit::canvas()` (an
   interactive canvas with the whole look), a node frame, a title and port rows.
+
+### Keyboard and accessibility
+
+Add `NoodleKeyboardPlugin` and put `CanvasKeyboard` on a canvas. It builds on
+Bevy's `bevy_input_focus`: the canvas is a `TabGroup` and its nodes and ports
+get a `TabIndex`, so Tab and Shift+Tab move focus between them. The focused
+node is selected with Enter and moved with the arrow keys; Space on a port
+starts a connection and Space on a second port completes it (focusing a
+compatible port snaps the wire to it); Escape drops it. Every key is a field,
+and `None` unbinds it. Nodes and ports are named for screen readers with Bevy
+UI's `AccessibleLabel`: from a `Name`, or from kit titles and labels. With
+the default style, `FocusOutline` (part of `kit::canvas()`) outlines the
+keyboard focus.
 
 ### Snapshots (`scene`)
 
