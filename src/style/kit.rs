@@ -178,3 +178,25 @@ pub fn output(label: impl Into<String>, port_type: PortType, color: Color) -> im
         port(Port::output(port_type), color),
     )
 }
+
+/// A row holding only a port: no label, so no text to lay out. For dense or
+/// very large graphs.
+fn dot_row(port_bundle: impl Bundle) -> impl Bundle {
+    (
+        Node {
+            min_height: px(16),
+            ..default()
+        },
+        children![port_bundle],
+    )
+}
+
+/// An input port on the left edge, without a label.
+pub fn input_dot(port_type: PortType, color: Color) -> impl Bundle {
+    dot_row(port(Port::input(port_type), color))
+}
+
+/// An output port on the right edge, without a label.
+pub fn output_dot(port_type: PortType, color: Color) -> impl Bundle {
+    dot_row(port(Port::output(port_type), color))
+}

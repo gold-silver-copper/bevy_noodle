@@ -9,6 +9,9 @@
   `FocusOutline` in the default style. Example: `keyboard`.
 - Examples: `comment_frames`, `reroute`, `type_conversion`, `minimap`,
   `auto_layout`.
+- `kit::input_dot`/`kit::output_dot`: port rows without labels, about a
+  fifth fewer UI entities per node and no text to lay out. The `stress`
+  example switches to them with T.
 
 ## 0.3.0
 

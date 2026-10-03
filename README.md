@@ -141,6 +141,8 @@ Each piece is opt-in on the canvas or the entity:
 - **`SelectedBorderColor`:** a node border that follows selection.
 - **`style::kit`:** plain functions returning bundles: `kit::canvas()` (an
   interactive canvas with the whole look), a node frame, a title and port rows.
+  `kit::input_dot`/`kit::output_dot` are rows without labels: no text to lay
+  out, for very large graphs.
 
 ### Keyboard and accessibility
 

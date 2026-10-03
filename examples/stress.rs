@@ -4,7 +4,8 @@
 //! zooms. An overlay shows the frame rate, graph size and edits per second.
 //!
 //! Space pauses, Up/Down double or halve the target node count, C hands the
-//! camera back to you (then pan and zoom as usual). Build with `--release`
+//! camera back to you (then pan and zoom as usual), and T switches new nodes
+//! to unlabelled ports (`kit::input_dot`/`output_dot`): less text to lay out. Build with `--release`
 //! for meaningful numbers. For per-system timings, run it with Bevy's
 //! `trace_tracy` feature and connect the Tracy profiler.
 //!
@@ -51,6 +52,8 @@ struct Stress {
     target: usize,
     paused: bool,
     auto_camera: bool,
+    /// Whether new nodes get port labels.
+    labels: bool,
     /// Edits applied since the overlay last updated.
     edits: u32,
     rng: u64,
@@ -96,6 +99,7 @@ fn setup(mut commands: Commands) {
         target: 400,
         paused: false,
         auto_camera: true,
+        labels: true,
         edits: 0,
         rng: 0x9E37_79B9_7F4A_7C15,
     });
@@ -130,6 +134,9 @@ fn keys(keys: Res<ButtonInput<KeyCode>>, mut stress: ResMut<Stress>) {
     if keys.just_pressed(KeyCode::KeyC) {
         stress.auto_camera = !stress.auto_camera;
     }
+    if keys.just_pressed(KeyCode::KeyT) {
+        stress.labels = !stress.labels;
+    }
 }
 
 /// One frame of scripted editing.
@@ -162,8 +169,8 @@ fn churn(
     for _ in 0..missing {
         let at = Vec2::new(stress.unit(), stress.unit()) * WORLD;
         let kind = stress.below(3);
-        let content = stress.content;
-        spawn_node(&mut commands, content, kind, at);
+        let (content, labels) = (stress.content, stress.labels);
+        spawn_node(&mut commands, content, kind, at, labels);
     }
     let excess = nodes.len().saturating_sub(stress.target).min(30);
     // Once grown, keep deleting a few nodes so they get replaced.
@@ -211,35 +218,44 @@ fn churn(
 }
 
 /// Sources, operations and sinks over two port types, so some wiring fails.
-fn spawn_node(commands: &mut Commands, content: Entity, kind: usize, at: Vec2) {
-    let node = (kit::node(at), ChildOf(content));
-    match kind {
-        0 => commands.spawn((
-            node,
-            children![
-                kit::title("Source"),
-                kit::output("number", NUMBER, BLUE),
-                kit::output("text", TEXT, GREEN),
+/// Without labels, ports are bare dots: less text for Bevy to lay out.
+fn spawn_node(commands: &mut Commands, content: Entity, kind: usize, at: Vec2, labels: bool) {
+    use PortDirection::{Input, Output};
+    let (title, ports): (&str, &[_]) = match kind {
+        0 => (
+            "Source",
+            &[
+                (Output, "number", NUMBER, BLUE),
+                (Output, "text", TEXT, GREEN),
             ],
-        )),
-        1 => commands.spawn((
-            node,
-            children![
-                kit::title("Operation"),
-                kit::input("a", NUMBER, BLUE),
-                kit::input("b", NUMBER, BLUE),
-                kit::output("out", NUMBER, BLUE),
+        ),
+        1 => (
+            "Operation",
+            &[
+                (Input, "a", NUMBER, BLUE),
+                (Input, "b", NUMBER, BLUE),
+                (Output, "out", NUMBER, BLUE),
             ],
-        )),
-        _ => commands.spawn((
-            node,
-            children![
-                kit::title("Sink"),
-                kit::input("number", NUMBER, BLUE),
-                kit::input("text", TEXT, GREEN),
+        ),
+        _ => (
+            "Sink",
+            &[
+                (Input, "number", NUMBER, BLUE),
+                (Input, "text", TEXT, GREEN),
             ],
-        )),
+        ),
     };
+    let node = commands.spawn((kit::node(at), ChildOf(content))).id();
+    commands.spawn((kit::title(title), ChildOf(node)));
+    for &(direction, label, port_type, color) in ports {
+        let mut row = commands.spawn(ChildOf(node));
+        match (direction, labels) {
+            (Input, true) => row.insert(kit::input(label, port_type, color)),
+            (Input, false) => row.insert(kit::input_dot(port_type, color)),
+            (Output, true) => row.insert(kit::output(label, port_type, color)),
+            (Output, false) => row.insert(kit::output_dot(port_type, color)),
+        };
+    }
 }
 
 /// Slowly drifts and breathes over the whole area.
@@ -287,11 +303,12 @@ fn overlay(
     let state = if stress.paused { "paused" } else { "running" };
     text.0 = format!(
         "{fps:.0} fps | {entities:.0} entities | {} nodes (target {}) | {} edges | {} selected | {edits:.0} edits/s | {state}\n\
-         Space: pause | Up/Down: target x2 / /2 | C: camera {}",
+         Space: pause | Up/Down: target x2 / /2 | C: camera {} | T: port labels {}",
         nodes.iter().count(),
         stress.target,
         edges.iter().count(),
         nodes.iter().filter(|selected| *selected).count(),
         if stress.auto_camera { "auto" } else { "yours" },
+        if stress.labels { "on" } else { "off" },
     );
 }
