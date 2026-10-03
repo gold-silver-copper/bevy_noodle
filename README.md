@@ -112,8 +112,14 @@ PendingWire             the wire being dragged; also has EdgeGeometry
   The other edits are `Disconnect`, `MoveNodes`, `Delete` and `Select`.
   Spawning a node is just a spawn.
 - **Rules.** Ports connect when their `PortType`s match (or one is
-  `PortType::ANY`) and limits allow. Anything else is an observer:
-  `On<EditRequested>` → `request.reject()`.
+  `PortType::ANY`), the ports are not connected yet, and limits allow. That
+  verdict reaches `On<EditRequested>` observers as `refused`, and they have
+  the last word: `request.allow()` (e.g. ints into floats) or
+  `request.reject()`. Only connections that cannot exist at all (missing
+  ports, ports of one node, two inputs) never get there. Dragged wires snap to
+  the ports observers would allow: the library asks them with
+  `preview: true`, so do nothing irreversible then (`world.preview_edit` asks
+  the same way).
 - **Reacting.** `EditApplied` is an entity event on the canvas and a message,
   with an `origin` (`Code`, `Interaction` or `Custom`), the `created` edge and
   the `(output, input)` `ports` of a connect or disconnect. Drags end with a

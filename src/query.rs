@@ -134,14 +134,31 @@ impl GraphQuery<'_, '_> {
             .collect()
     }
 
-    /// Checks a connection (either order) on `canvas`. Returns
-    /// `(output, input, edges it replaces)`.
+    /// Checks a connection (either order) on `canvas` against the built-in
+    /// rules. Returns `(output, input, edges it replaces)`. Observers of
+    /// [`EditRequested`](crate::EditRequested) may still override a refusal;
+    /// [`GraphWorldExt::preview_edit`](crate::GraphWorldExt::preview_edit)
+    /// asks them.
     pub fn check_connection(
         &self,
         a: Entity,
         b: Entity,
         canvas: Entity,
     ) -> Result<(Entity, Entity, Vec<Entity>), RejectReason> {
+        let (output, input, replaces, refused) = self.connection(a, b, canvas)?;
+        refused.map_or(Ok((output, input, replaces)), Err)
+    }
+
+    /// Like [`check_connection`](Self::check_connection), but only a
+    /// connection that cannot exist (missing ports, another canvas, the same
+    /// node or direction) is an `Err`. The rules observers may override
+    /// (types, already connected, full) are the last field.
+    pub(crate) fn connection(
+        &self,
+        a: Entity,
+        b: Entity,
+        canvas: Entity,
+    ) -> Result<(Entity, Entity, Vec<Entity>, Option<RejectReason>), RejectReason> {
         let invalid = RejectReason::InvalidEntity;
         let (pa, pb) = (self.port(a).ok_or(invalid)?, self.port(b).ok_or(invalid)?);
         let (output, input) = match (pa.direction, pb.direction) {
@@ -157,22 +174,26 @@ impl GraphQuery<'_, '_> {
             (x, y) if x == y => return Err(RejectReason::SameNode),
             _ => {}
         }
+        let mut refused = None;
         if !pa.port_type.accepts(pb.port_type) {
-            return Err(RejectReason::IncompatibleTypes);
+            refused = Some(RejectReason::IncompatibleTypes);
+        } else if self.peers_of(output).contains(&input) {
+            refused = Some(RejectReason::AlreadyConnected);
         }
-        if self.peers_of(output).contains(&input) {
-            return Err(RejectReason::AlreadyConnected);
-        }
+        // A port limited to one edge swaps it; a full wider port refuses (and,
+        // if an observer allows it anyway, keeps all its edges).
         let mut replaces = Vec::new();
         for port in [output, input] {
             let edges = self.edges_of(port);
             match self.port(port).and_then(|p| p.max_connections) {
                 Some(1) if !edges.is_empty() => replaces.push(edges[0]),
-                Some(max) if edges.len() >= max as usize => return Err(RejectReason::PortFull),
+                Some(max) if edges.len() >= max as usize => {
+                    refused = refused.or(Some(RejectReason::PortFull));
+                }
                 _ => {}
             }
         }
         replaces.dedup();
-        Ok((output, input, replaces))
+        Ok((output, input, replaces, refused))
     }
 }

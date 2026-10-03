@@ -10,8 +10,8 @@ use bevy::picking::hover::HoverMap;
 use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::UiScale;
-use bevy_noodle::WireTarget;
 use bevy_noodle::prelude::*;
+use bevy_noodle::{WireCandidate, WireTarget};
 
 const NUM: PortType = PortType::named("num");
 
@@ -169,4 +169,43 @@ fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
     app.update();
     let zoom = |app: &App, canvas| app.world().get::<CanvasView>(canvas).unwrap().zoom;
     assert_eq!((zoom(&app, inner), zoom(&app, outer)), (1.5, 1.0));
+}
+
+#[test]
+fn dragged_wires_snap_to_ports_observers_allow() {
+    let mut app = app();
+    const TEXT: PortType = PortType::named("text");
+    app.add_observer(|mut request: On<EditRequested>| {
+        if request.refused == Some(bevy_noodle::RejectReason::IncompatibleTypes) {
+            request.allow();
+        }
+    });
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let ports = [Port::output(NUM), Port::input(TEXT)].map(|port| {
+        let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
+        w.spawn((port, Node::default(), ChildOf(node))).id()
+    });
+    let button = PointerButton::Primary;
+    pointer(w, ports[0], DragStart { button, hit: hit() });
+    assert!(
+        w.get::<WireCandidate>(ports[1]).is_some(),
+        "the observer allows it"
+    );
+    let hovered = [(ports[1], hit())].into_iter().collect();
+    w.resource_mut::<HoverMap>()
+        .insert(PointerId::Mouse, hovered);
+    let (distance, delta) = (Vec2::X, Vec2::X);
+    pointer(
+        w,
+        ports[0],
+        Drag {
+            button,
+            distance,
+            delta,
+        },
+    );
+    pointer(w, ports[0], DragEnd { button, distance });
+    let targets: Vec<_> = w.query::<&EdgeTarget>().iter(w).map(|t| t.0).collect();
+    assert_eq!(targets, [ports[1]]);
 }

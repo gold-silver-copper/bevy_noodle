@@ -19,7 +19,7 @@ use bevy::ui::{
 };
 
 use crate::components::*;
-use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
+use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, GraphWorldExt, SelectMode};
 use crate::query::GraphQuery;
 
 /// Pointer interaction for canvases with [`CanvasInteraction`], and picking for edges with an [`EdgeHitbox`].
@@ -317,13 +317,8 @@ fn on_drag_start(
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = source;
             }
-            for node in ctx.graph.nodes_in(canvas) {
-                for candidate in ctx.graph.ports_of(node) {
-                    if ctx.graph.check_connection(from, candidate, canvas).is_ok() {
-                        ctx.commands.entity(candidate).insert(WireCandidate);
-                    }
-                }
-            }
+            ctx.commands
+                .queue(move |world: &mut World| mark_candidates(world, canvas, from));
             let local = ctx.local(canvas, drag.pointer_location.position);
             let pointer = ctx.view(canvas).canvas_to_graph(local);
             ctx.commands.spawn(PendingWire {
@@ -358,6 +353,7 @@ fn on_drag(
     mut wires: Query<&mut PendingWire>,
     nodes: Query<(&NodePosition, &ComputedNode)>,
     hovered: Res<HoverMap>,
+    candidates: Query<(), With<WireCandidate>>,
 ) {
     let Some((hop, canvas, settings)) = ctx.hop(drag.event_target()) else {
         return;
@@ -375,9 +371,8 @@ fn on_drag(
                 .flat_map(|h| h.keys());
             let under: Vec<Entity> = under.copied().collect();
             for mut wire in wires.iter_mut().filter(|w| w.canvas == canvas) {
-                // Snap to a compatible port under the pointer.
-                let fits = |p: &Entity| ctx.graph.check_connection(wire.from, *p, canvas).is_ok();
-                let target = under.iter().copied().find(fits);
+                // Snap to a port it may connect to under the pointer.
+                let target = under.iter().copied().find(|p| candidates.contains(*p));
                 if wire.target != target {
                     if let Some(old) = wire.target {
                         ctx.commands.entity(old).remove::<WireTarget>();
@@ -621,6 +616,26 @@ fn pick_edges(
         }
     }
     messages.p1().write_batch(hits);
+}
+
+/// Marks the ports a wire from `from` may connect to with [`WireCandidate`],
+/// asking [`EditRequested`](crate::EditRequested) observers (in preview).
+pub(crate) fn mark_candidates(world: &mut World, canvas: Entity, from: Entity) {
+    let ports = |In(canvas), graph: GraphQuery| {
+        let nodes = graph.nodes_in(canvas).into_iter();
+        nodes.flat_map(|n| graph.ports_of(n)).collect::<Vec<_>>()
+    };
+    let Ok(ports) = world.run_system_cached_with(ports, canvas) else {
+        return;
+    };
+    for to in ports {
+        if world
+            .preview_edit(canvas, GraphEdit::Connect { from, to })
+            .is_ok()
+        {
+            world.entity_mut(to).insert(WireCandidate);
+        }
+    }
 }
 
 /// Window position → canvas-local pixels.

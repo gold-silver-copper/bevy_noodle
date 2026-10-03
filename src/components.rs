@@ -134,7 +134,9 @@ pub struct Port {
     pub direction: PortDirection,
     /// What the port carries.
     pub port_type: PortType,
-    /// `None` is unlimited. A full port with a limit of 1 swaps its edge.
+    /// `None` is unlimited. A full port with a limit of 1 swaps its edge; a
+    /// wider full port refuses (and keeps all its edges if an observer
+    /// allows the connection anyway).
     pub max_connections: Option<u32>,
 }
 

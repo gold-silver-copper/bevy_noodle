@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Connection rules observers can override: `EditRequested::refused` carries
+  the built-in verdict (types, already connected, full port), and observers
+  may `allow()` or `reject()` it. `EditRequested::preview` and
+  `GraphWorldExt::preview_edit` ask observers without applying anything;
+  dragged wires and keyboard connections snap to ports observers would allow.
+  `type_conversion` now uses real int and float ports.
 - Keyboard use and accessibility, opt-in per canvas: `NoodleKeyboardPlugin`
   and `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape),
   built on `bevy_input_focus`; `AccessibleLabel`s for nodes and ports; a

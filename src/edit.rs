@@ -79,23 +79,35 @@ pub enum EditOrigin {
 }
 
 /// Triggered on the canvas before an edit applies. Observers may change
-/// `edit` or call [`reject`](Self::reject).
+/// `edit`, and decide whether it applies: `refused` holds the built-in rules'
+/// verdict (e.g. [`RejectReason::IncompatibleTypes`]), which they may
+/// [`allow`](Self::allow) or [`reject`](Self::reject). Edits that cannot
+/// apply at all (missing entities, ports of the same node) never get here.
 #[derive(EntityEvent, Clone, Debug)]
 pub struct EditRequested {
     /// The canvas edited.
     #[event_target]
     pub canvas: Entity,
-    /// The edit, which observers may change.
+    /// The edit, which observers may change. The verdict stays as it is.
     pub edit: GraphEdit,
     /// Where it came from.
     pub origin: EditOrigin,
-    rejected: bool,
+    /// Why the edit will be refused, if it will.
+    pub refused: Option<RejectReason>,
+    /// Only asking whether the edit would apply (e.g. which ports a dragged
+    /// wire may snap to): do nothing irreversible.
+    pub preview: bool,
 }
 
 impl EditRequested {
     /// Refuse the edit: it reports [`RejectReason::Rejected`].
     pub fn reject(&mut self) {
-        self.rejected = true;
+        self.refused = Some(RejectReason::Rejected);
+    }
+
+    /// Apply the edit even if the built-in rules refuse it.
+    pub fn allow(&mut self) {
+        self.refused = None;
     }
 }
 
@@ -187,6 +199,10 @@ pub trait GraphWorldExt {
     fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) -> EditResult {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code)
     }
+
+    /// Whether `edit` would apply, asking [`EditRequested`] observers (with
+    /// `preview` set) without changing anything.
+    fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason>;
 }
 
 impl GraphWorldExt for World {
@@ -196,7 +212,7 @@ impl GraphWorldExt for World {
         edit: GraphEdit,
         origin: EditOrigin,
     ) -> EditResult {
-        let result = run(self, canvas, edit.clone(), origin);
+        let result = run(self, canvas, edit.clone(), origin, false);
         if let (Err(reason), Ok(_)) = (result, self.get_entity(canvas)) {
             self.trigger(EditRejected {
                 canvas,
@@ -206,11 +222,17 @@ impl GraphWorldExt for World {
         }
         result
     }
+
+    fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason> {
+        run(self, canvas, edit, EditOrigin::Interaction, true).map(|_| ())
+    }
 }
 
 /// A validated edit and its side effects.
 struct Plan {
     edit: GraphEdit,
+    /// The built-in rules' verdict, which observers may override.
+    refused: Option<RejectReason>,
     /// The canvas content, which new edges are children of.
     content: Option<Entity>,
     /// Edges (and their ports) removed first, each reported as a disconnect.
@@ -219,7 +241,13 @@ struct Plan {
     select: Vec<(Entity, bool)>,
 }
 
-fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -> EditResult {
+fn run(
+    world: &mut World,
+    canvas: Entity,
+    edit: GraphEdit,
+    origin: EditOrigin,
+    preview: bool,
+) -> EditResult {
     // Planned before `EditRequested`, so observers see the normalized edit,
     // and again after, as they may have changed it or the world.
     let plan = |world: &mut World, edit| {
@@ -227,22 +255,28 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
             .run_system_cached_with(plan_edit, (canvas, edit))
             .map_err(|_| RejectReason::InvalidEntity)?
     };
-    let edit = plan(world, edit)?.edit;
+    let Plan { edit, refused, .. } = plan(world, edit)?;
     let mut request = EditRequested {
         canvas,
         edit,
         origin,
-        rejected: false,
+        refused,
+        preview,
     };
     world.trigger_ref(&mut request);
-    if request.rejected {
-        return Err(RejectReason::Rejected);
+    if let Some(reason) = request.refused {
+        return Err(reason);
     }
+    if preview {
+        return Ok(None);
+    }
+    // The verdict is the observers'; the plan only adds side effects.
     let Plan {
         edit,
         content,
         disconnect,
         select,
+        ..
     } = plan(world, request.edit)?;
     let applied = |world: &mut World, edit, created, ports| {
         let event = EditApplied {
@@ -310,11 +344,11 @@ fn plan_edit(
     let here = |e: &Entity| graph.canvas_of(*e) == Some(canvas);
     let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && here(e);
     let edge = |e: &Entity| graph.edge_ports(*e).is_some() && here(e);
-    let (mut disconnect, mut select) = (Vec::new(), Vec::new());
+    let (mut disconnect, mut select, mut refused) = (Vec::new(), Vec::new(), None);
     match &mut edit {
         GraphEdit::Connect { from, to } => {
             let replaces;
-            (*from, *to, replaces) = graph.check_connection(*from, *to, canvas)?;
+            (*from, *to, replaces, refused) = graph.connection(*from, *to, canvas)?;
             disconnect = replaces;
         }
         GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
@@ -370,6 +404,7 @@ fn plan_edit(
         .collect();
     Ok(Plan {
         edit,
+        refused,
         content: graph.content_of(canvas),
         disconnect,
         select,

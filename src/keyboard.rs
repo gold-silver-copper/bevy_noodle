@@ -16,7 +16,7 @@ use bevy::ui::Selected;
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{WireCandidate, WireTarget};
+use crate::interaction::{WireCandidate, WireTarget, mark_candidates};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -137,16 +137,8 @@ fn on_key(
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
                 let pointer = pointer.unwrap_or_default();
-                for candidate in graph
-                    .nodes_in(canvas)
-                    .into_iter()
-                    .flat_map(|n| graph.ports_of(n))
-                {
-                    if graph.check_connection(target, candidate, canvas).is_ok() {
-                        commands.entity(candidate).insert(WireCandidate);
-                    }
-                }
                 let from = target;
+                commands.queue(move |world: &mut World| mark_candidates(world, canvas, from));
                 commands.spawn(PendingWire {
                     canvas,
                     from,
@@ -213,8 +205,8 @@ fn clear_wire(
 /// While a connection is being made, focusing a compatible port snaps to it.
 fn snap_on_focus(
     gained: On<FocusGained>,
-    graph: GraphQuery,
     mut wires: Query<&mut PendingWire>,
+    candidates: Query<(), With<WireCandidate>>,
     mut commands: Commands,
 ) {
     // Act once, on the focused entity (the event then bubbles up).
@@ -223,8 +215,7 @@ fn snap_on_focus(
         return;
     }
     for mut wire in &mut wires {
-        let fits = graph.check_connection(wire.from, port, wire.canvas).is_ok();
-        let target = fits.then_some(port);
+        let target = candidates.contains(port).then_some(port);
         if wire.target != target {
             if let Some(old) = wire.target {
                 commands.entity(old).remove::<WireTarget>();

@@ -1,17 +1,17 @@
-//! Automatic type conversion with an `EditRequested` observer. Multiply's
-//! inputs accept any type, so wires snap to them, and the node declares what
-//! it really wants with `Accepts(FLOAT)`. The observer vetoes connections of
-//! other types, and answers an int with an "int to float" converter node
-//! wired in between. Drag from "Int 7" to "a" or "b" to see it.
+//! Automatic type conversion with an `EditRequested` observer. The built-in
+//! rules refuse an int output on a float input (`IncompatibleTypes`); the
+//! observer sees that verdict, lets dragged wires snap there (in preview),
+//! and answers the real edit with an "int to float" converter node wired in
+//! between. Drag from "Int 7" to "a" or "b" to see it.
 //!
 //! ```sh
 //! cargo run --example type_conversion --features default_style
 //! ```
 
 use bevy::prelude::*;
-use bevy_noodle::PortAnchor;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
+use bevy_noodle::{PortAnchor, RejectReason};
 
 const INT: PortType = PortType::named("int");
 const FLOAT: PortType = PortType::named("float");
@@ -27,10 +27,6 @@ fn main() {
         .add_observer(convert)
         .run();
 }
-
-/// The type a node's inputs really take.
-#[derive(Component)]
-struct Accepts(PortType);
 
 /// The connection made once laid out, to show the conversion.
 #[derive(Resource)]
@@ -56,16 +52,14 @@ fn setup(mut commands: Commands) {
         ChildOf(content),
         children![kit::title("Float 2.5"), kit::output("value", FLOAT, BLUE)],
     ));
-    let any = Port::input(PortType::ANY);
     let multiply = commands
         .spawn((
             kit::node(Vec2::new(620.0, 200.0)),
-            Accepts(FLOAT),
             ChildOf(content),
             children![
                 kit::title("Multiply"),
-                kit::input_with("a", any, BLUE),
-                kit::input_with("b", any, BLUE),
+                kit::input("a", FLOAT, BLUE),
+                kit::input("b", FLOAT, BLUE),
                 kit::output("product", FLOAT, BLUE),
             ],
         ))
@@ -77,6 +71,7 @@ fn setup(mut commands: Commands) {
     });
 }
 
+/// Once laid out, wires the int straight into a float input.
 fn demo_connection(
     demo: Option<Res<Demo>>,
     graph: GraphQuery,
@@ -96,11 +91,10 @@ fn demo_connection(
     }
 }
 
-/// Vetoes connections a node does not accept, converting ints to floats.
+/// An int → float connection gets a converter in between.
 fn convert(
     mut request: On<EditRequested>,
     graph: GraphQuery,
-    accepts: Query<&Accepts>,
     anchors: Query<&PortAnchor>,
     mut commands: Commands,
 ) {
@@ -108,22 +102,21 @@ fn convert(
     let GraphEdit::Connect { from, to } = request.edit else {
         return;
     };
-    let wanted = graph
-        .node_of(to)
-        .and_then(|n| accepts.get(n).ok())
-        .map(|a| a.0);
-    let have = graph.port(from).map(|p| p.port_type);
-    let (Some(wanted), Some(have)) = (wanted, have) else {
-        return;
-    };
-    if have == wanted {
+    let types = (
+        graph.port(from).map(|p| p.port_type),
+        graph.port(to).map(|p| p.port_type),
+    );
+    let int_to_float = types == (Some(INT), Some(FLOAT));
+    if !int_to_float || request.refused != Some(RejectReason::IncompatibleTypes) {
         return;
     }
-    request.reject();
-    let (Some(content), true) = (
-        graph.content_of(request.canvas),
-        (have, wanted) == (INT, FLOAT),
-    ) else {
+    // Asked whether a dragged wire may connect here: yes.
+    if request.preview {
+        request.allow();
+        return;
+    }
+    // The direct connection stays refused; a converter goes in between.
+    let Some(content) = graph.content_of(request.canvas) else {
         return;
     };
     let position = |p| {
