@@ -71,16 +71,6 @@ impl UiMaterial for GridMaterial {
     }
 }
 
-/// A material that draws nothing (until it is updated).
-pub(crate) fn hidden_wire() -> WireMaterial {
-    WireMaterial {
-        color: Vec4::ZERO,
-        p0p1: Vec4::ZERO,
-        p2p3: Vec4::ZERO,
-        params: Vec4::new(1.0, 1.0, 1.0, 0.0),
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn cubic_bezier(points: [Vec2; 4], t: f32) -> Vec2 {
     let u = 1.0 - t;

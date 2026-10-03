@@ -1,4 +1,4 @@
-//! Headless tests of the edit pipeline: no window, no rendering.
+//! Headless tests: no window, no rendering.
 
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
@@ -9,363 +9,365 @@ use bevy_noodle::{EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
 const NUM: PortType = PortType::named("num");
 const TEXT: PortType = PortType::named("text");
 
-struct Fixture {
-    app: App,
-    canvas: Entity,
-    content: Entity,
-}
-
 #[derive(Resource, Default)]
 struct Log(Vec<String>);
 
-fn fixture() -> Fixture {
+fn app() -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, NoodleCorePlugin))
-        .init_resource::<Log>()
-        .add_observer(|applied: On<EditApplied>, mut log: ResMut<Log>| {
-            let kind = match applied.edit {
-                GraphEdit::Connect { .. } => "connect",
-                GraphEdit::Disconnect { .. } => "disconnect",
-                GraphEdit::MoveNodes { .. } => "move",
-                GraphEdit::DeleteNodes { .. } => "delete",
-                GraphEdit::Select { .. } => "select",
-            };
-            log.0.push(format!("applied {kind}"));
-        })
-        .add_observer(|rejected: On<EditRejected>, mut log: ResMut<Log>| {
-            log.0.push(format!("rejected {:?}", rejected.reason));
-        });
-    let world = app.world_mut();
-    let canvas = world.spawn((NodeCanvas, Node::default())).id();
-    let content = world.spawn((CanvasContent, ChildOf(canvas))).id();
-    Fixture {
-        app,
-        canvas,
-        content,
-    }
-}
-
-impl Fixture {
-    fn world(&mut self) -> &mut World {
-        self.app.world_mut()
-    }
-
-    /// A node with the given ports (nested one level, like real UI).
-    fn node(&mut self, ports: &[Port]) -> (Entity, Vec<Entity>) {
-        let content = self.content;
-        let world = self.world();
-        let node = world
-            .spawn((GraphNode, Node::default(), ChildOf(content)))
-            .id();
-        let row = world.spawn((Node::default(), ChildOf(node))).id();
-        let ports = ports
-            .iter()
-            .map(|port| world.spawn((*port, Node::default(), ChildOf(row))).id())
-            .collect();
-        (node, ports)
-    }
-
-    fn edit(&mut self, edit: GraphEdit) -> Result<Option<Entity>, RejectReason> {
-        let canvas = self.canvas;
-        self.world().graph_edit(canvas, edit)
-    }
-
-    fn log(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.world().resource_mut::<Log>().0)
-    }
-
-    fn sources_of(&mut self, input: Entity) -> Vec<Entity> {
-        let mut state: SystemState<GraphQuery> = SystemState::new(self.world());
-        let graph = state.get(self.world()).unwrap();
-        graph.sources_of(input).collect()
-    }
-}
-
-#[test]
-fn connect_spawns_an_edge_and_normalizes_direction() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM)]);
-    let (_, b) = f.node(&[Port::input(NUM)]);
-
-    // Input first: the pipeline flips it to output → input.
-    let edge = f
-        .edit(GraphEdit::Connect {
-            from: b[0],
-            to: a[0],
-        })
-        .unwrap()
-        .unwrap();
-    assert_eq!(f.world().get::<EdgeSource>(edge).unwrap().0, a[0]);
-    assert_eq!(f.world().get::<EdgeTarget>(edge).unwrap().0, b[0]);
-    assert_eq!(&**f.world().get::<OutgoingEdges>(a[0]).unwrap(), &[edge]);
-    assert_eq!(&**f.world().get::<IncomingEdges>(b[0]).unwrap(), &[edge]);
-    assert_eq!(f.sources_of(b[0]), vec![a[0]]);
-    assert_eq!(f.log(), vec!["applied connect"]);
-}
-
-#[test]
-fn invalid_connections_are_rejected_with_a_reason() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM), Port::input(NUM)]);
-    let (_, b) = f.node(&[Port::input(NUM), Port::input(TEXT), Port::output(NUM)]);
-
-    assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: a[1]
-        }),
-        Err(RejectReason::SameNode)
-    );
-    assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: b[1]
-        }),
-        Err(RejectReason::IncompatibleTypes)
-    );
-    assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: b[2]
-        }),
-        Err(RejectReason::SameDirection)
-    );
-    f.edit(GraphEdit::Connect {
-        from: a[0],
-        to: b[0],
-    })
-    .unwrap();
-    assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: b[0]
-        }),
-        Err(RejectReason::AlreadyConnected)
-    );
-    assert_eq!(
-        f.log(),
-        vec![
-            "rejected SameNode",
-            "rejected IncompatibleTypes",
-            "rejected SameDirection",
-            "applied connect",
-            "rejected AlreadyConnected",
-        ]
-    );
-}
-
-#[test]
-fn single_inputs_swap_their_wire_and_report_the_disconnect() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM)]);
-    let (_, b) = f.node(&[Port::output(NUM)]);
-    let (_, c) = f.node(&[Port::input(NUM)]);
-
-    let first = f
-        .edit(GraphEdit::Connect {
-            from: a[0],
-            to: c[0],
-        })
-        .unwrap()
-        .unwrap();
-    f.edit(GraphEdit::Connect {
-        from: b[0],
-        to: c[0],
-    })
-    .unwrap();
-    assert!(f.world().get_entity(first).is_err());
-    assert_eq!(f.sources_of(c[0]), vec![b[0]]);
-    assert_eq!(
-        f.log(),
-        vec!["applied connect", "applied disconnect", "applied connect"]
-    );
-}
-
-#[test]
-fn observers_can_reject_and_rewrite_edits() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM)]);
-    let (node_b, b) = f.node(&[Port::input(NUM)]);
-    let blocked = b[0];
-
-    // Reject connections into one particular port.
-    f.world()
-        .add_observer(move |mut request: On<EditRequested>| {
-            if matches!(request.edit, GraphEdit::Connect { to, .. } if to == blocked) {
-                request.reject();
-            }
-        });
-    // Snap moves to a 10-unit grid.
-    f.world().add_observer(|mut request: On<EditRequested>| {
-        if let GraphEdit::MoveNodes { delta, .. } = &mut request.edit {
-            *delta = (*delta / 10.0).round() * 10.0;
-        }
+        .init_resource::<Log>();
+    app.add_observer(|e: On<EditApplied>, mut log: ResMut<Log>| {
+        log.0.push(format!("applied {}", kind(&e.edit)))
     });
+    app.add_observer(|e: On<EditRejected>, mut log: ResMut<Log>| {
+        log.0.push(format!("rejected {:?}", e.reason))
+    });
+    app
+}
 
+fn kind(edit: &GraphEdit) -> &'static str {
+    match edit {
+        GraphEdit::Connect { .. } => "connect",
+        GraphEdit::Disconnect { .. } => "disconnect",
+        GraphEdit::MoveNodes { .. } => "move",
+        GraphEdit::DeleteNodes { .. } => "delete",
+        GraphEdit::Select { .. } => "select",
+    }
+}
+
+/// A canvas with its content, as children of `parent` if given.
+fn canvas(world: &mut World, parent: Option<Entity>) -> (Entity, Entity) {
+    let canvas = world.spawn((NodeCanvas, Node::default())).id();
+    if let Some(parent) = parent {
+        world.entity_mut(canvas).insert(ChildOf(parent));
+    }
+    (canvas, world.spawn((CanvasContent, ChildOf(canvas))).id())
+}
+
+/// A node in `content` with ports nested one level, like real UI.
+fn node(world: &mut World, content: Entity, ports: &[Port]) -> (Entity, Vec<Entity>) {
+    let node = world
+        .spawn((
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            ChildOf(content),
+        ))
+        .id();
+    let row = world.spawn((Node::default(), ChildOf(node))).id();
+    (
+        node,
+        ports
+            .iter()
+            .map(|p| world.spawn((*p, Node::default(), ChildOf(row))).id())
+            .collect(),
+    )
+}
+
+fn log(app: &mut App) -> Vec<String> {
+    std::mem::take(&mut app.world_mut().resource_mut::<Log>().0)
+}
+
+fn query<T>(world: &mut World, f: impl FnOnce(&GraphQuery) -> T) -> T {
+    let mut state: SystemState<GraphQuery> = SystemState::new(world);
+    f(&state.get(world).unwrap())
+}
+
+#[test]
+fn connect_normalizes_and_relates_ports() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (_, b) = node(w, content, &[Port::input(NUM)]);
+    let edge = w
+        .graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: b[0],
+                to: a[0],
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(w.get::<EdgeSource>(edge).unwrap().0, a[0]);
+    assert_eq!(**w.get::<OutgoingEdges>(a[0]).unwrap(), vec![edge]);
     assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: b[0]
-        }),
+        query(w, |g| (g.peers_of(b[0]), g.canvas_of(edge))),
+        (vec![a[0]], Some(c))
+    );
+    assert_eq!(log(&mut app), ["applied connect"]);
+}
+
+#[test]
+fn invalid_connections_are_rejected() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM), Port::input(NUM)]);
+    let (_, b) = node(
+        w,
+        content,
+        &[Port::input(NUM), Port::input(TEXT), Port::output(NUM)],
+    );
+    let mut connect = |from, to| w.graph_edit(c, GraphEdit::Connect { from, to }).err();
+    assert_eq!(connect(a[0], a[1]), Some(RejectReason::SameNode));
+    assert_eq!(connect(a[0], b[1]), Some(RejectReason::IncompatibleTypes));
+    assert_eq!(connect(a[0], b[2]), Some(RejectReason::SameDirection));
+    assert_eq!(connect(a[0], b[0]), None);
+    assert_eq!(connect(a[0], b[0]), Some(RejectReason::AlreadyConnected));
+    let rejected = log(&mut app)
+        .into_iter()
+        .filter(|l| l.starts_with("rejected"))
+        .count();
+    assert_eq!(rejected, 4);
+}
+
+#[test]
+fn single_inputs_swap_and_wide_inputs_fill_up() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let outs: Vec<Entity> = (0..3)
+        .map(|_| node(w, content, &[Port::output(NUM)]).1[0])
+        .collect();
+    let (_, single) = node(w, content, &[Port::input(NUM)]);
+    let (_, wide) = node(
+        w,
+        content,
+        &[Port::input(NUM).with_max_connections(Some(2))],
+    );
+    for out in &outs[..2] {
+        w.graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: *out,
+                to: single[0],
+            },
+        )
+        .unwrap();
+        w.graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: *out,
+                to: wide[0],
+            },
+        )
+        .unwrap();
+    }
+    assert_eq!(query(w, |g| g.peers_of(single[0])), vec![outs[1]]);
+    assert_eq!(
+        w.graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: outs[2],
+                to: wide[0]
+            }
+        ),
+        Err(RejectReason::PortFull)
+    );
+    assert_eq!(
+        log(&mut app)
+            .iter()
+            .filter(|l| *l == "applied disconnect")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn observers_can_reject_and_rewrite() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (n, b) = node(w, content, &[Port::input(NUM)]);
+    let blocked = b[0];
+    w.add_observer(move |mut r: On<EditRequested>| match &mut r.edit {
+        GraphEdit::Connect { to, .. } if *to == blocked => r.reject(),
+        GraphEdit::MoveNodes { delta, .. } => *delta = (*delta / 10.0).round() * 10.0,
+        _ => {}
+    });
+    assert_eq!(
+        w.graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: a[0],
+                to: b[0]
+            }
+        ),
         Err(RejectReason::Rejected)
     );
-    assert!(f.world().get::<IncomingEdges>(b[0]).is_none());
-
-    f.edit(GraphEdit::move_nodes(vec![node_b], Vec2::new(14.0, 26.0)))
-        .unwrap();
-    assert_eq!(
-        f.world().get::<NodePosition>(node_b).unwrap().0,
-        Vec2::new(10.0, 30.0)
-    );
+    let edit = GraphEdit::MoveNodes {
+        nodes: vec![n],
+        delta: Vec2::new(14.0, 26.0),
+        total: Vec2::ZERO,
+        is_final: true,
+    };
+    w.graph_edit(c, edit).unwrap();
+    assert_eq!(w.get::<NodePosition>(n).unwrap().0, Vec2::new(10.0, 30.0));
 }
 
 #[test]
-fn deleting_a_node_reports_and_removes_its_edges() {
-    let mut f = fixture();
-    let (node_a, a) = f.node(&[Port::output(NUM)]);
-    let (_, b) = f.node(&[Port::input(NUM)]);
-    let (_, c) = f.node(&[Port::input(NUM)]);
-    let e1 = f
-        .edit(GraphEdit::Connect {
+fn deleting_nodes_or_ports_removes_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (na, a) = node(w, content, &[Port::output(NUM)]);
+    let (_, b) = node(w, content, &[Port::input(NUM), Port::output(NUM)]);
+    let (_, d) = node(w, content, &[Port::input(NUM)]);
+    w.graph_edit(
+        c,
+        GraphEdit::Connect {
             from: a[0],
             to: b[0],
-        })
-        .unwrap()
-        .unwrap();
-    let e2 = f
-        .edit(GraphEdit::Connect {
-            from: a[0],
-            to: c[0],
-        })
-        .unwrap()
-        .unwrap();
-    f.log();
-
-    f.edit(GraphEdit::DeleteNodes {
-        nodes: vec![node_a],
-    })
+        },
+    )
     .unwrap();
-    assert!(f.world().get_entity(node_a).is_err());
-    assert!(f.world().get_entity(e1).is_err() && f.world().get_entity(e2).is_err());
-    assert!(f.world().get::<IncomingEdges>(b[0]).is_none());
-    assert_eq!(
-        f.log(),
-        vec!["applied disconnect", "applied disconnect", "applied delete"]
-    );
-}
-
-#[test]
-fn despawning_a_port_directly_removes_its_edges() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM)]);
-    let (_, b) = f.node(&[Port::input(NUM)]);
-    let edge = f
-        .edit(GraphEdit::Connect {
-            from: a[0],
-            to: b[0],
-        })
+    let e2 = w
+        .graph_edit(
+            c,
+            GraphEdit::Connect {
+                from: b[1],
+                to: d[0],
+            },
+        )
         .unwrap()
         .unwrap();
-    f.world().despawn(a[0]);
-    assert!(f.world().get_entity(edge).is_err());
-    assert!(f.world().get::<IncomingEdges>(b[0]).is_none());
+    log(&mut app);
+    let w = app.world_mut();
+    w.graph_edit(c, GraphEdit::DeleteNodes { nodes: vec![na] })
+        .unwrap();
+    assert!(w.get::<IncomingEdges>(b[0]).is_none());
+    assert_eq!(log(&mut app), ["applied disconnect", "applied delete"]);
+    app.world_mut().despawn(d[0]);
+    assert!(app.world().get_entity(e2).is_err());
 }
 
 #[test]
 fn selection_modes() {
-    let mut f = fixture();
-    let (a, _) = f.node(&[]);
-    let (b, _) = f.node(&[]);
-    let (c, _) = f.node(&[]);
-    let selected = |f: &mut Fixture| -> Vec<bool> {
-        [a, b, c]
-            .map(|n| f.world().get::<Selected>(n).is_some())
-            .to_vec()
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let n: Vec<Entity> = (0..3).map(|_| node(w, content, &[]).0).collect();
+    let mut select = |nodes: &[usize], mode| {
+        w.graph_edit(
+            c,
+            GraphEdit::Select {
+                nodes: nodes.iter().map(|i| n[*i]).collect(),
+                mode,
+            },
+        )
+        .unwrap();
+        n.iter()
+            .map(|e| w.get::<Selected>(*e).is_some())
+            .collect::<Vec<_>>()
     };
-
-    f.edit(GraphEdit::Select {
-        nodes: vec![a, b],
-        mode: SelectMode::Replace,
-    })
-    .unwrap();
-    assert_eq!(selected(&mut f), [true, true, false]);
-    f.edit(GraphEdit::Select {
-        nodes: vec![b, c],
-        mode: SelectMode::Toggle,
-    })
-    .unwrap();
-    assert_eq!(selected(&mut f), [true, false, true]);
-    f.edit(GraphEdit::Select {
-        nodes: vec![a],
-        mode: SelectMode::Remove,
-    })
-    .unwrap();
-    assert_eq!(selected(&mut f), [false, false, true]);
-    f.edit(GraphEdit::Select {
-        nodes: vec![b],
-        mode: SelectMode::Add,
-    })
-    .unwrap();
-    assert_eq!(selected(&mut f), [false, true, true]);
+    assert_eq!(select(&[0, 1], SelectMode::Replace), [true, true, false]);
+    assert_eq!(select(&[1, 2], SelectMode::Toggle), [true, false, true]);
+    assert_eq!(select(&[0], SelectMode::Remove), [false, false, true]);
+    assert_eq!(select(&[1], SelectMode::Add), [false, true, true]);
 }
 
 #[test]
-fn edits_through_commands_apply_on_the_next_flush() {
-    let mut f = fixture();
-    let (node, _) = f.node(&[]);
-    let canvas = f.canvas;
-    f.world().commands().graph_edit(
-        canvas,
-        GraphEdit::move_nodes(vec![node], Vec2::new(5.0, 0.0)),
-    );
-    f.world().flush();
+fn graphs_are_independent_and_can_nest() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c1, content1) = canvas(w, None);
+    let (c2, content2) = canvas(w, None);
+    let (n1, p1) = node(w, content1, &[Port::output(NUM)]);
+    let (_, p2) = node(w, content2, &[Port::input(NUM)]);
+    // A third graph nested inside a node of the first.
+    let (c3, content3) = canvas(w, Some(n1));
+    let (n3, p3) = node(w, content3, &[Port::input(NUM)]);
     assert_eq!(
-        f.world().get::<NodePosition>(node).unwrap().0,
-        Vec2::new(5.0, 0.0)
-    );
-}
-
-#[test]
-fn edits_on_foreign_entities_are_rejected() {
-    let mut f = fixture();
-    let (_, a) = f.node(&[Port::output(NUM)]);
-    // A second canvas.
-    let other = f.world().spawn((NodeCanvas, Node::default())).id();
-    let other_content = f.world().spawn((CanvasContent, ChildOf(other))).id();
-    let foreign = f
-        .world()
-        .spawn((GraphNode, Node::default(), ChildOf(other_content)))
-        .id();
-    let foreign_port = f
-        .world()
-        .spawn((Port::input(NUM), Node::default(), ChildOf(foreign)))
-        .id();
-
-    assert_eq!(
-        f.edit(GraphEdit::Connect {
-            from: a[0],
-            to: foreign_port
-        }),
+        w.graph_edit(
+            c1,
+            GraphEdit::Connect {
+                from: p1[0],
+                to: p2[0]
+            }
+        ),
         Err(RejectReason::NotInCanvas)
     );
     assert_eq!(
-        f.edit(GraphEdit::DeleteNodes {
-            nodes: vec![foreign]
-        }),
+        w.graph_edit(
+            c1,
+            GraphEdit::Connect {
+                from: p1[0],
+                to: p3[0]
+            }
+        ),
+        Err(RejectReason::NotInCanvas)
+    );
+    let (nodes1, ports1, canvas3) = query(w, |g| (g.nodes_of(c1), g.ports_of(n1), g.canvas_of(n3)));
+    assert_eq!((nodes1, ports1, canvas3), (vec![n1], p1.clone(), Some(c3)));
+    assert_eq!(
+        w.graph_edit(c2, GraphEdit::DeleteNodes { nodes: vec![n1] }),
         Err(RejectReason::Empty)
     );
-    assert!(f.world().get_entity(foreign).is_ok());
 }
 
-/// The interaction layer raises a pressed node by re-adding it to its parent;
-/// this pins down that Bevy moves it to the end of `Children`.
+#[test]
+fn reparenting_into_another_graph_drops_crossing_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c1, content1) = canvas(w, None);
+    let (_, content2) = canvas(w, None);
+    let (_, a) = node(w, content1, &[Port::output(NUM)]);
+    let (nb, b) = node(w, content1, &[Port::input(NUM)]);
+    let edge = w
+        .graph_edit(
+            c1,
+            GraphEdit::Connect {
+                from: a[0],
+                to: b[0],
+            },
+        )
+        .unwrap()
+        .unwrap();
+    w.entity_mut(nb).insert(ChildOf(content2));
+    app.update();
+    assert!(app.world().get_entity(edge).is_err());
+    assert!(log(&mut app).contains(&"applied disconnect".to_string()));
+}
+
+#[test]
+fn commands_apply_on_flush_and_types_are_auto_registered() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (n, _) = node(w, content, &[]);
+    w.commands().graph_edit(
+        c,
+        GraphEdit::MoveNodes {
+            nodes: vec![n],
+            delta: Vec2::X,
+            total: Vec2::X,
+            is_final: true,
+        },
+    );
+    w.flush();
+    assert_eq!(w.get::<NodePosition>(n).unwrap().0, Vec2::X);
+    let registry = w.resource::<AppTypeRegistry>().read();
+    for id in [
+        std::any::TypeId::of::<Port>(),
+        std::any::TypeId::of::<EdgeGeometry>(),
+        std::any::TypeId::of::<CanvasInteraction>(),
+    ] {
+        assert!(registry.get(id).is_some());
+    }
+}
+
+/// Raising a pressed node re-adds it to its parent; Bevy moves it last.
 #[test]
 fn re_adding_a_child_moves_it_last() {
-    let mut f = fixture();
-    let (first, _) = f.node(&[]);
-    let (second, _) = f.node(&[]);
-    let content = f.content;
-    f.world().entity_mut(content).add_child(first);
-    let children: Vec<Entity> = f.world().get::<Children>(content).unwrap().to_vec();
-    assert_eq!(children, vec![second, first]);
+    let mut world = World::new();
+    let parent = world.spawn_empty().id();
+    let (first, second) = (
+        world.spawn(ChildOf(parent)).id(),
+        world.spawn(ChildOf(parent)).id(),
+    );
+    world.entity_mut(parent).add_child(first);
+    assert_eq!(**world.get::<Children>(parent).unwrap(), [second, first]);
 }

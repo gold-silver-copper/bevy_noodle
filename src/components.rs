@@ -1,38 +1,20 @@
-//! The components that make up a graph.
-//!
-//! A graph is ordinary entities:
-//!
-//! ```text
-//! NodeCanvas                 (your UI node: the viewport)
-//! └── CanvasContent          (pans and zooms; holds the nodes)
-//!     ├── GraphNode          (your UI node, anywhere inside: style it as you like)
-//!     │   └── … Port         (your UI node marking a connection point)
-//!     └── GraphNode
-//!         └── … Port
-//! Edge                       (spawned on connect; EdgeSource → output port, EdgeTarget → input port)
-//! ```
-//!
-//! You insert [`NodeCanvas`], [`CanvasContent`], [`GraphNode`] and [`Port`].
-//! The library manages [`Edge`]s, [`PortAnchor`]s and [`EdgeGeometry`].
+//! The components that make up a graph. You insert [`NodeCanvas`],
+//! [`CanvasContent`], [`GraphNode`] and [`Port`]; the library manages edges.
 
 use bevy::picking::Pickable;
 use bevy::prelude::*;
 
-/// Marks a UI node as a graph canvas: the viewport nodes are seen through.
-///
-/// Adds no background and no children. Give it a [`CanvasContent`] child to
-/// hold the nodes.
+/// A graph and its viewport. Adds no background and no children: give it a
+/// [`CanvasContent`] child to hold the nodes.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
-#[reflect(Component, Default, Debug)]
+#[reflect(Component, Default)]
 #[require(CanvasView)]
 pub struct NodeCanvas;
 
-/// The canvas camera: where graph space shows up inside the canvas.
-///
-/// `pan` is the canvas-local position (logical pixels from the canvas' top-left
-/// corner) of the graph origin; `zoom` scales graph space.
+/// The canvas camera: `pan` is where the graph origin appears (canvas-local
+/// logical pixels) and `zoom` scales graph space.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Component, Default, Debug, PartialEq)]
+#[reflect(Component, Default)]
 pub struct CanvasView {
     pub pan: Vec2,
     pub zoom: f32,
@@ -48,18 +30,16 @@ impl Default for CanvasView {
 }
 
 impl CanvasView {
-    /// Graph-space point → canvas-local point.
     pub fn graph_to_canvas(&self, point: Vec2) -> Vec2 {
         self.pan + point * self.zoom
     }
 
-    /// Canvas-local point → graph-space point.
     pub fn canvas_to_graph(&self, point: Vec2) -> Vec2 {
         (point - self.pan) / self.zoom.max(f32::EPSILON)
     }
 
-    /// Multiplies the zoom by `factor`, clamped to `min..=max`, keeping the
-    /// graph point under the canvas-local `anchor` in place.
+    /// Scales the zoom by `factor` (clamped) keeping the graph point under the
+    /// canvas-local `anchor` in place.
     pub fn zoom_around(&mut self, anchor: Vec2, factor: f32, min: f32, max: f32) {
         let fixed = self.canvas_to_graph(anchor);
         self.zoom = (self.zoom * factor).clamp(min, max);
@@ -67,76 +47,64 @@ impl CanvasView {
     }
 }
 
-/// The child of a [`NodeCanvas`] that holds the nodes. The library drives its
-/// [`UiTransform`] from [`CanvasView`]; it is otherwise an invisible,
-/// zero-size, non-pickable container.
+/// The child of a [`NodeCanvas`] holding its nodes. Its `UiTransform` follows
+/// [`CanvasView`]; it is otherwise an invisible, zero-size container.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
-#[reflect(Component, Default, Debug)]
+#[reflect(Component, Default)]
 #[require(Node = content_node(), UiTransform, Pickable = Pickable::IGNORE)]
 pub struct CanvasContent;
 
+// Zero-size at the canvas origin, so zoom pivots on the graph origin even when
+// nodes are laid out in flow.
 fn content_node() -> Node {
+    let zero = Val::Px(0.0);
     Node {
         position_type: PositionType::Absolute,
-        left: Val::Px(0.0),
-        top: Val::Px(0.0),
-        width: Val::Px(0.0),
-        height: Val::Px(0.0),
+        left: zero,
+        top: zero,
+        width: zero,
+        height: zero,
         ..default()
     }
 }
 
-/// Marks a node of the graph. Put it on the root UI entity of the node, as a
-/// descendant of the canvas' [`CanvasContent`].
-///
-/// The library positions the node from [`NodePosition`] (by writing
-/// `position_type`, `left` and `top` of its [`Node`]) and touches nothing
-/// else on it.
+/// Marks the root UI entity of a node. Style it however you like.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
-#[reflect(Component, Default, Debug)]
-#[require(NodePosition)]
+#[reflect(Component, Default)]
 pub struct GraphNode;
 
-/// Position of a [`GraphNode`]'s top-left corner in graph space.
+/// Optional position of a [`GraphNode`]'s top-left corner in graph space. With
+/// it, the library writes the node's `position_type`/`left`/`top`; without it,
+/// your layout places the node.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq, Deref, DerefMut)]
-#[reflect(Component, Default, Debug, PartialEq)]
+#[reflect(Component, Default)]
 pub struct NodePosition(pub Vec2);
 
-/// If a node contains a drag handle, only the handle starts node drags.
-/// Without one, the whole node does.
+/// If a node contains one, only the handle starts node drags.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
-#[reflect(Component, Default, Debug)]
+#[reflect(Component, Default)]
 pub struct NodeDragHandle;
 
-/// Which way data flows through a port.
 #[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-#[reflect(Default, Debug, PartialEq, Hash)]
 pub enum PortDirection {
     #[default]
     Input,
     Output,
 }
 
-/// The type of value a port carries. Ports connect when their types are equal,
-/// or when either is [`PortType::ANY`]. For anything subtler, reject edits in
-/// an [`EditRequested`](crate::EditRequested) observer.
+/// What a port carries. Ports connect when types are equal or either is
+/// [`PortType::ANY`]; add finer rules with an [`EditRequested`](crate::EditRequested) observer.
 #[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-#[reflect(Default, Debug, PartialEq, Hash)]
 pub struct PortType(pub u64);
 
 impl PortType {
-    /// Connects to every type.
     pub const ANY: PortType = PortType(0);
 
-    /// A type identified by name, e.g. `PortType::named("number")`.
+    /// A type identified by name (FNV-1a; never `ANY`).
     pub const fn named(name: &str) -> Self {
-        // FNV-1a; never yields 0, which is reserved for `ANY`.
-        let bytes = name.as_bytes();
-        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-        let mut i = 0;
+        let (bytes, mut hash, mut i) = (name.as_bytes(), 0xcbf2_9ce4_8422_2325_u64, 0);
         while i < bytes.len() {
-            hash ^= bytes[i] as u64;
-            hash = hash.wrapping_mul(0x0100_0000_01b3);
+            hash = (hash ^ bytes[i] as u64).wrapping_mul(0x0100_0000_01b3);
             i += 1;
         }
         PortType(if hash == 0 { 1 } else { hash })
@@ -147,16 +115,14 @@ impl PortType {
     }
 }
 
-/// Marks a connection point. Put it on any UI entity inside a [`GraphNode`];
-/// the wire attaches to its center.
+/// Marks a connection point: any UI entity inside a [`GraphNode`].
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Component, Debug, PartialEq)]
+#[reflect(Component)]
 #[require(PortAnchor)]
 pub struct Port {
     pub direction: PortDirection,
     pub port_type: PortType,
-    /// Maximum number of edges. `None` is unlimited. When a port with a limit
-    /// of 1 is full, a new connection replaces the old one.
+    /// `None` is unlimited. A full port with a limit of 1 swaps its edge.
     pub max_connections: Option<u32>,
 }
 
@@ -183,96 +149,90 @@ impl Port {
         self.max_connections = max;
         self
     }
+
+    pub(crate) fn tangent(&self, custom: Option<&PortTangent>) -> Vec2 {
+        custom.map(|t| t.0).unwrap_or(match self.direction {
+            PortDirection::Output => Vec2::X,
+            PortDirection::Input => Vec2::NEG_X,
+        })
+    }
 }
 
-/// Overrides the direction a wire leaves or enters a port (graph space, e.g.
-/// `Vec2::Y` for vertical graphs). Defaults: outputs `+X`, inputs `-X`.
+/// Overrides the direction wires leave or enter a port (graph space).
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Deref)]
-#[reflect(Component, Debug, PartialEq)]
+#[reflect(Component)]
 pub struct PortTangent(pub Vec2);
 
-/// Where a port sits relative to its node (computed after UI layout).
+/// Where a port is, measured after layout (graph space).
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
-#[reflect(Component, Default, Debug, PartialEq)]
+#[reflect(Component, Default)]
 pub struct PortAnchor {
-    /// The [`GraphNode`] the port belongs to.
     pub node: Option<Entity>,
-    /// Port center relative to the node's top-left corner, in graph units.
+    /// Center relative to the node's [`NodePosition`].
     pub offset: Vec2,
-    /// Whether the port has been laid out.
-    pub measured: bool,
+    /// Center in graph space at the last layout.
+    pub position: Option<Vec2>,
 }
 
-/// A connection between two ports. Spawned and despawned by the library in
-/// response to [`GraphEdit`](crate::GraphEdit)s; despawned automatically
-/// when either port is.
-#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
-#[reflect(Component, Debug, PartialEq)]
+/// A connection, spawned and despawned by graph edits. Despawned with either port.
+#[derive(Component, Reflect, Debug, Default, Clone, Copy)]
+#[reflect(Component, Default)]
 #[require(EdgeGeometry)]
-pub struct Edge {
-    /// The canvas this edge belongs to.
-    pub canvas: Entity,
-}
+pub struct Edge;
 
 /// The output port an [`Edge`] starts at.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
-#[reflect(Component, Debug, PartialEq)]
+#[reflect(Component)]
 #[relationship(relationship_target = OutgoingEdges)]
 pub struct EdgeSource(pub Entity);
 
 /// The input port an [`Edge`] ends at.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq, Eq)]
-#[reflect(Component, Debug, PartialEq)]
+#[reflect(Component)]
 #[relationship(relationship_target = IncomingEdges)]
 pub struct EdgeTarget(pub Entity);
 
-/// Edges leaving a port. Maintained by Bevy from [`EdgeSource`].
-#[derive(Component, Reflect, Debug, Default, Clone, PartialEq)]
-#[reflect(Component, Default, Debug)]
+/// Edges leaving a port, maintained by Bevy.
+#[derive(Component, Reflect, Debug, Default, Clone, PartialEq, Deref)]
+#[reflect(Component, Default)]
 #[relationship_target(relationship = EdgeSource, linked_spawn)]
 pub struct OutgoingEdges(Vec<Entity>);
 
-/// Edges arriving at a port. Maintained by Bevy from [`EdgeTarget`].
-#[derive(Component, Reflect, Debug, Default, Clone, PartialEq)]
-#[reflect(Component, Default, Debug)]
+/// Edges arriving at a port, maintained by Bevy.
+#[derive(Component, Reflect, Debug, Default, Clone, PartialEq, Deref)]
+#[reflect(Component, Default)]
 #[relationship_target(relationship = EdgeTarget, linked_spawn)]
 pub struct IncomingEdges(Vec<Entity>);
 
-impl std::ops::Deref for OutgoingEdges {
-    type Target = [Entity];
-    fn deref(&self) -> &[Entity] {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for IncomingEdges {
-    type Target = [Entity];
-    fn deref(&self) -> &[Entity] {
-        &self.0
-    }
-}
-
-/// Where an [`Edge`] runs, in graph space. Computed every frame its ports or
-/// nodes move; read it to draw edges any way you like.
+/// Where an [`Edge`] or [`PendingWire`] runs, output → input, in graph space.
+/// Draw edges from it however you like.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
-#[reflect(Component, Default, Debug, PartialEq)]
+#[reflect(Component, Default)]
 pub struct EdgeGeometry {
     pub start: Vec2,
     pub end: Vec2,
-    /// Direction the edge leaves `start`.
     pub start_tangent: Vec2,
-    /// Direction the edge enters `end` (pointing away from the node).
+    /// Points away from the input's node.
     pub end_tangent: Vec2,
-    /// `false` until both ports have been laid out.
+    /// `false` until both ends are laid out.
     pub valid: bool,
 }
 
 impl EdgeGeometry {
-    /// Cubic Bézier control points with handles along the tangents, scaled by
-    /// `curvature` (0.5 is a good default).
+    /// A valid geometry between two `(position, tangent)` ends.
+    pub fn between((start, start_tangent): (Vec2, Vec2), (end, end_tangent): (Vec2, Vec2)) -> Self {
+        Self {
+            start,
+            end,
+            start_tangent,
+            end_tangent,
+            valid: true,
+        }
+    }
+
+    /// Cubic Bézier control points; `curvature` 0.5 is a good default.
     pub fn bezier(&self, curvature: f32) -> [Vec2; 4] {
-        let reach = (self.end - self.start).length().max(1.0);
-        let handle = (reach * curvature).clamp(30.0, 240.0);
+        let handle = (self.end.distance(self.start) * curvature).clamp(30.0, 240.0);
         [
             self.start,
             self.start + self.start_tangent * handle,
@@ -282,11 +242,18 @@ impl EdgeGeometry {
     }
 }
 
-pub(crate) fn default_tangent(direction: PortDirection) -> Vec2 {
-    match direction {
-        PortDirection::Output => Vec2::X,
-        PortDirection::Input => Vec2::NEG_X,
-    }
+/// The wire being dragged: its own entity with an [`EdgeGeometry`], so edge
+/// renderers draw it like any edge.
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
+#[reflect(Component)]
+#[require(EdgeGeometry)]
+pub struct PendingWire {
+    pub canvas: Entity,
+    pub from: Entity,
+    /// Pointer position in graph space.
+    pub pointer: Vec2,
+    /// The compatible port under the pointer, if any.
+    pub target: Option<Entity>,
 }
 
 #[cfg(test)]
@@ -294,14 +261,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn named_port_types_are_stable_and_distinct() {
+    fn port_types() {
         const NUMBER: PortType = PortType::named("number");
         assert_eq!(NUMBER, PortType::named("number"));
         assert_ne!(NUMBER, PortType::named("text"));
-        assert_ne!(NUMBER, PortType::ANY);
-        assert!(NUMBER.accepts(NUMBER));
-        assert!(NUMBER.accepts(PortType::ANY));
-        assert!(!NUMBER.accepts(PortType::named("text")));
+        assert!(NUMBER.accepts(PortType::ANY) && !NUMBER.accepts(PortType::named("text")));
     }
 
     #[test]

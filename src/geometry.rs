@@ -1,146 +1,173 @@
-//! Keeping UI layout and graph geometry in sync.
-//!
-//! Before layout: node positions → `Node.left/top`, the canvas view → the
-//! content's `UiTransform`, and edge endpoints from node positions plus the
-//! last measured port offsets (so edges follow dragged nodes without a frame
-//! of lag). After layout: port offsets are measured from the real layout.
+//! Keeping layout and graph geometry in sync. Before layout: node positions,
+//! the canvas view and edge geometry (from node positions plus measured port
+//! offsets, so edges follow dragged nodes without lag). After layout: ports
+//! are measured.
 
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, ui_transform::UiGlobalTransform};
 
-use crate::components::{
-    CanvasContent, CanvasView, EdgeGeometry, EdgeSource, EdgeTarget, GraphNode, NodeCanvas,
-    NodePosition, Port, PortAnchor, PortTangent, default_tangent,
-};
+use crate::components::*;
+use crate::edit::{GraphCommandsExt, GraphEdit};
+use crate::query::GraphQuery;
 
-/// Writes [`NodePosition`] into the node's [`Node`].
-pub(crate) fn sync_node_positions(
-    mut nodes: Query<
-        (&NodePosition, &mut Node),
-        (
-            With<GraphNode>,
-            Or<(Changed<NodePosition>, Added<GraphNode>)>,
-        ),
-    >,
-) {
-    for (position, mut node) in &mut nodes {
-        let (left, top) = (Val::Px(position.x), Val::Px(position.y));
-        if node.position_type != PositionType::Absolute || node.left != left || node.top != top {
-            node.position_type = PositionType::Absolute;
-            node.left = left;
-            node.top = top;
-        }
-    }
+/// Pans and zooms a canvas so its positioned nodes fit, with `padding`
+/// canvas pixels around them.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct FrameAll {
+    #[event_target]
+    pub canvas: Entity,
+    pub padding: f32,
 }
 
-/// Writes each [`CanvasView`] into its content's [`UiTransform`].
-pub(crate) fn sync_canvas_views(
-    canvases: Query<(&CanvasView, &Children), With<NodeCanvas>>,
+pub(crate) fn sync_layout(
+    mut nodes: Query<(&NodePosition, &mut Node), Changed<NodePosition>>,
+    canvases: Query<(&CanvasView, &Children)>,
     mut contents: Query<&mut UiTransform, With<CanvasContent>>,
 ) {
+    for (position, mut node) in &mut nodes {
+        node.position_type = PositionType::Absolute;
+        node.left = Val::Px(position.x);
+        node.top = Val::Px(position.y);
+    }
     for (view, children) in &canvases {
-        for child in children.iter() {
-            let Ok(mut transform) = contents.get_mut(child) else {
-                continue;
+        let mut contents = contents.iter_many_mut(children);
+        while let Some(mut transform) = contents.fetch_next() {
+            let wanted = UiTransform {
+                translation: Val2::px(view.pan.x, view.pan.y),
+                scale: Vec2::splat(view.zoom),
+                ..default()
             };
-            let translation = Val2::px(view.pan.x, view.pan.y);
-            let scale = Vec2::splat(view.zoom);
-            if transform.translation != translation || transform.scale != scale {
-                transform.translation = translation;
-                transform.scale = scale;
-            }
+            transform.set_if_neq(wanted);
         }
     }
 }
 
-/// Computes [`EdgeGeometry`] from node positions and port anchors.
-pub(crate) fn update_edge_geometry(
-    mut edges: Query<(&EdgeSource, &EdgeTarget, &mut EdgeGeometry)>,
-    ports: Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
-    nodes: Query<&NodePosition>,
-) {
-    for (source, target, mut geometry) in &mut edges {
-        let next = match (
-            port_endpoint(source.0, &ports, &nodes),
-            port_endpoint(target.0, &ports, &nodes),
-        ) {
-            (Some((start, start_tangent)), Some((end, end_tangent))) => EdgeGeometry {
-                start,
-                end,
-                start_tangent,
-                end_tangent,
-                valid: true,
-            },
-            _ => EdgeGeometry {
-                valid: false,
-                ..*geometry
-            },
-        };
-        geometry.set_if_neq(next);
-    }
-}
-
-/// A port's position (graph space) and wire tangent, if it has been laid out.
-pub(crate) fn port_endpoint(
+/// A port's position (graph space) and wire tangent, once laid out.
+pub(crate) fn endpoint(
     port: Entity,
     ports: &Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
     nodes: &Query<&NodePosition>,
 ) -> Option<(Vec2, Vec2)> {
-    let (p, anchor, tangent) = ports.get(port).ok()?;
-    if !anchor.measured {
-        return None;
-    }
-    let node = nodes.get(anchor.node?).ok()?;
-    let tangent = tangent.map(|t| t.0).unwrap_or(default_tangent(p.direction));
-    Some((node.0 + anchor.offset, tangent))
+    let (port, anchor, tangent) = ports.get(port).ok()?;
+    let positioned = anchor.position?;
+    let at = anchor
+        .node
+        .and_then(|n| nodes.get(n).ok())
+        .map_or(positioned, |p| p.0 + anchor.offset);
+    Some((at, port.tangent(tangent)))
 }
 
-/// After layout: measures each port's center relative to its node.
+pub(crate) fn update_edge_geometry(
+    changed: Query<(), Or<(Changed<NodePosition>, Changed<PortAnchor>, Added<Edge>)>>,
+    mut edges: Query<(&EdgeSource, &EdgeTarget, &mut EdgeGeometry)>,
+    mut wires: Query<(&PendingWire, &mut EdgeGeometry), Without<EdgeSource>>,
+    ports: Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
+    nodes: Query<&NodePosition>,
+) {
+    if !changed.is_empty() {
+        for (source, target, mut current) in &mut edges {
+            let ends = endpoint(source.0, &ports, &nodes).zip(endpoint(target.0, &ports, &nodes));
+            current.set_if_neq(
+                ends.map_or_else(EdgeGeometry::default, |(a, b)| EdgeGeometry::between(a, b)),
+            );
+        }
+    }
+    // The dragged wire runs output → input; the pointer stands in for the free end.
+    for (wire, mut current) in &mut wires {
+        let Some(fixed) = endpoint(wire.from, &ports, &nodes) else {
+            continue;
+        };
+        let free = wire
+            .target
+            .and_then(|t| endpoint(t, &ports, &nodes))
+            .unwrap_or((wire.pointer, -fixed.1));
+        let from_output = ports
+            .get(wire.from)
+            .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
+        current.set_if_neq(if from_output {
+            EdgeGeometry::between(fixed, free)
+        } else {
+            EdgeGeometry::between(free, fixed)
+        });
+    }
+}
+
+/// After layout: each port's center in graph space, and relative to its node.
 pub(crate) fn measure_ports(
     mut ports: Query<
         (Entity, &mut PortAnchor, &UiGlobalTransform, &ComputedNode),
         (With<Port>, Changed<UiGlobalTransform>),
     >,
     parents: Query<&ChildOf>,
-    graph_nodes: Query<&NodePosition, With<GraphNode>>,
+    graph_nodes: Query<Option<&NodePosition>, With<GraphNode>>,
     contents: Query<&UiGlobalTransform, With<CanvasContent>>,
 ) {
     for (entity, mut anchor, transform, computed) in &mut ports {
-        let mut node = None;
-        let mut content = None;
-        for ancestor in parents.iter_ancestors(entity) {
-            if node.is_none() && graph_nodes.contains(ancestor) {
-                node = Some(ancestor);
-            }
-            if let Ok(content_transform) = contents.get(ancestor) {
-                content = Some(content_transform);
-                break;
-            }
-        }
-        let (Some(node), Some(content_transform)) = (node, content) else {
-            anchor.set_if_neq(PortAnchor::default());
-            continue;
-        };
-        let Some(inverse) = content_transform.try_inverse() else {
-            continue;
-        };
-        if computed.size() == Vec2::ZERO {
-            anchor.set_if_neq(PortAnchor {
-                node: Some(node),
-                ..default()
+        let node = parents
+            .iter_ancestors(entity)
+            .find(|e| graph_nodes.contains(*e));
+        let content = parents
+            .iter_ancestors(entity)
+            .find_map(|e| contents.get(e).ok());
+        let center = content
+            .and_then(|content| content.try_inverse())
+            .filter(|_| computed.size() != Vec2::ZERO)
+            .map(|inverse| {
+                inverse.transform_point2(transform.translation) * computed.inverse_scale_factor()
             });
-            continue;
-        }
-        // Into content space (physical, unscaled by zoom), then logical units.
-        let center =
-            inverse.transform_point2(transform.translation) * computed.inverse_scale_factor();
-        let Ok(node_position) = graph_nodes.get(node) else {
-            continue;
-        };
+        let origin = node
+            .and_then(|n| graph_nodes.get(n).ok().flatten())
+            .map_or(Vec2::ZERO, |p| p.0);
         anchor.set_if_neq(PortAnchor {
-            node: Some(node),
-            offset: center - node_position.0,
-            measured: true,
+            node,
+            offset: center.unwrap_or_default() - origin,
+            position: center,
         });
     }
+}
+
+/// Disconnects edges whose ports ended up in different graphs (after
+/// re-parenting). Only runs when something was re-parented.
+pub(crate) fn drop_cross_graph_edges(
+    moved: Query<(), Changed<ChildOf>>,
+    edges: Query<(Entity, &EdgeSource, &EdgeTarget)>,
+    graph: GraphQuery,
+    mut commands: Commands,
+) {
+    if moved.is_empty() {
+        return;
+    }
+    for (edge, source, target) in &edges {
+        let canvas = graph.canvas_of(source.0);
+        if canvas != graph.canvas_of(target.0) {
+            match canvas {
+                Some(canvas) => commands.graph_edit(canvas, GraphEdit::Disconnect { edge }),
+                None => commands.entity(edge).despawn(),
+            }
+        }
+    }
+}
+
+pub(crate) fn frame_all(
+    event: On<FrameAll>,
+    graph: GraphQuery,
+    mut canvases: Query<(&mut CanvasView, &ComputedNode)>,
+    nodes: Query<(&NodePosition, &ComputedNode)>,
+) {
+    let Ok((mut view, canvas)) = canvases.get_mut(event.canvas) else {
+        return;
+    };
+    let bounds = graph
+        .nodes_of(event.canvas)
+        .into_iter()
+        .filter_map(|node| nodes.get(node).ok())
+        .map(|(p, c)| Rect::from_corners(p.0, p.0 + c.size() * c.inverse_scale_factor()))
+        .reduce(|a, b| a.union(b));
+    let size = canvas.size() * canvas.inverse_scale_factor();
+    let Some(bounds) = bounds.filter(|_| size.min_element() > 0.0) else {
+        return;
+    };
+    let fit = (size - 2.0 * event.padding).max(Vec2::ONE) / bounds.size().max(Vec2::ONE);
+    view.zoom = fit.min_element().clamp(0.1, 1.0);
+    view.pan = size / 2.0 - bounds.center() * view.zoom;
 }
