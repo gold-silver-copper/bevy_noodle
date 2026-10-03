@@ -73,11 +73,9 @@ fn setup(mut commands: Commands) {
             ChildOf(content),
             children![
                 kit::title("Add"),
-                kit::body(children![
-                    kit::input("a", NUMBER, BLUE),
-                    kit::input("b", NUMBER, BLUE),
-                    kit::output("sum", NUMBER, BLUE),
-                ]),
+                kit::input("a", NUMBER, BLUE),
+                kit::input("b", NUMBER, BLUE),
+                kit::output("sum", NUMBER, BLUE),
             ],
         ))
         .id();
@@ -111,10 +109,7 @@ fn spawn_number(commands: &mut Commands, content: Entity, at: Vec2) -> Entity {
         .spawn((
             kit::node(at),
             ChildOf(content),
-            children![
-                kit::title("Number"),
-                kit::body(children![kit::output("value", NUMBER, BLUE)]),
-            ],
+            children![kit::title("Number"), kit::output("value", NUMBER, BLUE),],
         ))
         .id()
 }

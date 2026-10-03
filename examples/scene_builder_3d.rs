@@ -114,6 +114,7 @@ fn setup(
         width: px(640),
         height: percent(100),
         border: UiRect::right(px(1)),
+        overflow: Overflow::clip(),
         ..default()
     };
     let background = BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82));
@@ -195,22 +196,18 @@ fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Enti
         ),
         Kind::Scene => ("Scene".into(), &[("objects", OBJECT, ORANGE)], &[]),
     };
-    let body = commands.spawn(kit::body(())).id();
+    let node = commands.spawn((kit::node(at), kind, ChildOf(content))).id();
+    commands.spawn((kit::title(title), ChildOf(node)));
     for (label, port_type, color) in inputs {
         let port = match kind {
             Kind::Scene => Port::input(*port_type).with_max_connections(None),
             _ => Port::input(*port_type),
         };
-        commands.spawn((kit::input_with(*label, port, *color), ChildOf(body)));
+        commands.spawn((kit::input_with(*label, port, *color), ChildOf(node)));
     }
     for (label, port_type, color) in outputs {
-        commands.spawn((kit::output(*label, *port_type, *color), ChildOf(body)));
+        commands.spawn((kit::output(*label, *port_type, *color), ChildOf(node)));
     }
-    let title = commands.spawn(kit::title(title)).id();
-    let node = commands
-        .spawn((kit::node(at), kind, ChildOf(content)))
-        .add_children(&[title, body])
-        .id();
     if let Kind::Paint(_, color) = kind {
         // A swatch: the node's border shows the color unless selected.
         commands.entity(node).insert(SelectedBorderColor {

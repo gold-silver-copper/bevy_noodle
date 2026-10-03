@@ -127,7 +127,7 @@ Each piece is opt-in on the canvas or the entity:
 - **`PortHighlight` + `PortColor`:** ports show connection and drag state.
 - **`SelectedBorderColor`:** a node border that follows selection.
 - **`style::kit`:** plain functions returning bundles: `kit::canvas()` (an
-  interactive canvas with the whole look) and node, title, body and port rows.
+  interactive canvas with the whole look), a node frame, a title and port rows.
 
 ### Snapshots (`scene`)
 
@@ -157,6 +157,9 @@ See the `editor` and `save_load` examples.
 - `CanvasWantsInput` is gone. `CanvasInteraction` requires `Hovered`; read
   that instead.
 - `kit` functions take no theme argument.
+- `kit::body` is gone: put `kit::input`/`kit::output` rows straight into the
+  node after `kit::title`. Give other content a horizontal margin of
+  `kit::PADDING`.
 
 ## License
 

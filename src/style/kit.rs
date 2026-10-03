@@ -3,9 +3,13 @@
 //! ```ignore
 //! commands.spawn((kit::node(Vec2::new(40.0, 40.0)), ChildOf(content), children![
 //!     kit::title("Add"),
-//!     kit::body(children![kit::input("a", NUMBER, BLUE), kit::output("sum", NUMBER, BLUE)]),
+//!     kit::input("a", NUMBER, BLUE),
+//!     kit::output("sum", NUMBER, BLUE),
 //! ]));
 //! ```
+//!
+//! A node is a column: its title, then rows. Give other content a horizontal
+//! margin of [`PADDING`] to line up with the rows.
 
 use bevy::picking::Pickable;
 use bevy::prelude::*;
@@ -17,15 +21,20 @@ use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection
 use crate::interaction::CanvasInteraction;
 
 const BORDER: f32 = 1.5;
-const PADDING: f32 = 10.0;
+/// Horizontal padding of rows inside a node.
+pub const PADDING: f32 = 10.0;
 const PORT_RADIUS: f32 = 6.0;
 
 /// An interactive canvas filling its parent, with the whole default look.
 /// Insert a different `Node` (or any piece) afterwards to change it.
+///
+/// It clips its content, which also lets Bevy skip drawing nodes and edges
+/// that are out of view.
 pub fn canvas() -> impl Bundle {
     let fill = Node {
         width: percent(100),
         height: percent(100),
+        overflow: Overflow::clip(),
         ..default()
     };
     let look = (
@@ -36,7 +45,8 @@ pub fn canvas() -> impl Bundle {
     (NodeCanvas, CanvasInteraction::default(), fill, look)
 }
 
-/// A node frame at `position` whose border follows selection.
+/// A node frame at `position` whose border follows selection: a column of
+/// its title and rows.
 pub fn node(position: Vec2) -> impl Bundle {
     let border = Color::srgb_u8(66, 69, 77);
     (
@@ -44,7 +54,9 @@ pub fn node(position: Vec2) -> impl Bundle {
         NodePosition(position),
         Node {
             flex_direction: FlexDirection::Column,
+            row_gap: px(6),
             min_width: px(160),
+            padding: UiRect::bottom(px(8)),
             border: UiRect::all(px(BORDER)),
             border_radius: BorderRadius::all(px(8)),
             ..default()
@@ -65,31 +77,21 @@ pub fn node(position: Vec2) -> impl Bundle {
     )
 }
 
+/// A title bar: one text entity with its own padding and background.
 pub fn title(text: impl Into<String>) -> impl Bundle {
-    (
-        Node {
-            padding: UiRect::axes(px(PADDING), px(5)),
-            border_radius: BorderRadius::top(px(6.5)),
-            ..default()
-        },
-        BackgroundColor(Color::srgb_u8(60, 63, 71)),
-        children![(
-            Text::new(text),
-            TextFont::from_font_size(14.0),
-            Pickable::IGNORE
-        )],
-    )
-}
-
-/// The padded column holding a node's rows; pass `children![...]`.
-pub fn body(rows: impl Bundle) -> impl Bundle {
     let node = Node {
-        flex_direction: FlexDirection::Column,
-        padding: UiRect::axes(px(PADDING), px(8)),
-        row_gap: px(6),
+        padding: UiRect::axes(px(PADDING), px(5)),
+        margin: UiRect::bottom(px(2)),
+        border_radius: BorderRadius::top(px(6.5)),
         ..default()
     };
-    (node, rows)
+    let background = BackgroundColor(Color::srgb_u8(60, 63, 71));
+    (
+        Text::new(text),
+        TextFont::from_font_size(14.0),
+        node,
+        background,
+    )
 }
 
 /// A port dot sitting on the node's edge.
@@ -104,7 +106,8 @@ pub fn port(port: Port, color: Color) -> impl Bundle {
         border_radius: BorderRadius::MAX,
         ..default()
     };
-    let inset = px(-(PADDING + BORDER + PORT_RADIUS));
+    // Centered on the frame's border; rows start at its inner edge.
+    let inset = px(-(BORDER + PORT_RADIUS));
     match port.direction {
         PortDirection::Input => node.left = inset,
         PortDirection::Output => node.right = inset,
@@ -133,6 +136,7 @@ fn row(
         justify_content: justify,
         align_items: AlignItems::Center,
         min_height: px(22),
+        padding: UiRect::horizontal(px(PADDING)),
         ..default()
     };
     let text = (

@@ -86,9 +86,7 @@ fn spawn_node(
     value: f64,
 ) -> Entity {
     let node = commands.spawn((kit::node(at), op, ChildOf(content))).id();
-    let title = commands.spawn(kit::title(format!("{op:?}"))).id();
-    let body = commands.spawn(kit::body(())).id();
-    commands.entity(node).add_children(&[title, body]);
+    commands.spawn((kit::title(format!("{op:?}")), ChildOf(node)));
     let row = match op {
         MathOp::Number => {
             commands.entity(node).insert(NumberValue(value));
@@ -98,6 +96,7 @@ fn spawn_node(
                 NumberField(node),
                 Node {
                     padding: UiRect::axes(px(6), px(3)),
+                    margin: UiRect::horizontal(px(kit::PADDING)),
                     border: UiRect::all(px(1)),
                     ..default()
                 },
@@ -106,7 +105,7 @@ fn spawn_node(
                 TextLayout::linebreak(LineBreak::NoWrap),
                 BackgroundColor(Color::srgb_u8(28, 29, 33)),
                 BorderColor::all(Color::srgb_u8(70, 73, 81)),
-                ChildOf(body),
+                ChildOf(node),
             ));
             commands.spawn(kit::output("value", NUMBER, BLUE)).id()
         }
@@ -118,23 +117,27 @@ fn spawn_node(
                     Port::input(NUMBER).with_max_connections(None),
                     BLUE,
                 ),
-                ChildOf(body),
+                ChildOf(node),
             ));
             commands.spawn(kit::output("result", NUMBER, BLUE)).id()
         }
         MathOp::Display => {
-            commands.spawn((kit::input("value", NUMBER, BLUE), ChildOf(body)));
+            commands.spawn((kit::input("value", NUMBER, BLUE), ChildOf(node)));
             commands
                 .spawn((
                     ResultText(node),
                     Text::new("–"),
+                    Node {
+                        margin: UiRect::horizontal(px(kit::PADDING)),
+                        ..default()
+                    },
                     TextFont::from_font_size(20.0),
                     TextColor(Color::srgb(0.6, 0.9, 0.65)),
                 ))
                 .id()
         }
     };
-    commands.entity(body).add_child(row);
+    commands.entity(node).add_child(row);
     node
 }
 

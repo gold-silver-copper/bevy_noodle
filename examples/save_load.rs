@@ -99,32 +99,36 @@ fn spawn_number(commands: &mut Commands, content: Entity, value: f32, at: Vec2) 
             ChildOf(content),
             children![
                 kit::title(format!("Number {value}")),
-                kit::body(children![kit::output("value", NUMBER, BLUE)]),
+                kit::output("value", NUMBER, BLUE),
             ],
         ))
         .id()
 }
 
 fn spawn_sum(commands: &mut Commands, content: Entity, at: Vec2) -> Entity {
+    let node = commands.spawn((kit::node(at), ChildOf(content))).id();
+    let inputs = Port::input(NUMBER).with_max_connections(None);
+    let margin = UiRect::horizontal(px(kit::PADDING));
     let result = commands
         .spawn((
             Text::new("= ?"),
             TextColor(ORANGE),
             TextFont::from_font_size(22.0),
+            Node {
+                margin,
+                ..default()
+            },
         ))
         .id();
-    let inputs = Port::input(NUMBER).with_max_connections(None);
-    let body = commands
-        .spawn(kit::body(children![kit::input_with(
-            "values", inputs, BLUE
-        )]))
-        .add_child(result)
-        .id();
-    let title = commands.spawn(kit::title("Sum")).id();
     commands
-        .spawn((kit::node(at), Shows(result), ChildOf(content)))
-        .add_children(&[title, body])
-        .id()
+        .entity(node)
+        .insert(Shows(result))
+        .with_children(|node| {
+            node.spawn(kit::title("Sum"));
+            node.spawn(kit::input_with("values", inputs, BLUE));
+        });
+    commands.entity(node).add_child(result);
+    node
 }
 
 /// Sum nodes show the total of the numbers wired into them.

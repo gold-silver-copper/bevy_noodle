@@ -103,10 +103,7 @@ fn setup(mut commands: Commands) {
                 kit::node(Vec2::new(60.0, y)),
                 WireLook(style),
                 ChildOf(content),
-                children![
-                    kit::title(name),
-                    kit::body(children![kit::output("out", PortType::ANY, color)]),
-                ],
+                children![kit::title(name), kit::output("out", PortType::ANY, color),],
             ))
             .id();
         let sink_at = Vec2::new(if i % 2 == 0 { 760.0 } else { 960.0 }, y + 26.0);
@@ -115,10 +112,7 @@ fn setup(mut commands: Commands) {
             .spawn((
                 kit::node(sink_at),
                 ChildOf(content),
-                children![
-                    kit::title("Sink"),
-                    kit::body(children![kit::input_with("in", any, color)]),
-                ],
+                children![kit::title("Sink"), kit::input_with("in", any, color),],
             ))
             .id();
         pairs.push((source, sink));

@@ -38,44 +38,35 @@ enum Kind {
 }
 
 fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Entity {
-    let (title, body) = match kind {
-        Kind::Number => (
-            "Number",
-            commands
-                .spawn(kit::body(children![kit::output("value", NUMBER, BLUE)]))
-                .id(),
-        ),
-        Kind::Add => (
-            "Add",
-            commands
-                .spawn(kit::body(children![
-                    kit::input("a", NUMBER, BLUE),
-                    kit::input("b", NUMBER, BLUE),
-                    kit::output("sum", NUMBER, BLUE)
-                ]))
-                .id(),
-        ),
-        Kind::Format => (
-            "Format",
-            commands
-                .spawn(kit::body(children![
-                    kit::input("number", NUMBER, BLUE),
-                    kit::output("text", TEXT, GREEN)
-                ]))
-                .id(),
-        ),
-        Kind::Print => (
-            "Print",
-            commands
-                .spawn(kit::body(children![kit::input("text", TEXT, GREEN)]))
-                .id(),
-        ),
+    let node = (kit::node(at), ChildOf(content));
+    let node = match kind {
+        Kind::Number => commands.spawn((
+            node,
+            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
+        )),
+        Kind::Add => commands.spawn((
+            node,
+            children![
+                kit::title("Add"),
+                kit::input("a", NUMBER, BLUE),
+                kit::input("b", NUMBER, BLUE),
+                kit::output("sum", NUMBER, BLUE),
+            ],
+        )),
+        Kind::Format => commands.spawn((
+            node,
+            children![
+                kit::title("Format"),
+                kit::input("number", NUMBER, BLUE),
+                kit::output("text", TEXT, GREEN),
+            ],
+        )),
+        Kind::Print => commands.spawn((
+            node,
+            children![kit::title("Print"), kit::input("text", TEXT, GREEN)],
+        )),
     };
-    let title = commands.spawn(kit::title(title)).id();
-    commands
-        .spawn((kit::node(at), ChildOf(content)))
-        .add_children(&[title, body])
-        .id()
+    node.id()
 }
 
 fn setup(mut commands: Commands) {
@@ -84,9 +75,11 @@ fn setup(mut commands: Commands) {
         .spawn((
             NodeCanvas,
             CanvasInteraction::default(),
+            // Clipping also lets Bevy skip drawing what is out of view.
             Node {
                 width: percent(100),
                 height: percent(100),
+                overflow: Overflow::clip(),
                 ..default()
             },
             // Each piece of the default look is opted into here.

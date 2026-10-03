@@ -52,7 +52,7 @@ fn nested() -> impl Bundle {
     let viewport = Node {
         width: px(540),
         height: px(240),
-        margin: UiRect::vertical(px(6)),
+        margin: UiRect::horizontal(px(kit::PADDING)),
         overflow: Overflow::clip(),
         border_radius: BorderRadius::all(px(6)),
         ..default()
@@ -79,85 +79,80 @@ fn setup(mut commands: Commands) {
     // The group: ports on its frame, a canvas in its body.
     let inner = commands.spawn(kit::canvas()).insert(nested()).id();
     let inner_content = commands.spawn((CanvasContent, ChildOf(inner))).id();
-    let body = commands
-        .spawn(kit::body(children![
-            kit::input("a", NUMBER, BLUE),
-            kit::input("b", NUMBER, BLUE),
-        ]))
-        .add_child(inner)
-        .with_child(kit::output("2a + b", NUMBER, BLUE))
-        .id();
-    let title = commands.spawn(kit::title("Group: 2a + b")).id();
     let group = commands
         .spawn((
             kit::node(Vec2::new(280.0, 90.0)),
             Op::Group(inner),
             ChildOf(outer_content),
+            children![
+                kit::title("Group: 2a + b"),
+                kit::input("a", NUMBER, BLUE),
+                kit::input("b", NUMBER, BLUE),
+            ],
         ))
-        .add_children(&[title, body])
+        .add_child(inner)
+        .with_child(kit::output("2a + b", NUMBER, BLUE))
         .id();
 
     let mut node = |content, op, title, at: Vec2, rows: &[(&str, PortDirection)]| {
-        let body = commands.spawn(kit::body(())).id();
+        let node = commands.spawn((kit::node(at), op, ChildOf(content))).id();
+        commands.spawn((kit::title(title), ChildOf(node)));
         for (label, direction) in rows {
-            let row = match direction {
-                PortDirection::Input => commands.spawn(kit::input(*label, NUMBER, BLUE)),
-                PortDirection::Output => commands.spawn(kit::output(*label, NUMBER, BLUE)),
+            match direction {
+                PortDirection::Input => {
+                    commands.spawn((kit::input(*label, NUMBER, BLUE), ChildOf(node)))
+                }
+                PortDirection::Output => {
+                    commands.spawn((kit::output(*label, NUMBER, BLUE), ChildOf(node)))
+                }
             };
-            let row = row.id();
-            commands.entity(body).add_child(row);
         }
-        let title = commands.spawn(kit::title(title)).id();
-        let node = commands
-            .spawn((kit::node(at), op, ChildOf(content)))
-            .add_children(&[title, body])
-            .id();
-        (node, body)
+        node
     };
     use PortDirection::{Input as I, Output as O};
-    let (three, _) = node(
+    let three = node(
         outer_content,
         Op::Number(3.0),
         "Number 3",
         Vec2::new(40.0, 120.0),
         &[("value", O)],
     );
-    let (four, _) = node(
+    let four = node(
         outer_content,
         Op::Number(4.0),
         "Number 4",
         Vec2::new(40.0, 330.0),
         &[("value", O)],
     );
-    let (input, _) = node(
+    let input = node(
         inner_content,
         Op::In,
         "In",
         Vec2::new(10.0, 110.0),
         &[("a", O), ("b", O)],
     );
-    let (double, _) = node(
+    let double = node(
         inner_content,
         Op::Double,
         "Double",
         Vec2::new(200.0, 30.0),
         &[("x", I), ("2x", O)],
     );
-    let (add, _) = node(
+    let add = node(
         inner_content,
         Op::Add,
         "Add",
         Vec2::new(380.0, 140.0),
         &[("a", I), ("b", I), ("sum", O)],
     );
-    let (output, _) = node(
+    let output = node(
         inner_content,
         Op::Out,
         "Out",
         Vec2::new(600.0, 170.0),
         &[("2a + b", I)],
     );
-    let (print, print_body) = node(
+    let print = node(
         outer_content,
         Op::Print(Entity::PLACEHOLDER),
         "Print",
@@ -169,7 +164,11 @@ fn setup(mut commands: Commands) {
             Text::new("?"),
             TextColor(ORANGE),
             TextFont::from_font_size(22.0),
-            ChildOf(print_body),
+            Node {
+                margin: UiRect::horizontal(px(kit::PADDING)),
+                ..default()
+            },
+            ChildOf(print),
         ))
         .id();
     commands.entity(print).insert(Op::Print(result));

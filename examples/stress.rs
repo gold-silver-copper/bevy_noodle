@@ -5,13 +5,16 @@
 //!
 //! Space pauses, Up/Down double or halve the target node count, C hands the
 //! camera back to you (then pan and zoom as usual). Build with `--release`
-//! for meaningful numbers.
+//! for meaningful numbers. For per-system timings, run it with Bevy's
+//! `trace_tracy` feature and connect the Tracy profiler.
 //!
 //! ```sh
 //! cargo run --release --example stress --features default_style
 //! ```
 
-use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::diagnostic::{
+    DiagnosticPath, DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin,
+};
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
@@ -29,6 +32,7 @@ fn main() {
         .add_plugins((
             DefaultPlugins,
             FrameTimeDiagnosticsPlugin::default(),
+            EntityCountDiagnosticsPlugin::default(),
             NoodlePlugins,
             NoodleDefaultStylePlugin,
         ))
@@ -208,35 +212,34 @@ fn churn(
 
 /// Sources, operations and sinks over two port types, so some wiring fails.
 fn spawn_node(commands: &mut Commands, content: Entity, kind: usize, at: Vec2) {
-    let (title, body) = match kind {
-        0 => (
-            "Source",
-            commands.spawn(kit::body(children![
+    let node = (kit::node(at), ChildOf(content));
+    match kind {
+        0 => commands.spawn((
+            node,
+            children![
+                kit::title("Source"),
                 kit::output("number", NUMBER, BLUE),
                 kit::output("text", TEXT, GREEN),
-            ])),
-        ),
-        1 => (
-            "Operation",
-            commands.spawn(kit::body(children![
+            ],
+        )),
+        1 => commands.spawn((
+            node,
+            children![
+                kit::title("Operation"),
                 kit::input("a", NUMBER, BLUE),
                 kit::input("b", NUMBER, BLUE),
                 kit::output("out", NUMBER, BLUE),
-            ])),
-        ),
-        _ => (
-            "Sink",
-            commands.spawn(kit::body(children![
+            ],
+        )),
+        _ => commands.spawn((
+            node,
+            children![
+                kit::title("Sink"),
                 kit::input("number", NUMBER, BLUE),
                 kit::input("text", TEXT, GREEN),
-            ])),
-        ),
+            ],
+        )),
     };
-    let body = body.id();
-    let title = commands.spawn(kit::title(title)).id();
-    commands
-        .spawn((kit::node(at), ChildOf(content)))
-        .add_children(&[title, body]);
 }
 
 /// Slowly drifts and breathes over the whole area.
@@ -272,15 +275,18 @@ fn overlay(
     if *since < 0.5 {
         return;
     }
-    let fps = diagnostics
-        .get(&FrameTimeDiagnosticsPlugin::FPS)
-        .and_then(|d| d.smoothed())
-        .unwrap_or_default();
+    // Bevy's own diagnostics: frame rate and the world's entity count.
+    let value = |path: DiagnosticPath| {
+        let diagnostic = diagnostics.get(&path);
+        diagnostic.and_then(|d| d.smoothed()).unwrap_or_default()
+    };
+    let fps = value(FrameTimeDiagnosticsPlugin::FPS);
+    let entities = value(EntityCountDiagnosticsPlugin::ENTITY_COUNT);
     let edits = stress.edits as f32 / *since;
     (stress.edits, *since) = (0, 0.0);
     let state = if stress.paused { "paused" } else { "running" };
     text.0 = format!(
-        "{fps:.0} fps | {} nodes (target {}) | {} edges | {} selected | {edits:.0} edits/s | {state}\n\
+        "{fps:.0} fps | {entities:.0} entities | {} nodes (target {}) | {} edges | {} selected | {edits:.0} edits/s | {state}\n\
          Space: pause | Up/Down: target x2 / /2 | C: camera {}",
         nodes.iter().count(),
         stress.target,

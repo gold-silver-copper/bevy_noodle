@@ -27,6 +27,11 @@ bevy = { version = "0.19", default-features = false, features = [
     "ui_picking",
 ] }
 
+# Bevy's recommended setup: optimized dependencies make the examples fast
+# without `--release`. Only applies when building this repository.
+[profile.dev.package."*"]
+opt-level = 3
+
 [dev-dependencies]
 bevy = "0.19"
 # Reading saved graphs in the save_load example.
