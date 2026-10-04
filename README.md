@@ -74,7 +74,7 @@ fn setup(mut commands: Commands) {
 | `cargo run --example reroute --features default_style` | Reroute dots for routing edges; right-click an edge to insert one where you clicked. |
 | `cargo run --example type_conversion --features default_style` | An `EditRequested` observer overrides the built-in type rule: int outputs snap to float inputs, and connecting one inserts an "int to float" converter. Edit the int and float and the product follows. |
 | `cargo run --example minimap --features default_style` | A minimap of the same graph, kept in sync from `NodePosition`s and `CanvasView`; click or drag it to move the view. |
-| `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble). |
+| `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble, F to frame everything). |
 | `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
 | `cargo run --example save_load --features default_style,scene` | Saving and loading as RON: a full snapshot (user components, such as the values typed into the fields, and entity references intact) or just the graph model, a few hundred bytes, rebuilt with ordinary spawns. |
 
@@ -192,7 +192,8 @@ See the `editor` and `save_load` examples.
   as in the `styled` example.
 - The `DeleteSelection`, `SelectAll`, `ClearSelection`, `PanBy`, `ZoomBy` and
   `CancelInteraction` actions are gone: use `graph_edit`, or change
-  `CanvasView`. `FrameAll` remains.
+  `CanvasView`. (`FrameAll` went too, after 0.3: the `auto_layout` example
+  frames every node in a few lines.)
 - `CanvasWantsInput` is gone: `CanvasInteraction` requires `Hovered`; read that.
 - The node finder popup is gone: handle `WireDropped` (or a canvas click) and
   spawn nodes yourself, as in the `styled` example.
@@ -215,7 +216,7 @@ See the `editor` and `save_load` examples.
   `node_of`, `edges_of`); `edges_in` is new.
 
 **Default style (`default_style`)**
-- `EdgeStyle` has new fields (`end_color`, `dash`, `flow_speed`, `layer`,
+- `EdgeStyle` has new fields (`end_color`, `dash`, `flow_speed`, `below_nodes`,
   `trim_to_ports`, `selected_color`, `hover_width`): build it with
   `..default()`.
 - `kit` functions take no `KitTheme`; `kit::port_dot` is `kit::port`.

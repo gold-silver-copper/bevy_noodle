@@ -1,6 +1,8 @@
 //! The components that make up a graph. You insert [`NodeCanvas`],
 //! [`CanvasContent`], [`GraphNode`] and [`Port`]; the library manages edges.
 
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
 use bevy::math::cubic_splines::CubicSegment;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
@@ -268,17 +270,25 @@ pub struct EdgeGeometry {
     pub end_tangent: Vec2,
     /// `false` until both ends are laid out.
     pub valid: bool,
+    /// The ports at the output and input ends (the dragged wire's free end
+    /// has none until it snaps).
+    pub ports: [Option<Entity>; 2],
 }
 
 impl EdgeGeometry {
-    /// A valid geometry between two `(position, tangent)` ends.
-    pub fn between((start, start_tangent): (Vec2, Vec2), (end, end_tangent): (Vec2, Vec2)) -> Self {
+    /// A valid geometry between two `(position, tangent)` ends, at `ports`.
+    pub fn between(
+        (start, start_tangent): (Vec2, Vec2),
+        (end, end_tangent): (Vec2, Vec2),
+        ports: [Option<Entity>; 2],
+    ) -> Self {
         Self {
             start,
             end,
             start_tangent,
             end_tangent,
             valid: true,
+            ports,
         }
     }
 
@@ -295,10 +305,14 @@ impl EdgeGeometry {
 }
 
 /// The wire being dragged: its own entity with an [`EdgeGeometry`], so edge
-/// renderers draw it like any edge.
+/// renderers draw it like any edge. Spawning one marks the ports it may
+/// connect to ([`WireCandidate`](crate::WireCandidate), asking
+/// [`EditRequested`](crate::EditRequested) observers); despawning it clears
+/// the marks.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
 #[require(EdgeGeometry)]
+#[component(on_add = wire_added, on_remove = wire_removed)]
 pub struct PendingWire {
     /// The canvas it is dragged in.
     #[entities]
@@ -311,6 +325,18 @@ pub struct PendingWire {
     /// The compatible port under the pointer, if any.
     #[entities]
     pub target: Option<Entity>,
+}
+
+fn wire_added(mut world: DeferredWorld, context: HookContext) {
+    let wire = *world.get::<PendingWire>(context.entity).expect("added");
+    let (canvas, from) = (wire.canvas, wire.from);
+    world
+        .commands()
+        .queue(move |world: &mut World| crate::interaction::mark_candidates(world, canvas, from));
+}
+
+fn wire_removed(mut world: DeferredWorld, _: HookContext) {
+    world.commands().queue(crate::interaction::clear_candidates);
 }
 
 #[cfg(test)]

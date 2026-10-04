@@ -13,7 +13,7 @@
 pub mod kit;
 mod render;
 
-use bevy::input_focus::{FocusGained, FocusLost, InputFocusVisible};
+use bevy::input_focus::{InputFocus, InputFocusVisible};
 use bevy::picking::Pickable;
 use bevy::picking::hover::PickingInteraction;
 use bevy::prelude::*;
@@ -28,20 +28,18 @@ pub struct NoodleDefaultStylePlugin;
 
 impl Plugin for NoodleDefaultStylePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialsPlugin)
-            .add_systems(
-                PostUpdate,
-                (
-                    draw_edges,
-                    draw_grids,
-                    draw_selection_boxes,
-                    highlight_ports,
-                    selected_borders,
-                )
-                    .in_set(NoodleSystems::Render),
+        app.add_plugins(MaterialsPlugin).add_systems(
+            PostUpdate,
+            (
+                draw_edges,
+                draw_grids,
+                draw_selection_boxes,
+                highlight_ports,
+                selected_borders,
+                outline_focus,
             )
-            .add_observer(outline_focus)
-            .add_observer(clear_focus_outline);
+                .in_set(NoodleSystems::Render),
+        );
     }
 }
 
@@ -68,8 +66,9 @@ pub struct EdgeStyle {
     /// Animate dashes toward the input at this speed (per second). Solid wires
     /// carry travelling pulses instead. Negative flows backward.
     pub flow_speed: f32,
-    /// Whether wires are drawn above or below nodes.
-    pub layer: EdgeLayer,
+    /// Draw wires under the nodes (then only pickable over empty canvas)
+    /// instead of above them.
+    pub below_nodes: bool,
     /// End wires at port rims instead of centers.
     pub trim_to_ports: bool,
     /// The color of a [`Selected`] edge. `None`: unchanged.
@@ -87,22 +86,12 @@ impl Default for EdgeStyle {
             curvature: 0.5,
             dash: None,
             flow_speed: 0.0,
-            layer: EdgeLayer::AboveNodes,
+            below_nodes: false,
             trim_to_ports: true,
             selected_color: Some(Color::srgb_u8(250, 204, 92)),
             hover_width: 2.0,
         }
     }
-}
-
-/// Where wires are drawn relative to nodes.
-#[derive(Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum EdgeLayer {
-    /// On top of nodes.
-    #[default]
-    AboveNodes,
-    /// Under nodes (only pickable over empty canvas).
-    BelowNodes,
 }
 
 /// A port's color, used by [`PortHighlight`] and as the default wire color.
@@ -257,12 +246,7 @@ fn draw_edges(
         &MaterialNode<WireMaterial>,
         &ChildOf,
     )>,
-    ports: Query<(
-        &Port,
-        Option<&PortColor>,
-        &ComputedNode,
-        Option<&UiTransform>,
-    )>,
+    ports: Query<(Option<&PortColor>, &ComputedNode, Option<&UiTransform>)>,
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
     for (entity, geometry, own, wire, visual, hitbox, selected, pointer) in &mut edges {
@@ -271,23 +255,10 @@ fn draw_edges(
         let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
         };
-        // Ports at each end of the curve (output → input), if any.
-        let (start, end) = match wire {
-            Some(w)
-                if ports
-                    .get(w.from)
-                    .is_ok_and(|p| p.0.direction == PortDirection::Output) =>
-            {
-                (Some(w.from), w.target)
-            }
-            Some(w) => (w.target, Some(w.from)),
-            None => graph
-                .edge_ports(entity)
-                .map_or((None, None), |(s, t)| (Some(s), Some(t))),
-        };
+        let [start, end] = geometry.ports;
         let port = |p: Option<Entity>| p.and_then(|p| ports.get(p).ok());
         let radius = |p| {
-            port(p).map_or(0.0, |(_, _, computed, transform)| {
+            port(p).map_or(0.0, |(_, computed, transform)| {
                 let scale = transform.map_or(1.0, |t| t.scale.x);
                 computed.size().min_element() * computed.inverse_scale_factor() * scale / 2.0
             })
@@ -300,7 +271,7 @@ fn draw_edges(
         let points = shape.bezier(style.curvature);
         let port_color = [start, end]
             .into_iter()
-            .find_map(|p| port(p)?.1.map(|c| c.0));
+            .find_map(|p| port(p)?.0.map(|c| c.0));
         let color = style
             .color
             .or(port_color)
@@ -319,18 +290,17 @@ fn draw_edges(
             .max(Vec2::ZERO)
             .extend(style.flow_speed);
         let (rect, material) = wire_material(points, colors, width, pattern);
-        let z = match (wire, style.layer) {
+        let z = match (wire, style.below_nodes) {
             (Some(_), _) => ZIndex(i32::MAX),
-            (None, EdgeLayer::AboveNodes) => ZIndex(i32::MAX - 1),
-            (None, EdgeLayer::BelowNodes) => ZIndex(-1),
+            (None, false) => ZIndex(i32::MAX - 1),
+            (None, true) => ZIndex(-1),
         };
         if wire.is_none() && geometry.valid {
             let radius = style.width / 2.0 + 3.0;
-            let below_nodes = style.layer == EdgeLayer::BelowNodes;
             let area = EdgeHitbox {
                 points,
                 radius,
-                below_nodes,
+                below_nodes: style.below_nodes,
             };
             match hitbox {
                 Some(mut hitbox) => _ = hitbox.set_if_neq(area),
@@ -424,27 +394,20 @@ fn draw_selection_boxes(
     mut nodes: Query<&mut Node>,
 ) {
     for (canvas, style, selection, visual) in &canvases {
-        match visual.and_then(|v| nodes.get_mut(v.0).ok()) {
-            Some(mut node) => place(&mut node, selection.map(|s| s.0)),
-            None if selection.is_some() => {
-                let mut node = Node {
-                    border: UiRect::all(px(1)),
-                    ..default()
-                };
-                place(&mut node, selection.map(|s| s.0));
-                let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
-                let visual = (
-                    node,
-                    colors,
-                    ZIndex(i32::MAX),
-                    Pickable::IGNORE,
-                    ChildOf(canvas),
-                );
-                let child = commands.spawn(visual).id();
-                commands.entity(canvas).insert(BoxVisual(child));
-            }
-            None => {}
+        let rect = selection.map(|s| s.0);
+        if let Some(mut node) = visual.and_then(|v| nodes.get_mut(v.0).ok()) {
+            place(&mut node, rect);
+            continue;
         }
+        let mut node = Node {
+            border: UiRect::all(px(1)),
+            ..default()
+        };
+        place(&mut node, rect);
+        let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
+        let visual = (node, colors, ZIndex(i32::MAX), Pickable::IGNORE);
+        let child = commands.spawn((visual, ChildOf(canvas))).id();
+        commands.entity(canvas).insert(BoxVisual(child));
     }
 }
 
@@ -507,34 +470,27 @@ fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut 
 
 /// Keyboard focus on a node or port of a canvas with [`FocusOutline`] shows it.
 fn outline_focus(
-    gained: On<FocusGained>,
+    focus: Res<InputFocus>,
+    visible: Res<InputFocusVisible>,
     graph: GraphQuery,
     styles: Query<&FocusOutline>,
-    visible: Res<InputFocusVisible>,
+    mut shown: Local<Option<Entity>>,
     mut commands: Commands,
 ) {
-    let entity = gained.original_event_target();
+    if !focus.is_changed() && !visible.is_changed() {
+        return;
+    }
+    if let Some(mut old) = shown.take().and_then(|e| commands.get_entity(e).ok()) {
+        old.try_remove::<Outline>();
+    }
+    let Some(entity) = focus.get().filter(|_| visible.0) else {
+        return;
+    };
     let style = graph.canvas_of(entity).and_then(|c| styles.get(c).ok());
     let item = graph.node_of(entity) == Some(entity) || graph.port(entity).is_some();
-    if let (Some(style), true, true, true) =
-        (style, item, visible.0, gained.event_target() == entity)
-    {
+    if let (Some(style), true) = (style, item) {
         let outline = Outline::new(px(style.width), px(2), style.color);
-        commands.entity(entity).insert((outline, Outlined));
+        commands.entity(entity).insert(outline);
+        *shown = Some(entity);
     }
 }
-
-fn clear_focus_outline(
-    lost: On<FocusLost>,
-    outlined: Query<(), With<Outlined>>,
-    mut commands: Commands,
-) {
-    let entity = lost.original_event_target();
-    if outlined.contains(entity) {
-        commands.entity(entity).remove::<(Outline, Outlined)>();
-    }
-}
-
-/// On entities whose `Outline` shows keyboard focus.
-#[derive(Component)]
-struct Outlined;

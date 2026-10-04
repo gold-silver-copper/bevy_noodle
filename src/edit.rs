@@ -348,7 +348,7 @@ fn plan_edit(
     match &mut edit {
         GraphEdit::Connect { from, to } => {
             let replaces;
-            (*from, *to, replaces, refused) = graph.connection(*from, *to, canvas)?;
+            (*from, *to, replaces, refused) = graph.check_connection(*from, *to, canvas)?;
             disconnect = replaces;
         }
         GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {

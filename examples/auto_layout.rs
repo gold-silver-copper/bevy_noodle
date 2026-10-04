@@ -1,6 +1,6 @@
 //! Automatic layout: press L to lay the graph out in layers (each node one
 //! layer right of its deepest input, ordered within a layer by where its
-//! inputs are), S to scramble it again. Every node moves through one
+//! inputs are), S to scramble it again, F to pan and zoom so it all fits. Every node moves through one
 //! `MoveNodes` edit, so an undo stack (see the `editor` example) can undo it.
 //!
 //! ```sh
@@ -22,7 +22,7 @@ fn main() {
         .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
-        .add_systems(Update, keys)
+        .add_systems(Update, (keys, frame_all))
         .run();
 }
 
@@ -79,7 +79,7 @@ fn setup(mut commands: Commands) {
         }
     });
     commands.spawn((
-        Text::new("L: lay out | S: scramble"),
+        Text::new("L: lay out | S: scramble | F: frame all"),
         TextFont::from_font_size(14.0),
         TextColor(Color::srgb_u8(170, 175, 185)),
         Node {
@@ -141,6 +141,33 @@ fn keys(
             };
             commands.graph_edit(canvas, edit);
         }
+    }
+}
+
+/// F: pans and zooms so every node fits, with a margin.
+fn frame_all(
+    keys: Res<ButtonInput<KeyCode>>,
+    graph_entity: Res<Graph>,
+    graph: GraphQuery,
+    mut views: Query<(&mut CanvasView, &ComputedNode)>,
+    nodes: Query<(&NodePosition, &ComputedNode)>,
+) {
+    let canvas = graph_entity.0;
+    let (true, Ok((mut view, computed))) =
+        (keys.just_pressed(KeyCode::KeyF), views.get_mut(canvas))
+    else {
+        return;
+    };
+    let size = |c: &ComputedNode| c.size() * c.inverse_scale_factor();
+    let placed = graph.nodes_in(canvas).into_iter();
+    let bounds = placed
+        .filter_map(|n| nodes.get(n).ok())
+        .map(|(p, c)| Rect::from_corners(p.0, p.0 + size(c)))
+        .reduce(|a, b| a.union(b));
+    if let Some(bounds) = bounds {
+        let fit = (size(computed) - 80.0).max(Vec2::ONE) / bounds.size().max(Vec2::ONE);
+        view.zoom = fit.min_element().clamp(0.1, 1.0);
+        view.pan = size(computed) / 2.0 - bounds.center() * view.zoom;
     }
 }
 

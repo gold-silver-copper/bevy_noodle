@@ -33,6 +33,14 @@ fn graph(world: &mut World) -> (Entity, Entity) {
     (canvas, world.spawn((CanvasContent, ChildOf(canvas))).id())
 }
 
+/// One node per port in `content`; returns the ports.
+fn one_node_each<const N: usize>(w: &mut World, content: Entity, ports: [Port; N]) -> [Entity; N] {
+    ports.map(|port| {
+        let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
+        w.spawn((port, Node::default(), ChildOf(node))).id()
+    })
+}
+
 fn hit() -> HitData {
     HitData::new(Entity::PLACEHOLDER, 0.0, None, None)
 }
@@ -102,10 +110,7 @@ fn dragging_from_a_port_snaps_to_the_hovered_port_and_connects() {
     let mut app = app();
     let w = app.world_mut();
     let (_, content) = graph(w);
-    let ports = [Port::output(NUM), Port::input(NUM)].map(|port| {
-        let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
-        w.spawn((port, Node::default(), ChildOf(node))).id()
-    });
+    let ports = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
     let button = PointerButton::Primary;
     pointer(w, ports[0], DragStart { button, hit: hit() });
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 1);
@@ -183,10 +188,7 @@ fn dragged_wires_snap_to_ports_observers_allow() {
     });
     let w = app.world_mut();
     let (_, content) = graph(w);
-    let ports = [Port::output(NUM), Port::input(TEXT)].map(|port| {
-        let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
-        w.spawn((port, Node::default(), ChildOf(node))).id()
-    });
+    let ports = one_node_each(w, content, [Port::output(NUM), Port::input(TEXT)]);
     let button = PointerButton::Primary;
     pointer(w, ports[0], DragStart { button, hit: hit() });
     assert!(
@@ -258,10 +260,7 @@ fn outer_edges_are_pickable_over_nested_canvases() {
     let inner = w.spawn((CanvasContent, ChildOf(inner_canvas))).id();
     // An edge of `content` running along y = 0, from x = 0 to x = 100.
     let edge_in = |w: &mut World, content: Entity| {
-        let ports = [Port::output(NUM), Port::input(NUM)].map(|port| {
-            let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
-            w.spawn((port, Node::default(), ChildOf(node))).id()
-        });
+        let ports = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
         let points = [
             Vec2::ZERO,
             Vec2::new(30.0, 0.0),
@@ -341,4 +340,58 @@ fn controls_inside_nodes_keep_their_presses_and_drags() {
     drag(w, label, Vec2::new(10.0, 0.0));
     assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::new(10.0, 0.0));
     assert!(w.get::<Selected>(node).is_some());
+}
+
+#[test]
+fn wires_mark_candidates_while_they_exist() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let [from, fits, other] = one_node_each(
+        w,
+        content,
+        [Port::output(NUM), Port::input(NUM), Port::output(NUM)],
+    );
+    let wire = PendingWire {
+        canvas,
+        from,
+        pointer: Vec2::ZERO,
+        target: Some(fits),
+    };
+    let wire = w.spawn(wire).id();
+    w.entity_mut(fits).insert(WireTarget);
+    w.flush();
+    assert!(w.get::<WireCandidate>(fits).is_some());
+    assert!(w.get::<WireCandidate>(other).is_none());
+    w.despawn(wire);
+    w.flush();
+    assert!(w.get::<WireCandidate>(fits).is_none() && w.get::<WireTarget>(fits).is_none());
+}
+
+#[test]
+fn dragging_off_a_connected_input_picks_up_its_wire() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let [output, input] = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
+    w.graph_edit(
+        canvas,
+        GraphEdit::Connect {
+            from: output,
+            to: input,
+        },
+    )
+    .unwrap();
+    let button = PointerButton::Primary;
+    pointer(w, input, DragStart { button, hit: hit() });
+    let wire = *w.query::<&PendingWire>().single(w).unwrap();
+    assert_eq!(wire.from, output, "the wire hangs off the output now");
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
+    assert!(w.get::<WireCandidate>(input).is_some());
+
+    let distance = Vec2::X;
+    pointer(w, input, DragEnd { button, distance });
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0, "dropped on nothing");
+    assert!(w.get::<WireCandidate>(input).is_none());
 }

@@ -14,7 +14,7 @@ use bevy::ui::{ComputedNode, Selected};
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{CanvasInteraction, WireCandidate, WireTarget, mark_candidates};
+use crate::interaction::{CanvasInteraction, WireCandidate, retarget};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -82,16 +82,16 @@ impl Default for CanvasKeyboard {
 fn make_focusable(
     mut commands: Commands,
     graph: GraphQuery,
+    children: Query<&Children>,
     keyboards: Query<(), With<CanvasKeyboard>>,
     new_canvases: Query<Entity, Added<CanvasKeyboard>>,
     new: Query<Entity, Or<(Added<GraphNode>, Added<Port>)>>,
     items: Query<(), (Or<(With<GraphNode>, With<Port>)>, Without<TabIndex>)>,
 ) {
-    let canvases = new_canvases.iter().flat_map(|c| graph.nodes_in(c));
-    let candidates = new
+    let inside = new_canvases
         .iter()
-        .chain(canvases.flat_map(|n| std::iter::once(n).chain(graph.ports_of(n))));
-    for entity in candidates {
+        .flat_map(|c| children.iter_descendants(c));
+    for entity in new.iter().chain(inside) {
         let keyboard = graph
             .canvas_of(entity)
             .is_some_and(|c| keyboards.contains(c));
@@ -110,7 +110,6 @@ fn on_key(
     selected: Query<(), With<Selected>>,
     wires: Query<(Entity, &PendingWire)>,
     anchors: Query<&PortAnchor>,
-    marked: Query<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>,
     mut views: Query<(&mut CanvasView, &ComputedNode, Option<&CanvasInteraction>)>,
     mut commands: Commands,
 ) {
@@ -160,22 +159,19 @@ fn on_key(
             Some(_) => {}
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
-                let pointer = pointer.unwrap_or_default();
-                let from = target;
-                commands.queue(move |world: &mut World| mark_candidates(world, canvas, from));
                 commands.spawn(PendingWire {
                     canvas,
-                    from,
-                    pointer,
+                    from: target,
+                    pointer: pointer.unwrap_or_default(),
                     target: None,
                 });
                 input.propagate(false);
                 return;
             }
         }
-        clear_wire(&mut commands, wire.map(|w| w.0), &marked);
-    } else if code == settings.cancel && wire.is_some() {
-        clear_wire(&mut commands, wire.map(|w| w.0), &marked);
+        commands.entity(wire.expect("matched").0).despawn();
+    } else if let (Some((wire, _)), true) = (wire, code == settings.cancel) {
+        commands.entity(wire).despawn();
     } else if let (Some(node), true) = (node, code == settings.select) {
         let additive = keys.any_pressed(settings.additive_keys.iter().copied());
         let mode = if additive {
@@ -211,21 +207,6 @@ fn on_key(
     input.propagate(false);
 }
 
-fn clear_wire(
-    commands: &mut Commands,
-    wire: Option<Entity>,
-    marked: &Query<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>,
-) {
-    if let Some(wire) = wire {
-        commands.entity(wire).despawn();
-    }
-    for entity in marked {
-        commands
-            .entity(entity)
-            .remove::<(WireCandidate, WireTarget)>();
-    }
-}
-
 /// While a connection is being made, focusing a compatible port snaps to it.
 fn snap_on_focus(
     gained: On<FocusGained>,
@@ -238,16 +219,8 @@ fn snap_on_focus(
     if gained.event_target() != port {
         return;
     }
+    let target = candidates.contains(port).then_some(port);
     for mut wire in &mut wires {
-        let target = candidates.contains(port).then_some(port);
-        if wire.target != target {
-            if let Some(old) = wire.target {
-                commands.entity(old).remove::<WireTarget>();
-            }
-            if let Some(new) = target {
-                commands.entity(new).insert(WireTarget);
-            }
-            wire.target = target;
-        }
+        retarget(&mut wire, target, &mut commands);
     }
 }

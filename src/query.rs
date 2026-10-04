@@ -134,26 +134,15 @@ impl GraphQuery<'_, '_> {
             .collect()
     }
 
-    /// Checks a connection (either order) on `canvas` against the built-in
-    /// rules. Returns `(output, input, edges it replaces)`. Observers of
-    /// [`EditRequested`](crate::EditRequested) may still override a refusal;
+    /// Checks a connection (either order) on `canvas`. A connection that
+    /// cannot exist (missing ports, another canvas, the same node or
+    /// direction) is an `Err`. Otherwise it returns `(output, input, edges it
+    /// replaces, refusal)`: the refusal is the built-in rules' verdict (types,
+    /// already connected, full), which [`EditRequested`](crate::EditRequested)
+    /// observers may override;
     /// [`GraphWorldExt::preview_edit`](crate::GraphWorldExt::preview_edit)
     /// asks them.
     pub fn check_connection(
-        &self,
-        a: Entity,
-        b: Entity,
-        canvas: Entity,
-    ) -> Result<(Entity, Entity, Vec<Entity>), RejectReason> {
-        let (output, input, replaces, refused) = self.connection(a, b, canvas)?;
-        refused.map_or(Ok((output, input, replaces)), Err)
-    }
-
-    /// Like [`check_connection`](Self::check_connection), but only a
-    /// connection that cannot exist (missing ports, another canvas, the same
-    /// node or direction) is an `Err`. The rules observers may override
-    /// (types, already connected, full) are the last field.
-    pub(crate) fn connection(
         &self,
         a: Entity,
         b: Entity,

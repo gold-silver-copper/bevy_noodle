@@ -436,3 +436,99 @@ fn edges_can_be_selected_and_deleted_with_nodes() {
     let log = log(&mut app);
     assert_eq!(log.iter().filter(|l| *l == "applied disconnect").count(), 2);
 }
+
+/// A canvas with one node per port.
+fn graph(world: &mut World, ports: &[Port]) -> (Entity, Vec<Entity>) {
+    let (canvas, content) = canvas(world, None);
+    let ports = ports.iter().map(|p| node(world, content, &[*p]).1[0]);
+    (canvas, ports.collect())
+}
+
+/// An observer allowing connections refused for `reason`.
+fn allow(reason: RejectReason) -> impl Fn(On<EditRequested>) {
+    move |mut request: On<EditRequested>| {
+        if request.refused == Some(reason) {
+            request.allow();
+        }
+    }
+}
+
+#[test]
+fn observers_may_allow_or_refuse_what_the_rules_decide() {
+    let mut app = app();
+    app.add_observer(allow(RejectReason::IncompatibleTypes));
+    let w = app.world_mut();
+    let (canvas, p) = graph(w, &[Port::output(NUM), Port::input(TEXT)]);
+    let (from, to) = (p[0], p[1]);
+    // Inputs may come first; the refusal is the observers' to override.
+    let check = query(w, |g| g.check_connection(to, from, canvas));
+    let refusal = Some(RejectReason::IncompatibleTypes);
+    assert_eq!(check, Ok((from, to, vec![], refusal)));
+    assert!(
+        w.graph_edit(canvas, GraphEdit::Connect { from, to })
+            .unwrap()
+            .is_some()
+    );
+
+    app.add_observer(|mut request: On<EditRequested>| request.reject());
+    let w = app.world_mut();
+    let (canvas, p) = graph(w, &[Port::output(NUM), Port::input(NUM)]);
+    let (from, to) = (p[0], p[1]);
+    let refused = w.graph_edit(canvas, GraphEdit::Connect { from, to });
+    assert_eq!(refused, Err(RejectReason::Rejected));
+}
+
+#[test]
+fn an_allowed_full_port_keeps_all_its_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let wide = Port::input(NUM).with_max_connections(Some(2));
+    let out = Port::output(NUM);
+    let (canvas, p) = graph(w, &[out, out, out, wide]);
+    let to = p[3];
+    for from in [p[0], p[1]] {
+        w.graph_edit(canvas, GraphEdit::Connect { from, to })
+            .unwrap();
+    }
+    let third = GraphEdit::Connect { from: p[2], to };
+    assert_eq!(
+        w.graph_edit(canvas, third.clone()),
+        Err(RejectReason::PortFull)
+    );
+    app.add_observer(allow(RejectReason::PortFull));
+    let w = app.world_mut();
+    w.graph_edit(canvas, third).unwrap();
+    assert_eq!(w.get::<IncomingEdges>(to).map(|e| e.len()), Some(3));
+}
+
+#[test]
+fn previews_ask_observers_but_change_nothing() {
+    let mut app = app();
+    #[derive(Resource, Default)]
+    struct Previews(u32);
+    app.init_resource::<Previews>();
+    app.add_observer(
+        |request: On<EditRequested>, mut previews: ResMut<Previews>| {
+            previews.0 += request.preview as u32;
+        },
+    );
+    app.add_observer(allow(RejectReason::IncompatibleTypes));
+    // Structurally impossible edits never reach observers, even allowing ones.
+    app.add_observer(|mut request: On<EditRequested>| request.allow());
+    let w = app.world_mut();
+    let (canvas, p) = graph(
+        w,
+        &[Port::output(NUM), Port::input(TEXT), Port::output(NUM)],
+    );
+    let (from, to) = (p[0], p[1]);
+    assert_eq!(
+        w.preview_edit(canvas, GraphEdit::Connect { from, to }),
+        Ok(())
+    );
+    assert_eq!(w.resource::<Previews>().0, 1);
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
+    assert!(log(&mut app).is_empty(), "no applied or rejected events");
+    let w = app.world_mut();
+    let same = GraphEdit::Connect { from, to: p[2] };
+    assert_eq!(w.graph_edit(canvas, same), Err(RejectReason::SameDirection));
+}

@@ -112,13 +112,11 @@ mod tests {
 
     #[test]
     fn wire_bounds_contain_the_curve() {
-        let geometry = EdgeGeometry {
-            start: Vec2::ZERO,
-            end: Vec2::new(300.0, 120.0),
-            start_tangent: Vec2::X,
-            end_tangent: Vec2::NEG_X,
-            valid: true,
-        };
+        let ends = (
+            (Vec2::ZERO, Vec2::X),
+            (Vec2::new(300.0, 120.0), Vec2::NEG_X),
+        );
+        let geometry = EdgeGeometry::between(ends.0, ends.1, [None; 2]);
         let points = geometry.bezier(0.5);
         let (rect, _) = wire_material(points, [Color::WHITE; 2], 3.0, Vec3::ZERO);
         let curve = CubicSegment::new_bezier(points);

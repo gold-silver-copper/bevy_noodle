@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Changed (breaking)
+- `EdgeStyle::layer: EdgeLayer` is now `below_nodes: bool`, the same bit
+  `EdgeHitbox` already had. `EdgeLayer` is gone.
+- `GraphQuery::check_connection` returns the built-in verdict too:
+  `(output, input, replaces, refusal)`, where `refusal` is what
+  `EditRequested` observers may override. For the old answer, check
+  `.is_ok_and(|c| c.3.is_none())`.
+- `FrameAll` is gone: the `auto_layout` example frames every node (F) in a
+  few lines of app code.
+- `NoodleSystems::Measure` is gone: ports are measured in Bevy's
+  `UiSystems::PostLayout`; order your systems against that.
+- `EdgeGeometry` has a `ports` field (the output and input ports), and
+  `EdgeGeometry::between` takes it.
+- Spawning a `PendingWire` marks the ports it may connect to with
+  `WireCandidate` (component hooks), and despawning it clears them, so custom
+  bindings that make wires get candidates for free.
+- The `FocusOutline` follows `InputFocus` (and `InputFocusVisible`) in a
+  system, so it also appears when focus becomes visible later.
+
 ### Added
 - Controls inside nodes: a press or drag that starts in a focusable control
   (anything with a `TabIndex`) belongs to the control, so sliders, text

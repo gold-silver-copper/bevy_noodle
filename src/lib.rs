@@ -38,7 +38,6 @@ use bevy::ui::UiSystems;
 
 pub use components::*;
 pub use edit::*;
-pub use geometry::FrameAll;
 pub use interaction::*;
 pub use keyboard::*;
 pub use query::GraphQuery;
@@ -49,9 +48,8 @@ pub enum NoodleSystems {
     /// Before UI layout: node positions, canvas view, edge geometry.
     Sync,
     /// After `Sync`, before layout: drawing (put your edge renderers here).
+    /// Ports are measured after layout, in Bevy's `UiSystems::PostLayout`.
     Render,
-    /// After layout: ports are measured.
-    Measure,
 }
 
 /// [`NoodleCorePlugin`] + [`NoodleInteractionPlugin`].
@@ -72,16 +70,11 @@ impl Plugin for NoodleCorePlugin {
     fn build(&self, app: &mut App) {
         use geometry::*;
         app.add_message::<EditApplied>()
-            .add_observer(frame_all)
             .configure_sets(
                 PostUpdate,
                 (NoodleSystems::Sync, NoodleSystems::Render)
                     .chain()
                     .before(UiSystems::Prepare),
-            )
-            .configure_sets(
-                PostUpdate,
-                NoodleSystems::Measure.in_set(UiSystems::PostLayout),
             )
             .add_systems(
                 PostUpdate,
@@ -89,17 +82,17 @@ impl Plugin for NoodleCorePlugin {
                     .chain()
                     .in_set(NoodleSystems::Sync),
             )
-            .add_systems(PostUpdate, measure_ports.in_set(NoodleSystems::Measure));
+            .add_systems(PostUpdate, measure_ports.in_set(UiSystems::PostLayout));
     }
 }
 
 /// Everything most apps need: `use bevy_noodle::prelude::*;`.
 pub mod prelude {
     #[cfg(feature = "default_style")]
-    pub use crate::style::{CanvasGrid, EdgeLayer, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
+    pub use crate::style::{CanvasGrid, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
     pub use crate::{
         CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Edge, EdgeGeometry,
-        EdgeHitbox, EdgeSource, EdgeTarget, EditApplied, EditOrigin, EditRequested, FrameAll,
+        EdgeHitbox, EdgeSource, EdgeTarget, EditApplied, EditOrigin, EditRequested,
         GraphCommandsExt, GraphEdit, GraphNode, GraphQuery, GraphWorldExt, NodeCanvas,
         NodeDragHandle, NodePosition, NoodleCorePlugin, NoodleInteractionPlugin,
         NoodleKeyboardPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortType,

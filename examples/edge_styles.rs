@@ -71,7 +71,7 @@ fn looks() -> [(&'static str, Color, EdgeStyle); 7] {
             EdgeStyle {
                 width: 9.0,
                 end_color: Some(ORANGE_300.into()),
-                layer: EdgeLayer::BelowNodes,
+                below_nodes: true,
                 trim_to_ports: false,
                 ..style
             },

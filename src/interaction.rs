@@ -182,6 +182,18 @@ enum Hop {
     Canvas,
 }
 
+/// What a drag does.
+#[derive(Clone, Copy)]
+enum Gesture {
+    /// Drags a wire from a port.
+    Wire(Entity),
+    /// Moves a node (with the selection).
+    Move(Entity),
+    Pan,
+    /// Box-selects on empty canvas.
+    Box,
+}
+
 impl Ctx<'_, '_> {
     /// What `target` is, and the interactive, enabled canvas it belongs to
     /// with its settings.
@@ -209,6 +221,29 @@ impl Ctx<'_, '_> {
             .is_some_and(|k| k.any_pressed(keys.iter().copied()))
     }
 
+    /// The gesture a drag with `button` makes, from `(target, original)`
+    /// targets, on the canvas it belongs to.
+    fn gesture(
+        &self,
+        (target, original): (Entity, Entity),
+        button: PointerButton,
+    ) -> Option<(Gesture, Entity, CanvasInteraction)> {
+        let (hop, canvas, settings) = self.hop(target)?;
+        let is = |b: Option<PointerButton>| b == Some(button);
+        let gesture = match hop {
+            Hop::Port(port) if is(settings.connect_button) => Gesture::Wire(port),
+            Hop::Node(node) if is(settings.drag_button) && self.grabs(node, original) => {
+                Gesture::Move(node)
+            }
+            Hop::Canvas if is(settings.pan_button) => Gesture::Pan,
+            Hop::Canvas if is(settings.select_button) && self.on_background(canvas, original) => {
+                Gesture::Box
+            }
+            _ => return None,
+        };
+        Some((gesture, canvas, settings))
+    }
+
     fn view(&self, canvas: Entity) -> CanvasView {
         *self.canvases.get(canvas).expect("checked by hop").1
     }
@@ -219,9 +254,33 @@ impl Ctx<'_, '_> {
         canvas_local(computed, transform, position)
     }
 
-    /// Window-pixel distance → graph units.
-    fn to_graph(&self, canvas: Entity, distance: Vec2) -> Vec2 {
-        distance / self.ui_scale.0 / self.view(canvas).zoom
+    /// Window position → graph space.
+    fn graph_point(&self, canvas: Entity, position: Vec2) -> Vec2 {
+        self.view(canvas)
+            .canvas_to_graph(self.local(canvas, position))
+    }
+
+    /// Moves `node` (with the selection) by window-pixel `delta`, `total` so far.
+    fn move_nodes(
+        &mut self,
+        canvas: Entity,
+        node: Entity,
+        delta: Vec2,
+        total: Vec2,
+        is_final: bool,
+    ) {
+        let scale = self.ui_scale.0 * self.view(canvas).zoom;
+        let nodes = self.selection(canvas, node);
+        let (delta, total) = (delta / scale, total / scale);
+        self.edit(
+            canvas,
+            GraphEdit::MoveNodes {
+                nodes,
+                delta,
+                total,
+                is_final,
+            },
+        );
     }
 
     fn edit(&mut self, canvas: Entity, edit: GraphEdit) {
@@ -310,13 +369,13 @@ fn on_drag_start(
     mut ctx: Ctx,
     wires: Query<(Entity, &PendingWire)>,
 ) {
-    let Some((hop, canvas, settings)) = ctx.hop(drag.event_target()) else {
+    let target = (drag.event_target(), drag.original_event_target());
+    let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
         return;
     };
-    let original = drag.original_event_target();
-    match hop {
-        Hop::Port(port) if settings.connect_button == Some(drag.button) => {
-            drag.propagate(false);
+    drag.propagate(false);
+    match gesture {
+        Gesture::Wire(port) => {
             for (entity, _) in wires.iter().filter(|(_, w)| w.canvas == canvas) {
                 ctx.commands.entity(entity).despawn();
             }
@@ -336,10 +395,7 @@ fn on_drag_start(
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = source;
             }
-            ctx.commands
-                .queue(move |world: &mut World| mark_candidates(world, canvas, from));
-            let local = ctx.local(canvas, drag.pointer_location.position);
-            let pointer = ctx.view(canvas).canvas_to_graph(local);
+            let pointer = ctx.graph_point(canvas, drag.pointer_location.position);
             ctx.commands.spawn(PendingWire {
                 canvas,
                 from,
@@ -347,20 +403,8 @@ fn on_drag_start(
                 target: None,
             });
         }
-        Hop::Node(node)
-            if settings.drag_button == Some(drag.button) && ctx.grabs(node, original) =>
-        {
-            drag.propagate(false);
-            if !ctx.selected.contains(node) {
-                ctx.select(canvas, vec![node], SelectMode::Replace);
-            }
-        }
-        Hop::Canvas
-            if settings.pan_button == Some(drag.button)
-                || (settings.select_button == Some(drag.button)
-                    && ctx.on_background(canvas, original)) =>
-        {
-            drag.propagate(false)
+        Gesture::Move(node) if !ctx.selected.contains(node) => {
+            ctx.select(canvas, vec![node], SelectMode::Replace);
         }
         _ => {}
     }
@@ -374,64 +418,32 @@ fn on_drag(
     hovered: Res<HoverMap>,
     candidates: Query<(), With<WireCandidate>>,
 ) {
-    let Some((hop, canvas, settings)) = ctx.hop(drag.event_target()) else {
+    let target = (drag.event_target(), drag.original_event_target());
+    let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
         return;
     };
+    drag.propagate(false);
     let position = drag.pointer_location.position;
-    match hop {
-        Hop::Port(_) if settings.connect_button == Some(drag.button) => {
-            drag.propagate(false);
-            let pointer = ctx
-                .view(canvas)
-                .canvas_to_graph(ctx.local(canvas, position));
+    match gesture {
+        Gesture::Wire(_) => {
+            let pointer = ctx.graph_point(canvas, position);
+            // Snap to a port it may connect to under the pointer.
             let under = hovered
                 .get(&drag.pointer_id)
                 .into_iter()
                 .flat_map(|h| h.keys());
-            let under: Vec<Entity> = under.copied().collect();
+            let target = under.copied().find(|p| candidates.contains(*p));
             for mut wire in wires.iter_mut().filter(|w| w.canvas == canvas) {
-                // Snap to a port it may connect to under the pointer.
-                let target = under.iter().copied().find(|p| candidates.contains(*p));
-                if wire.target != target {
-                    if let Some(old) = wire.target {
-                        ctx.commands.entity(old).remove::<WireTarget>();
-                    }
-                    if let Some(new) = target {
-                        ctx.commands.entity(new).insert(WireTarget);
-                    }
-                    wire.target = target;
-                }
+                retarget(&mut wire, target, &mut ctx.commands);
                 wire.pointer = pointer;
             }
         }
-        Hop::Node(node)
-            if settings.drag_button == Some(drag.button)
-                && ctx.grabs(node, drag.original_event_target()) =>
-        {
-            drag.propagate(false);
-            let (delta, total) = (
-                ctx.to_graph(canvas, drag.delta),
-                ctx.to_graph(canvas, drag.distance),
-            );
-            let nodes = ctx.selection(canvas, node);
-            let edit = GraphEdit::MoveNodes {
-                nodes,
-                delta,
-                total,
-                is_final: false,
-            };
-            ctx.edit(canvas, edit);
-        }
-        Hop::Canvas if settings.pan_button == Some(drag.button) => {
-            drag.propagate(false);
+        Gesture::Move(node) => ctx.move_nodes(canvas, node, drag.delta, drag.distance, false),
+        Gesture::Pan => {
             let delta = drag.delta / ctx.ui_scale.0;
             ctx.canvases.get_mut(canvas).expect("checked").1.pan += delta;
         }
-        Hop::Canvas
-            if settings.select_button == Some(drag.button)
-                && ctx.on_background(canvas, drag.original_event_target()) =>
-        {
-            drag.propagate(false);
+        Gesture::Box => {
             let rect = Rect::from_corners(
                 ctx.local(canvas, position - drag.distance),
                 ctx.local(canvas, position),
@@ -459,27 +471,17 @@ fn on_drag(
             ctx.select(canvas, hits, mode);
             ctx.commands.entity(canvas).insert(SelectionBox(rect));
         }
-        _ => {}
     }
 }
 
-fn on_drag_end(
-    mut drag: On<Pointer<DragEnd>>,
-    mut ctx: Ctx,
-    wires: Query<(Entity, &PendingWire)>,
-    marked: Query<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>,
-) {
-    let Some((hop, canvas, settings)) = ctx.hop(drag.event_target()) else {
+fn on_drag_end(mut drag: On<Pointer<DragEnd>>, mut ctx: Ctx, wires: Query<(Entity, &PendingWire)>) {
+    let target = (drag.event_target(), drag.original_event_target());
+    let Some((gesture, canvas, _)) = ctx.gesture(target, drag.button) else {
         return;
     };
-    match hop {
-        Hop::Port(_) if settings.connect_button == Some(drag.button) => {
-            drag.propagate(false);
-            for entity in &marked {
-                ctx.commands
-                    .entity(entity)
-                    .remove::<(WireCandidate, WireTarget)>();
-            }
+    drag.propagate(false);
+    match gesture {
+        Gesture::Wire(_) => {
             for (entity, wire) in wires.iter().filter(|(_, w)| w.canvas == canvas) {
                 ctx.commands.entity(entity).despawn();
                 let (from, position) = (wire.from, wire.pointer);
@@ -493,25 +495,8 @@ fn on_drag_end(
                 }
             }
         }
-        Hop::Node(node)
-            if settings.drag_button == Some(drag.button)
-                && ctx.grabs(node, drag.original_event_target()) =>
-        {
-            drag.propagate(false);
-            let (nodes, total) = (
-                ctx.selection(canvas, node),
-                ctx.to_graph(canvas, drag.distance),
-            );
-            let edit = GraphEdit::MoveNodes {
-                nodes,
-                delta: Vec2::ZERO,
-                total,
-                is_final: true,
-            };
-            ctx.edit(canvas, edit);
-        }
-        Hop::Canvas => _ = ctx.commands.entity(canvas).remove::<SelectionBox>(),
-        _ => {}
+        Gesture::Move(node) => ctx.move_nodes(canvas, node, Vec2::ZERO, drag.distance, true),
+        Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).remove::<SelectionBox>(),
     }
 }
 
@@ -646,6 +631,29 @@ fn pick_edges(
         }
     }
     messages.p1().write_batch(hits);
+}
+
+/// Points `wire` at `target`, moving the [`WireTarget`] marker.
+pub(crate) fn retarget(wire: &mut PendingWire, target: Option<Entity>, commands: &mut Commands) {
+    if wire.target != target {
+        if let Some(old) = wire.target {
+            commands.entity(old).remove::<WireTarget>();
+        }
+        if let Some(new) = target {
+            commands.entity(new).insert(WireTarget);
+        }
+        wire.target = target;
+    }
+}
+
+/// Removes every [`WireCandidate`] and [`WireTarget`] marker.
+pub(crate) fn clear_candidates(world: &mut World) {
+    let mut marked = world.query_filtered::<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>();
+    for port in marked.iter(world).collect::<Vec<_>>() {
+        world
+            .entity_mut(port)
+            .remove::<(WireCandidate, WireTarget)>();
+    }
 }
 
 /// Marks the ports a wire from `from` may connect to with [`WireCandidate`],

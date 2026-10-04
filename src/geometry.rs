@@ -10,17 +10,6 @@ use crate::components::*;
 use crate::edit::{GraphCommandsExt, GraphEdit};
 use crate::query::GraphQuery;
 
-/// Pans and zooms a canvas so its positioned nodes fit, with `padding`
-/// canvas pixels around them.
-#[derive(EntityEvent, Clone, Copy, Debug)]
-pub struct FrameAll {
-    /// The canvas to frame.
-    #[event_target]
-    pub canvas: Entity,
-    /// Margin around the nodes, in canvas pixels.
-    pub padding: f32,
-}
-
 pub(crate) fn sync_layout(
     mut nodes: Query<(&NodePosition, &mut Node), Changed<NodePosition>>,
     canvases: Query<(&CanvasView, &Children)>,
@@ -69,7 +58,8 @@ pub(crate) fn update_edge_geometry(
     let end = |port| endpoint(port, &ports, &nodes);
     for (source, target, mut current) in edges.iter_mut().filter(|_| !changed.is_empty()) {
         let ends = end(source.0).zip(end(target.0));
-        current.set_if_neq(ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b)));
+        let ports = [Some(source.0), Some(target.0)];
+        current.set_if_neq(ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b, ports)));
     }
     // The dragged wire runs output → input; the pointer stands in for the free end.
     for (wire, mut current) in &mut wires {
@@ -83,12 +73,13 @@ pub(crate) fn update_edge_geometry(
         let from_output = ports
             .get(wire.from)
             .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
-        let (a, b) = if from_output {
-            (fixed, free)
+        let (from, to) = (Some(wire.from), wire.target);
+        let (a, b, ports) = if from_output {
+            (fixed, free, [from, to])
         } else {
-            (free, fixed)
+            (free, fixed, [to, from])
         };
-        current.set_if_neq(EdgeGeometry::between(a, b));
+        current.set_if_neq(EdgeGeometry::between(a, b, ports));
     }
 }
 
@@ -161,29 +152,4 @@ pub(crate) fn follow_reparented(
             }
         }
     }
-}
-
-pub(crate) fn frame_all(
-    event: On<FrameAll>,
-    graph: GraphQuery,
-    mut canvases: Query<(&mut CanvasView, &ComputedNode)>,
-    nodes: Query<(&NodePosition, &ComputedNode)>,
-) {
-    let Ok((mut view, canvas)) = canvases.get_mut(event.canvas) else {
-        return;
-    };
-    let nodes = graph
-        .nodes_in(event.canvas)
-        .into_iter()
-        .filter_map(|n| nodes.get(n).ok());
-    let rects =
-        nodes.map(|(p, c)| Rect::from_corners(p.0, p.0 + c.size() * c.inverse_scale_factor()));
-    let bounds = rects.reduce(|a, b| a.union(b));
-    let size = canvas.size() * canvas.inverse_scale_factor();
-    let Some(bounds) = bounds.filter(|_| size.min_element() > 0.0) else {
-        return;
-    };
-    let fit = (size - 2.0 * event.padding).max(Vec2::ONE) / bounds.size().max(Vec2::ONE);
-    view.zoom = fit.min_element().clamp(0.1, 1.0);
-    view.pan = size / 2.0 - bounds.center() * view.zoom;
 }
