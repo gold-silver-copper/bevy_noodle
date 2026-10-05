@@ -33,7 +33,6 @@ fn setup(mut commands: Commands) {
             },
         ))
         .id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     for (title, position, port) in [
         ("Source", Vec2::new(80.0, 120.0), Port::output(NUMBER)),
         ("Source", Vec2::new(80.0, 300.0), Port::output(NUMBER)),
@@ -51,7 +50,7 @@ fn setup(mut commands: Commands) {
         commands.spawn((
             GraphNode,
             NodePosition(position),
-            ChildOf(content),
+            ChildOf(canvas),
             Node {
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(px(10)),

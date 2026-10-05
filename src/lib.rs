@@ -3,13 +3,14 @@
 //!
 //! ```text
 //! NodeCanvas              your UI node: one graph and its viewport (no background)
-//! └── CanvasContent       pans and zooms; holds the nodes
+//! └── CanvasContent       spawned by the canvas; pans and zooms, holds the nodes
 //!     ├── GraphNode       your UI node, styled however you like
 //!     │   └── … Port      your UI node marking a connection point
 //!     └── Edge            spawned on connect; EdgeSource/EdgeTarget relate it to ports
 //! ```
 //!
-//! Any number of canvases can coexist or nest; every lookup resolves to the
+//! Spawn nodes as children of a canvas; they move into its content. Any
+//! number of canvases can coexist or nest; every lookup resolves to the
 //! nearest one. Change graphs with [`GraphCommandsExt::graph_edit`]; react to
 //! [`EditRequested`] (to veto) and [`EditApplied`]. Interaction is opt-in per
 //! canvas with [`CanvasInteraction`]. The core draws nothing: draw edges from
@@ -70,6 +71,7 @@ impl Plugin for NoodleCorePlugin {
     fn build(&self, app: &mut App) {
         use geometry::*;
         app.add_message::<EditApplied>()
+            .add_observer(components::adopt_nodes)
             .configure_sets(
                 PostUpdate,
                 (NoodleSystems::Sync, NoodleSystems::Render)

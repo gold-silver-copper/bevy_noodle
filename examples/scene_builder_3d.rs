@@ -163,7 +163,6 @@ fn setup(
         .spawn(kit::canvas())
         .insert((panel, background, border))
         .id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let coral = Hsla::hsl(5.0, 0.9, 0.65);
     let teal = Hsla::hsl(180.0, 0.6, 0.45);
     let n = [
@@ -179,7 +178,7 @@ fn setup(
         (Kind::Shape(Shape::Sphere), 440.0, 30.0),
         (Kind::Paint(Hsla::hsl(42.0, 0.85, 0.6)), 440.0, 460.0),
     ]
-    .map(|(kind, x, y)| spawn(&mut commands, content, kind, Vec2::new(x, y)));
+    .map(|(kind, x, y)| spawn(&mut commands, canvas, kind, Vec2::new(x, y)));
     // (from node, output, to node, input)
     let wires = [
         (n[0], 0, n[5], 0),
@@ -204,7 +203,7 @@ fn setup(
     });
 }
 
-fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Entity {
+fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entity {
     let (title, inputs, outputs): (_, &[_], &[_]) = match kind {
         Kind::Shape(_) => ("Shape", &[], &[("shape", SHAPE, GREY)]),
         Kind::Paint(_) => ("Paint", &[], &[("color", PAINT, PURPLE)]),
@@ -225,7 +224,7 @@ fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Enti
         ),
         Kind::Scene => ("Scene", &[("objects", OBJECT, ORANGE)], &[]),
     };
-    let node = commands.spawn((kit::node(at), kind, ChildOf(content))).id();
+    let node = commands.spawn((kit::node(at), kind, ChildOf(canvas))).id();
     commands.spawn((kit::title(title), ChildOf(node)));
     controls(commands, node, kind);
     for (label, port_type, color) in inputs {
@@ -525,7 +524,7 @@ fn add_on_right_click(
     mut commands: Commands,
 ) {
     let canvas = click.event_target();
-    let (Ok(view), Some(content)) = (views.get(canvas), graph.content_of(canvas)) else {
+    let Ok(view) = views.get(canvas) else {
         return;
     };
     if click.button == PointerButton::Secondary
@@ -539,7 +538,7 @@ fn add_on_right_click(
             Kind::Spin(-2.5),
         ];
         let at = view.canvas_to_graph(click.pointer_location.position);
-        spawn(&mut commands, content, kinds[*next % kinds.len()], at);
+        spawn(&mut commands, canvas, kinds[*next % kinds.len()], at);
         *next += 1;
     }
 }

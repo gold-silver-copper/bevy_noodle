@@ -90,16 +90,14 @@ fn nested() -> impl Bundle {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let outer = commands.spawn(kit::canvas()).id();
-    let outer_content = commands.spawn((CanvasContent, ChildOf(outer))).id();
 
     // The group: ports on its frame, a canvas in its body.
     let inner = commands.spawn(kit::canvas()).insert(nested()).id();
-    let inner_content = commands.spawn((CanvasContent, ChildOf(inner))).id();
     let group = commands
         .spawn((
             kit::node(Vec2::new(280.0, 90.0)),
             Op::Group(inner),
-            ChildOf(outer_content),
+            ChildOf(outer),
             children![
                 kit::title("Group"),
                 kit::input("a", NUMBER, BLUE),
@@ -110,8 +108,8 @@ fn setup(mut commands: Commands) {
         .with_child(kit::output("result", NUMBER, BLUE))
         .id();
 
-    let mut node = |content, op, title, at: Vec2, rows: &[(&str, PortDirection)]| {
-        let node = commands.spawn((kit::node(at), op, ChildOf(content))).id();
+    let mut node = |canvas, op, title, at: Vec2, rows: &[(&str, PortDirection)]| {
+        let node = commands.spawn((kit::node(at), op, ChildOf(canvas))).id();
         commands.spawn((kit::title(title), ChildOf(node)));
         for (label, direction) in rows {
             match direction {
@@ -127,49 +125,49 @@ fn setup(mut commands: Commands) {
     };
     use PortDirection::{Input as I, Output as O};
     let three = node(
-        outer_content,
+        outer,
         Op::Number(3.0),
         "Number",
         Vec2::new(40.0, 120.0),
         &[("value", O)],
     );
     let four = node(
-        outer_content,
+        outer,
         Op::Number(4.0),
         "Number",
         Vec2::new(40.0, 330.0),
         &[("value", O)],
     );
     let input = node(
-        inner_content,
+        inner,
         Op::In,
         "In",
         Vec2::new(10.0, 110.0),
         &[("a", O), ("b", O)],
     );
     let scale = node(
-        inner_content,
+        inner,
         Op::Scale(2.0),
         "Scale",
         Vec2::new(200.0, 10.0),
         &[("x", I), ("k x", O)],
     );
     let add = node(
-        inner_content,
+        inner,
         Op::Add,
         "Add",
         Vec2::new(390.0, 140.0),
         &[("a", I), ("b", I), ("sum", O)],
     );
     let output = node(
-        inner_content,
+        inner,
         Op::Out,
         "Out",
         Vec2::new(600.0, 170.0),
         &[("result", I)],
     );
     let print = node(
-        outer_content,
+        outer,
         Op::Print(Entity::PLACEHOLDER),
         "Print",
         Vec2::new(950.0, 280.0),

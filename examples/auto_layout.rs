@@ -33,7 +33,6 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     // (title, inputs), deliberately out of order.
     let specs = [
         ("Sum", 2),
@@ -47,7 +46,7 @@ fn setup(mut commands: Commands) {
     ];
     let nodes = specs.map(|(title, inputs)| {
         let at = scrambled(title);
-        let node = commands.spawn((kit::node(at), ChildOf(content))).id();
+        let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
         commands.spawn((kit::title(title), ChildOf(node)));
         for name in ["a", "b"].into_iter().take(inputs) {
             commands.spawn((kit::input(name, NUMBER, BLUE), ChildOf(node)));

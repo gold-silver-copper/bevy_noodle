@@ -68,13 +68,12 @@ fn setup(mut commands: Commands) {
         .spawn((kit::canvas(), CanvasKeyboard::default()))
         .id();
     commands.insert_resource(Graph(canvas));
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     for (title, value, y) in [("First number", 2.0, 120.0), ("Second number", 3.0, 300.0)] {
         let node = commands
             .spawn((
                 kit::node(Vec2::new(80.0, y)),
                 Value(value),
-                ChildOf(content),
+                ChildOf(canvas),
                 children![kit::title(title)],
             ))
             .id();
@@ -94,7 +93,7 @@ fn setup(mut commands: Commands) {
     }
     commands.spawn((
         kit::node(Vec2::new(400.0, 190.0)),
-        ChildOf(content),
+        ChildOf(canvas),
         children![
             kit::title("Add"),
             kit::input("a", NUMBER, BLUE),

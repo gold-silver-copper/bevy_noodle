@@ -92,13 +92,12 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
-    let a = spawn_number(&mut commands, content, Vec2::new(80.0, 120.0), 2.0);
-    let b = spawn_number(&mut commands, content, Vec2::new(80.0, 300.0), 3.5);
+    let a = spawn_number(&mut commands, canvas, Vec2::new(80.0, 120.0), 2.0);
+    let b = spawn_number(&mut commands, canvas, Vec2::new(80.0, 300.0), 3.5);
     let add = commands
         .spawn((
             kit::node(Vec2::new(380.0, 190.0)),
-            ChildOf(content),
+            ChildOf(canvas),
             children![
                 kit::title("Add"),
                 kit::input("a", NUMBER, BLUE),
@@ -141,12 +140,12 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn spawn_number(commands: &mut Commands, content: Entity, at: Vec2, value: f32) -> Entity {
+fn spawn_number(commands: &mut Commands, canvas: Entity, at: Vec2, value: f32) -> Entity {
     commands
         .spawn((
             kit::node(at),
             Value(value),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
         ))
         .id()
@@ -341,7 +340,7 @@ fn add_on_right_click(
     mut commands: Commands,
 ) {
     let canvas = click.event_target();
-    let (Ok(view), Some(content)) = (views.get(canvas), graph.content_of(canvas)) else {
+    let Ok(view) = views.get(canvas) else {
         return;
     };
     let clicked = click.original_event_target();
@@ -353,7 +352,7 @@ fn add_on_right_click(
         commands.graph_edit(canvas, GraphEdit::Disconnect { edge: clicked });
     } else if graph.node_of(clicked).is_none() {
         let at = view.canvas_to_graph(click.pointer_location.position);
-        spawn_number(&mut commands, content, at, 0.0);
+        spawn_number(&mut commands, canvas, at, 0.0);
         // Spawning is not a graph edit, so record it here.
         commands.queue(record);
     }

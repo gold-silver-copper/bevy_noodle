@@ -32,7 +32,7 @@ pub struct GraphQuery<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
     canvases: Query<'w, 's, (), With<NodeCanvas>>,
-    contents: Query<'w, 's, (), With<CanvasContent>>,
+    contents: Query<'w, 's, &'static Content>,
     nodes: Query<'w, 's, (), With<GraphNode>>,
     ports: Query<
         'w,
@@ -69,11 +69,7 @@ impl GraphQuery<'_, '_> {
 
     /// The [`CanvasContent`] of a canvas.
     pub fn content_of(&self, canvas: Entity) -> Option<Entity> {
-        self.children
-            .get(canvas)
-            .ok()?
-            .iter()
-            .find(|c| self.contents.contains(*c))
+        self.contents.get(canvas).ok().map(|c| **c)
     }
 
     /// The [`Port`] on `entity`, if it is one.

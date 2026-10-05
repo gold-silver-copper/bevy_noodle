@@ -37,7 +37,6 @@ struct Frame;
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     for (title, at, size, color) in [
         (
             "Inputs",
@@ -69,7 +68,7 @@ fn setup(mut commands: Commands) {
             },
             BackgroundColor(Color::srgba(r, g, b, 0.08)),
             BorderColor::all(Color::srgba(r, g, b, 0.5)),
-            ChildOf(content),
+            ChildOf(canvas),
             children![(
                 EditableText::new(title),
                 TabIndex(0),
@@ -94,13 +93,13 @@ fn setup(mut commands: Commands) {
     for (name, y) in [("First", 110.0), ("Second", 250.0)] {
         commands.spawn((
             kit::node(Vec2::new(80.0, y)),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title(name), kit::output("value", NUMBER, BLUE)],
         ));
     }
     commands.spawn((
         kit::node(Vec2::new(410.0, 170.0)),
-        ChildOf(content),
+        ChildOf(canvas),
         children![
             kit::title("Add"),
             kit::input("a", NUMBER, BLUE),
@@ -110,7 +109,7 @@ fn setup(mut commands: Commands) {
     ));
     commands.spawn((
         kit::node(Vec2::new(720.0, 200.0)),
-        ChildOf(content),
+        ChildOf(canvas),
         children![kit::title("Outside"), kit::input("value", NUMBER, BLUE)],
     ));
 }

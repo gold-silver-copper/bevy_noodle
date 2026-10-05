@@ -7,12 +7,42 @@ use bevy::math::cubic_splines::CubicSegment;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
 
-/// A graph and its viewport. Adds no background and no children: give it a
-/// [`CanvasContent`] child to hold the nodes.
+/// A graph and its viewport. Adds no background; it spawns its
+/// [`CanvasContent`] child, which holds the nodes. Spawn nodes as children of
+/// the canvas (they move into the content) or of the content.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
 #[require(CanvasView)]
+#[component(on_add = canvas_added)]
 pub struct NodeCanvas;
+
+fn canvas_added(mut world: DeferredWorld, context: HookContext) {
+    let canvas = context.entity;
+    world
+        .commands()
+        .queue(move |world: &mut World| _ = ensure_content(world, canvas));
+}
+
+/// Gives `canvas` a content, unless it has one.
+pub(crate) fn ensure_content(world: &mut World, canvas: Entity) -> Option<Entity> {
+    world.get::<NodeCanvas>(canvas)?;
+    if let Some(content) = world.get::<Content>(canvas) {
+        return Some(content.0);
+    }
+    // One spawned unlinked (e.g. while a snapshot was written) wins.
+    let children = world.get::<Children>(canvas).map(|c| c.to_vec());
+    let unlinked = children
+        .into_iter()
+        .flatten()
+        .find(|c| world.get::<CanvasContent>(*c).is_some());
+    let content = match unlinked {
+        Some(content) => world.entity_mut(content).insert(ContentOf(canvas)).id(),
+        None => world
+            .spawn((CanvasContent, ContentOf(canvas), ChildOf(canvas)))
+            .id(),
+    };
+    Some(content)
+}
 
 /// The canvas camera: `pan` is where the graph origin appears (canvas-local
 /// logical pixels) and `zoom` scales graph space.
@@ -54,12 +84,52 @@ impl CanvasView {
     }
 }
 
-/// The child of a [`NodeCanvas`] holding its nodes. Its `UiTransform` follows
-/// [`CanvasView`]; it is otherwise an invisible, zero-size container.
+/// The child of a [`NodeCanvas`] holding its nodes, spawned by the canvas. Its
+/// `UiTransform` follows [`CanvasView`]; it is otherwise an invisible,
+/// zero-size container. One spawned as a canvas child by hand (or from a
+/// snapshot) replaces the canvas's own while that one is empty.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
 #[require(Node = content_node(), UiTransform, Pickable = Pickable::IGNORE)]
+#[component(on_add = content_added)]
 pub struct CanvasContent;
+
+fn content_added(mut world: DeferredWorld, context: HookContext) {
+    let content = context.entity;
+    world
+        .commands()
+        .queue(move |world: &mut World| link_content(world, content));
+}
+
+/// Makes `content` its parent canvas's content, replacing an empty one.
+pub(crate) fn link_content(world: &mut World, content: Entity) {
+    let Some(canvas) = world.get::<ChildOf>(content).map(ChildOf::parent) else {
+        return;
+    };
+    if world.get::<NodeCanvas>(canvas).is_none() {
+        return;
+    }
+    let old = world.get::<Content>(canvas).map(|c| c.0);
+    match old {
+        Some(old) if old == content => return,
+        Some(old) if world.get::<Children>(old).is_none_or(|c| c.is_empty()) => {
+            world.despawn(old);
+        }
+        Some(_) => return,
+        None => {}
+    }
+    world.entity_mut(content).insert(ContentOf(canvas));
+}
+
+/// On a [`CanvasContent`]: the canvas it holds the nodes of.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[relationship(relationship_target = Content)]
+pub struct ContentOf(pub Entity);
+
+/// On a [`NodeCanvas`]: its [`CanvasContent`], maintained by Bevy.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
+#[relationship_target(relationship = ContentOf, linked_spawn)]
+pub struct Content(Entity);
 
 // Zero-size at the canvas origin, so zoom pivots on the graph origin even when
 // nodes are laid out in flow.
@@ -75,10 +145,31 @@ fn content_node() -> Node {
     }
 }
 
-/// Marks the root UI entity of a node. Style it however you like.
+/// Marks the root UI entity of a node. Style it however you like. A node
+/// spawned as a child of a [`NodeCanvas`] moves into its [`CanvasContent`].
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
 pub struct GraphNode;
+
+/// A node put under a canvas moves into the canvas's content. An observer,
+/// not a hook: it runs after `ChildOf`'s hooks, so their queued commands
+/// (giving the canvas its `Children`) apply before the move.
+pub(crate) fn adopt_nodes(
+    insert: On<Insert, (GraphNode, ChildOf)>,
+    nodes: Query<&ChildOf, With<GraphNode>>,
+    canvases: Query<(), With<NodeCanvas>>,
+    mut commands: Commands,
+) {
+    let node = insert.entity;
+    if nodes.get(node).is_ok_and(|p| canvases.contains(p.parent())) {
+        commands.queue(move |world: &mut World| {
+            let canvas = world.get::<ChildOf>(node).map(ChildOf::parent);
+            if let Some(content) = canvas.and_then(|c| ensure_content(world, c)) {
+                world.entity_mut(node).insert(ChildOf(content));
+            }
+        });
+    }
+}
 
 /// Optional position of a [`GraphNode`]'s top-left corner in graph space. With
 /// it, the library writes the node's `position_type`/`left`/`top`; without it,

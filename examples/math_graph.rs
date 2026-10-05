@@ -47,7 +47,6 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let nodes = [
         (MathOp::Number, 60.0, 60.0, 2.0),
         (MathOp::Number, 60.0, 220.0, 3.5),
@@ -56,7 +55,7 @@ fn setup(mut commands: Commands) {
         (MathOp::Multiply, 560.0, 220.0, 0.0),
         (MathOp::Display, 800.0, 240.0, 0.0),
     ]
-    .map(|(op, x, y, value)| spawn_node(&mut commands, content, Vec2::new(x, y), op, value));
+    .map(|(op, x, y, value)| spawn_node(&mut commands, canvas, Vec2::new(x, y), op, value));
     commands.queue(move |world: &mut World| {
         _ = world.run_system_cached_with(wire_demo, (canvas, nodes))
     });
@@ -79,14 +78,8 @@ fn wire_demo(
 }
 
 /// A kit frame plus our own widgets and components.
-fn spawn_node(
-    commands: &mut Commands,
-    content: Entity,
-    at: Vec2,
-    op: MathOp,
-    value: f64,
-) -> Entity {
-    let node = commands.spawn((kit::node(at), op, ChildOf(content))).id();
+fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, value: f64) -> Entity {
+    let node = commands.spawn((kit::node(at), op, ChildOf(canvas))).id();
     commands.spawn((kit::title(format!("{op:?}")), ChildOf(node)));
     let row = match op {
         MathOp::Number => {

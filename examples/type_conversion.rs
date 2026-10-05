@@ -86,12 +86,11 @@ struct Demo {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let int = commands
         .spawn((
             kit::node(Vec2::new(60.0, 100.0)),
             Calc::Int(7),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Int"), kit::output("value", INT, GREEN)],
         ))
         .id();
@@ -100,7 +99,7 @@ fn setup(mut commands: Commands) {
         .spawn((
             kit::node(Vec2::new(60.0, 330.0)),
             Calc::Float(2.5),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Float"), kit::output("value", FLOAT, BLUE)],
         ))
         .id();
@@ -109,7 +108,7 @@ fn setup(mut commands: Commands) {
         .spawn((
             kit::node(Vec2::new(620.0, 200.0)),
             Calc::Multiply,
-            ChildOf(content),
+            ChildOf(canvas),
             children![
                 kit::title("Multiply"),
                 kit::input("a", FLOAT, BLUE),
@@ -179,9 +178,7 @@ fn convert(
         return;
     }
     // The direct connection stays refused; a converter goes in between.
-    let Some(content) = graph.content_of(request.canvas) else {
-        return;
-    };
+    let canvas = request.canvas;
     let position = |p| {
         anchors
             .get(p)
@@ -194,7 +191,7 @@ fn convert(
         .spawn((
             kit::node(at),
             Calc::ToFloat,
-            ChildOf(content),
+            ChildOf(canvas),
             children![
                 kit::title("int to float"),
                 kit::input("int", INT, GREEN),

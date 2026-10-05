@@ -84,11 +84,10 @@ fn setup(mut commands: Commands) {
             Node { width: percent(100), height: percent(100), ..default() },
         ))
         .id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     commands.spawn((
         GraphNode,
         NodePosition(Vec2::new(80.0, 120.0)),
-        ChildOf(content),
+        ChildOf(canvas),
         Node { padding: UiRect::all(px(10)), column_gap: px(8), ..default() },
         BackgroundColor(Color::srgb(0.16, 0.18, 0.22)),
         children![
@@ -107,7 +106,7 @@ fn setup(mut commands: Commands) {
 
 ```text
 NodeCanvas              one graph and its viewport
-└── CanvasContent       pans and zooms (CanvasView); holds the nodes
+└── CanvasContent       spawned by the canvas; pans and zooms (CanvasView), holds the nodes
     ├── GraphNode       your UI node
     │   └── … Port      your UI node marking a connection point
     └── Edge            relates an output port to an input port; has EdgeGeometry
@@ -116,7 +115,8 @@ NodeCanvas              one graph and its viewport
 - **Read** with the `GraphQuery` system param (`nodes_in`, `edges_of`,
   `peers_of`, …).
 - **Write** with `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`;
-  also `Disconnect`, `MoveNodes`, `Delete` and `Select`. Nodes are just spawned.
+  also `Disconnect`, `MoveNodes`, `Delete` and `Select`. Nodes are just
+  spawned, as children of the canvas.
 - **Validate** in `On<EditRequested>` observers: `allow()` or `reject()` any
   edit, including the built-in type rules.
 - **React** to `EditApplied`.

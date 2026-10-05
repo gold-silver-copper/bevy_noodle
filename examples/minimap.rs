@@ -43,7 +43,6 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     // A long chain, wider than the window.
     let nodes: Vec<Entity> = (0..12)
         .map(|i| {
@@ -51,7 +50,7 @@ fn setup(mut commands: Commands) {
             commands
                 .spawn((
                     kit::node(at),
-                    ChildOf(content),
+                    ChildOf(canvas),
                     children![
                         kit::title(format!("Step {}", i + 1)),
                         kit::input("in", NUMBER, BLUE),

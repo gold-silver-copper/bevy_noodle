@@ -4,7 +4,7 @@ use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
+use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
 
 const NUM: PortType = PortType::named("num");
 const TEXT: PortType = PortType::named("text");
@@ -41,7 +41,8 @@ fn canvas(world: &mut World, parent: Option<Entity>) -> (Entity, Entity) {
     if let Some(parent) = parent {
         world.entity_mut(canvas).insert(ChildOf(parent));
     }
-    (canvas, world.spawn((CanvasContent, ChildOf(canvas))).id())
+    world.flush();
+    (canvas, **world.get::<Content>(canvas).unwrap())
 }
 
 /// A node in `content` with ports nested one level, like real UI.
@@ -520,4 +521,36 @@ fn previews_ask_observers_but_change_nothing() {
     let w = app.world_mut();
     let same = GraphEdit::Connect { from, to: p[2] };
     assert_eq!(w.graph_edit(canvas, same), Err(RejectReason::SameDirection));
+}
+
+#[test]
+fn canvases_spawn_their_content_and_adopt_nodes() {
+    let mut app = app();
+    let w = app.world_mut();
+    let canvas = w.spawn((NodeCanvas, Node::default())).id();
+    let node = w.spawn((GraphNode, ChildOf(canvas))).id();
+    w.flush();
+    let content = query(w, |g| g.content_of(canvas)).unwrap();
+    assert!(w.get::<CanvasContent>(content).is_some());
+    assert_eq!(w.get::<ChildOf>(node).map(ChildOf::parent), Some(content));
+    assert_eq!(w.get::<Children>(canvas).unwrap().to_vec(), [content]);
+    // Moved under a canvas later, a node goes into the content too.
+    let late = w.spawn((GraphNode, Node::default())).id();
+    w.entity_mut(late).insert(ChildOf(canvas));
+    app.update();
+    let w = app.world_mut();
+    assert_eq!(w.get::<ChildOf>(late).map(ChildOf::parent), Some(content));
+    let contents = w.query::<&CanvasContent>().iter(w).count();
+    assert_eq!(contents, 1);
+}
+
+#[test]
+fn a_content_spawned_by_hand_replaces_the_empty_one() {
+    let mut app = app();
+    let w = app.world_mut();
+    let canvas = w.spawn((NodeCanvas, Node::default())).id();
+    let mine = w.spawn((CanvasContent, ChildOf(canvas))).id();
+    w.flush();
+    assert_eq!(query(w, |g| g.content_of(canvas)), Some(mine));
+    assert_eq!(w.query::<&CanvasContent>().iter(w).count(), 1);
 }

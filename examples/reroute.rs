@@ -43,18 +43,17 @@ fn reroute(at: Vec2) -> impl Bundle {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let number = commands
         .spawn((
             kit::node(Vec2::new(60.0, 300.0)),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
         ))
         .id();
     // An obstacle the edge is routed around.
     commands.spawn((
         kit::node(Vec2::new(420.0, 230.0)),
-        ChildOf(content),
+        ChildOf(canvas),
         children![
             kit::title("Obstacle"),
             kit::input("x", NUMBER, BLUE),
@@ -64,12 +63,12 @@ fn setup(mut commands: Commands) {
     let display = commands
         .spawn((
             kit::node(Vec2::new(900.0, 300.0)),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Display"), kit::input("value", NUMBER, BLUE)],
         ))
         .id();
     let dots = [Vec2::new(330.0, 150.0), Vec2::new(720.0, 150.0)]
-        .map(|at| commands.spawn((reroute(at), ChildOf(content))).id());
+        .map(|at| commands.spawn((reroute(at), ChildOf(canvas))).id());
     let chain = [number, dots[0], dots[1], display];
     commands.queue(move |world: &mut World| {
         for pair in chain.windows(2) {
@@ -106,14 +105,12 @@ fn reroute_on_right_click(
     ) else {
         return;
     };
-    let (Ok(view), Some(content), PointerButton::Secondary) =
-        (views.get(canvas), graph.content_of(canvas), click.button)
-    else {
+    let (Ok(view), PointerButton::Secondary) = (views.get(canvas), click.button) else {
         return;
     };
     // The canvas fills the window here, so window and canvas coordinates match.
     let at = view.canvas_to_graph(click.pointer_location.position);
-    let dot = commands.spawn((reroute(at), ChildOf(content))).id();
+    let dot = commands.spawn((reroute(at), ChildOf(canvas))).id();
     commands.queue(move |world: &mut World| {
         world
             .graph_edit(canvas, GraphEdit::Disconnect { edge })

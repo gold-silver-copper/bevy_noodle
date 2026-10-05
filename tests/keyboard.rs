@@ -37,10 +37,10 @@ fn app() -> (App, Graph) {
     let canvas = w
         .spawn((NodeCanvas, CanvasKeyboard::default(), Node::default()))
         .id();
-    let content = w.spawn((CanvasContent, ChildOf(canvas))).id();
+    // Nodes spawned under the canvas move into its content.
     let spawn = |w: &mut World, port: Port| {
         let node = (GraphNode, NodePosition::default(), Node::default());
-        let node = w.spawn((node, ChildOf(content))).id();
+        let node = w.spawn((node, ChildOf(canvas))).id();
         (node, w.spawn((port, Node::default(), ChildOf(node))).id())
     };
     let (a, out) = spawn(w, Port::output(NUM));

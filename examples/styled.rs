@@ -68,8 +68,8 @@ struct Template(String);
 #[derive(Component)]
 struct Shows;
 
-fn spawn(commands: &mut Commands, content: Entity, kind: Kind, at: Vec2) -> Entity {
-    let node = (kit::node(at), kind, ChildOf(content));
+fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entity {
+    let node = (kit::node(at), kind, ChildOf(canvas));
     let margin = UiRect::horizontal(px(kit::PADDING));
     match kind {
         Kind::Number => {
@@ -159,7 +159,6 @@ fn setup(mut commands: Commands) {
             SelectionBoxStyle::default(),
         ))
         .id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let nodes = [
         (Kind::Number, 60.0, 80.0),
         (Kind::Number, 60.0, 260.0),
@@ -167,7 +166,7 @@ fn setup(mut commands: Commands) {
         (Kind::Format, 560.0, 150.0),
         (Kind::Print, 820.0, 180.0),
     ]
-    .map(|(kind, x, y)| spawn(&mut commands, content, kind, Vec2::new(x, y)));
+    .map(|(kind, x, y)| spawn(&mut commands, canvas, kind, Vec2::new(x, y)));
     commands.queue(move |world: &mut World| {
         _ = world.run_system_cached_with(connect_demo, (canvas, nodes))
     });
@@ -276,7 +275,7 @@ fn add_on_right_click(
     mut commands: Commands,
 ) {
     let canvas = click.event_target();
-    let (Ok(view), Some(content)) = (views.get(canvas), graph.content_of(canvas)) else {
+    let Ok(view) = views.get(canvas) else {
         return;
     };
     if click.button == PointerButton::Secondary
@@ -284,14 +283,13 @@ fn add_on_right_click(
     {
         // The canvas fills the window here, so window and canvas coordinates match.
         let at = view.canvas_to_graph(click.pointer_location.position);
-        spawn(&mut commands, content, Kind::Number, at);
+        spawn(&mut commands, canvas, Kind::Number, at);
     }
 }
 
 /// A wire dropped on empty canvas gets a node that accepts it, connected.
 fn add_on_wire_drop(dropped: On<WireDropped>, graph: GraphQuery, mut commands: Commands) {
-    let (Some(content), Some(port)) = (graph.content_of(dropped.canvas), graph.port(dropped.from))
-    else {
+    let Some(port) = graph.port(dropped.from) else {
         return;
     };
     let kind = match (port.direction, port.port_type == TEXT) {
@@ -300,8 +298,8 @@ fn add_on_wire_drop(dropped: On<WireDropped>, graph: GraphQuery, mut commands: C
         (PortDirection::Input, true) => Kind::Format,
         (PortDirection::Input, false) => Kind::Number,
     };
-    let node = spawn(&mut commands, content, kind, dropped.position);
     let (canvas, from) = (dropped.canvas, dropped.from);
+    let node = spawn(&mut commands, canvas, kind, dropped.position);
     commands.queue(move |world: &mut World| {
         let fits = |In((canvas, from, node)): In<(Entity, Entity, Entity)>, g: GraphQuery| {
             g.ports_of(node).into_iter().find(|to| {

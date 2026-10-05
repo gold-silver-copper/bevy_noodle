@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{OutgoingEdges, scene};
+use bevy_noodle::{Content, OutgoingEdges, scene};
 
 const NUM: PortType = PortType::named("num");
 
@@ -12,7 +12,7 @@ struct Payload(f32);
 
 fn graph(world: &mut World) -> (Entity, Entity, [Entity; 2]) {
     let canvas = world.spawn((NodeCanvas, Node::default())).id();
-    let content = world.spawn((CanvasContent, ChildOf(canvas))).id();
+    let content = content_of(world, canvas);
     let ports = [Port::output(NUM), Port::input(NUM)].map(|port| {
         let node = world
             .spawn((
@@ -25,6 +25,12 @@ fn graph(world: &mut World) -> (Entity, Entity, [Entity; 2]) {
         world.spawn((port, Node::default(), ChildOf(node))).id()
     });
     (canvas, content, ports)
+}
+
+/// The content a canvas spawned for itself.
+fn content_of(world: &mut World, canvas: Entity) -> Entity {
+    world.flush();
+    **world.get::<Content>(canvas).unwrap()
 }
 
 fn app() -> App {
@@ -155,9 +161,45 @@ fn copy_some_nodes_and_paste_them_anywhere() {
 
     // And into another graph.
     let other = w.spawn((NodeCanvas, Node::default())).id();
-    let other_content = w.spawn((CanvasContent, ChildOf(other))).id();
+    let other_content = content_of(w, other);
     let map = scene::insert(w, other, &copied).unwrap();
     let edge = w.get::<OutgoingEdges>(map[&out]).unwrap()[0];
     assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), other_content);
     assert_eq!(w.get::<Children>(other_content).unwrap().len(), 3);
+}
+
+#[test]
+fn nested_canvases_restore_with_one_content_each() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content, _) = graph(w);
+    let group = w
+        .spawn((GraphNode, NodePosition::default(), ChildOf(content)))
+        .id();
+    let inner = w.spawn((NodeCanvas, Node::default(), ChildOf(group))).id();
+    let inner_content = content_of(w, inner);
+    w.spawn((
+        GraphNode,
+        NodePosition::default(),
+        Payload(7.0),
+        ChildOf(inner),
+    ));
+    w.flush();
+    assert_eq!(w.get::<Children>(inner_content).map(|c| c.len()), Some(1));
+    let saved = scene::snapshot(w, canvas).unwrap();
+    let map = scene::restore(w, canvas, &saved).unwrap();
+    app.update();
+
+    let w = app.world_mut();
+    let inner = map[&inner];
+    let contents: Vec<_> = w
+        .get::<Children>(inner)
+        .unwrap()
+        .iter()
+        .filter(|c| w.get::<CanvasContent>(*c).is_some())
+        .collect();
+    assert_eq!(contents.len(), 1, "the snapshot's content, not a new one");
+    assert_eq!(w.get::<Content>(inner).map(|c| **c), Some(contents[0]));
+    let nodes = w.get::<Children>(contents[0]).unwrap();
+    assert_eq!(w.get::<Payload>(nodes[0]), Some(&Payload(7.0)));
 }

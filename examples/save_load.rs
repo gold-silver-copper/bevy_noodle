@@ -1,6 +1,6 @@
 //! Saving a graph to a RON file and loading it back (feature `scene`).
 //!
-//! A snapshot is a Bevy `DynamicWorld` of everything under the canvas content:
+//! A snapshot is a Bevy `DynamicWorld` of everything in the canvas:
 //! nodes, ports, edges, and your own reflected components, entity references
 //! included (`Shows` below points at a text entity and survives the trip).
 //!
@@ -101,10 +101,9 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     let numbers = [(2.0, 100.0), (3.5, 230.0), (4.0, 360.0)]
-        .map(|(value, y)| spawn_number(&mut commands, content, value, Vec2::new(80.0, y)));
-    let sum = spawn_sum(&mut commands, content, Vec2::new(420.0, 210.0));
+        .map(|(value, y)| spawn_number(&mut commands, canvas, value, Vec2::new(80.0, y)));
+    let sum = spawn_sum(&mut commands, canvas, Vec2::new(420.0, 210.0));
     commands.queue(move |world: &mut World| {
         let ports = |In((numbers, sum)): In<([Entity; 3], Entity)>, graph: GraphQuery| {
             let to = graph.inputs_of(sum)[0];
@@ -133,12 +132,12 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn spawn_number(commands: &mut Commands, content: Entity, value: f32, at: Vec2) -> Entity {
+fn spawn_number(commands: &mut Commands, canvas: Entity, value: f32, at: Vec2) -> Entity {
     commands
         .spawn((
             kit::node(at),
             Value(value),
-            ChildOf(content),
+            ChildOf(canvas),
             children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
         ))
         .id()
@@ -176,8 +175,8 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
     focus.get().is_none_or(|f| !fields.contains(f))
 }
 
-fn spawn_sum(commands: &mut Commands, content: Entity, at: Vec2) -> Entity {
-    let node = commands.spawn((kit::node(at), ChildOf(content))).id();
+fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
+    let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
     let inputs = Port::input(NUMBER).with_max_connections(None);
     let margin = UiRect::horizontal(px(kit::PADDING));
     let result = commands
@@ -251,7 +250,7 @@ fn keys(
 }
 
 fn save(world: &mut World, canvas: Entity) -> Result<String> {
-    let snapshot = scene::snapshot(world, canvas).ok_or("no canvas content")?;
+    let snapshot = scene::snapshot(world, canvas).ok_or("not a canvas")?;
     let ron = snapshot.serialize(&world.resource::<AppTypeRegistry>().read())?;
     std::fs::write(file(), &ron)?;
     let (entities, bytes) = (snapshot.entities.len(), ron.len());
@@ -312,15 +311,11 @@ fn save_model(world: &mut World, canvas: Entity) -> Result<String> {
 fn open_model(world: &mut World, canvas: Entity) -> Result<String> {
     let model: Model = ron::from_str(&std::fs::read_to_string(model_file())?)?;
     clear(world, canvas)?;
-    let content = |In(canvas), graph: GraphQuery| graph.content_of(canvas);
-    let content = world
-        .run_system_cached_with(content, canvas)?
-        .ok_or("no canvas content")?;
     let mut commands = world.commands();
     let nodes: Vec<Entity> = (model.nodes.iter())
         .map(|(kind, [x, y])| match kind {
-            Kind::Number(value) => spawn_number(&mut commands, content, *value, Vec2::new(*x, *y)),
-            Kind::Sum => spawn_sum(&mut commands, content, Vec2::new(*x, *y)),
+            Kind::Number(value) => spawn_number(&mut commands, canvas, *value, Vec2::new(*x, *y)),
+            Kind::Sum => spawn_sum(&mut commands, canvas, Vec2::new(*x, *y)),
         })
         .collect();
     world.flush();
@@ -345,7 +340,7 @@ fn add_on_right_click(
     mut commands: Commands,
 ) {
     let canvas = click.event_target();
-    let (Ok(view), Some(content)) = (views.get(canvas), graph.content_of(canvas)) else {
+    let Ok(view) = views.get(canvas) else {
         return;
     };
     if click.button == PointerButton::Secondary
@@ -353,6 +348,6 @@ fn add_on_right_click(
     {
         let at = view.canvas_to_graph(click.pointer_location.position);
         let value = (values.iter().count() % 9 + 1) as f32;
-        spawn_number(&mut commands, content, value, at);
+        spawn_number(&mut commands, canvas, value, at);
     }
 }

@@ -91,6 +91,14 @@ pub fn insert(
             world.entity_mut(entity).insert((source, target));
         }
     }
+    // Nested canvases may have spawned a content of their own while the
+    // snapshot was written; the snapshot's replaces it.
+    world.flush();
+    for entity in snapshot.entities.iter().map(|e| map[&e.entity]) {
+        if world.get::<CanvasContent>(entity).is_some() {
+            link_content(world, entity);
+        }
+    }
     Ok(map)
 }
 
@@ -147,13 +155,12 @@ fn build(world: &World, entities: Vec<Entity>) -> DynamicWorld {
         // Rebuilt from the edges on insert.
         .deny_component::<OutgoingEdges>()
         .deny_component::<IncomingEdges>()
+        .deny_component::<ContentOf>()
+        .deny_component::<Content>()
         .extract_entities(entities.into_iter())
         .build()
 }
 
 fn content(world: &World, canvas: Entity) -> Option<Entity> {
-    world
-        .get::<Children>(canvas)?
-        .iter()
-        .find(|c| world.get::<CanvasContent>(*c).is_some())
+    world.get::<Content>(canvas).map(|c| **c)
 }

@@ -47,7 +47,6 @@ fn main() {
 #[derive(Resource)]
 struct Stress {
     canvas: Entity,
-    content: Entity,
     /// Nodes to keep alive.
     target: usize,
     paused: bool,
@@ -92,10 +91,8 @@ fn setup(mut commands: Commands) {
         ..default()
     };
     let canvas = commands.spawn(kit::canvas()).insert(style).id();
-    let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     commands.insert_resource(Stress {
         canvas,
-        content,
         target: 400,
         paused: false,
         auto_camera: true,
@@ -169,8 +166,8 @@ fn churn(
     for _ in 0..missing {
         let at = Vec2::new(stress.unit(), stress.unit()) * WORLD;
         let kind = stress.below(3);
-        let (content, labels) = (stress.content, stress.labels);
-        spawn_node(&mut commands, content, kind, at, labels);
+        let (canvas, labels) = (stress.canvas, stress.labels);
+        spawn_node(&mut commands, canvas, kind, at, labels);
     }
     let excess = nodes.len().saturating_sub(stress.target).min(30);
     // Once grown, keep deleting a few nodes so they get replaced.
@@ -213,7 +210,7 @@ fn churn(
 
 /// Sources, operations and sinks over two port types, so some wiring fails.
 /// Without labels, ports are bare dots: less text for Bevy to lay out.
-fn spawn_node(commands: &mut Commands, content: Entity, kind: usize, at: Vec2, labels: bool) {
+fn spawn_node(commands: &mut Commands, canvas: Entity, kind: usize, at: Vec2, labels: bool) {
     use PortDirection::{Input, Output};
     let (title, ports): (&str, &[_]) = match kind {
         0 => (
@@ -239,7 +236,7 @@ fn spawn_node(commands: &mut Commands, content: Entity, kind: usize, at: Vec2, l
             ],
         ),
     };
-    let node = commands.spawn((kit::node(at), ChildOf(content))).id();
+    let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
     commands.spawn((kit::title(title), ChildOf(node)));
     for &(direction, label, port_type, color) in ports {
         let mut row = commands.spawn(ChildOf(node));

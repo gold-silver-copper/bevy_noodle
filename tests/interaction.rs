@@ -12,7 +12,7 @@ use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::{Selected, UiScale};
 use bevy_noodle::prelude::*;
-use bevy_noodle::{DragProgress, WireCandidate, WireTarget};
+use bevy_noodle::{Content, DragProgress, WireCandidate, WireTarget};
 
 const NUM: PortType = PortType::named("num");
 
@@ -30,7 +30,8 @@ fn graph(world: &mut World) -> (Entity, Entity) {
     let canvas = world
         .spawn((NodeCanvas, CanvasInteraction::default(), Node::default()))
         .id();
-    (canvas, world.spawn((CanvasContent, ChildOf(canvas))).id())
+    world.flush();
+    (canvas, **world.get::<Content>(canvas).unwrap())
 }
 
 /// One node per port in `content`; returns the ports.
@@ -290,7 +291,8 @@ fn outer_edges_are_pickable_over_nested_canvases() {
             ChildOf(group),
         ))
         .id();
-    let inner = w.spawn((CanvasContent, ChildOf(inner_canvas))).id();
+    w.flush();
+    let inner = **w.get::<Content>(inner_canvas).unwrap();
     // An edge of `content` running along y = 0, from x = 0 to x = 100.
     let edge_in = |w: &mut World, content: Entity| {
         let ports = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
