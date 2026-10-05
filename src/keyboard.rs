@@ -194,13 +194,7 @@ fn on_key(
         if !nodes.contains(&node) {
             nodes = vec![node];
         }
-        let edit = GraphEdit::MoveNodes {
-            nodes,
-            delta,
-            total: delta,
-            is_final: true,
-        };
-        commands.graph_edit_with_origin(canvas, edit, origin);
+        commands.graph_edit_with_origin(canvas, GraphEdit::move_nodes(nodes, delta), origin);
     } else {
         return;
     }

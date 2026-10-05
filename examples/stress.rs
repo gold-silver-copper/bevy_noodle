@@ -196,13 +196,7 @@ fn churn(
     for _ in 0..8 {
         if let Some(node) = stress.pick(&nodes) {
             let delta = (Vec2::new(stress.unit(), stress.unit()) - 0.5) * 60.0;
-            let edit = GraphEdit::MoveNodes {
-                nodes: vec![node],
-                delta,
-                total: delta,
-                is_final: true,
-            };
-            commands.graph_edit(canvas, edit);
+            commands.graph_edit(canvas, GraphEdit::move_nodes(vec![node], delta));
         }
     }
 

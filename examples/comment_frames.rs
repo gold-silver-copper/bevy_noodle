@@ -126,8 +126,7 @@ fn carry_contents(
     let GraphEdit::MoveNodes {
         nodes: moved,
         delta,
-        total,
-        is_final,
+        drag,
     } = &applied.edit
     else {
         return;
@@ -155,11 +154,11 @@ fn carry_contents(
         }
     }
     if !carried.is_empty() {
+        // Carried along the same drag, so undo still sees one gesture.
         let edit = GraphEdit::MoveNodes {
             nodes: carried,
             delta: *delta,
-            total: *total,
-            is_final: *is_final,
+            drag: *drag,
         };
         commands.graph_edit_with_origin(applied.canvas, edit, CARRIED);
     }

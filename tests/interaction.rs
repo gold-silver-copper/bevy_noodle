@@ -12,7 +12,7 @@ use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
 use bevy::ui::{Selected, UiScale};
 use bevy_noodle::prelude::*;
-use bevy_noodle::{WireCandidate, WireTarget};
+use bevy_noodle::{DragProgress, WireCandidate, WireTarget};
 
 const NUM: PortType = PortType::named("num");
 
@@ -103,6 +103,39 @@ fn nodes_with_a_drag_handle_move_only_from_it() {
     assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::ZERO);
     drag(w, handle, Vec2::new(10.0, 0.0));
     assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::new(10.0, 0.0));
+}
+
+#[test]
+fn drags_stream_steps_and_end_with_their_total() {
+    let mut app = app();
+    app.add_message::<EditApplied>();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let node = w
+        .spawn((
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            ChildOf(content),
+        ))
+        .id();
+    drag(w, node, Vec2::new(10.0, 4.0));
+    let moves: Vec<_> = w
+        .resource_mut::<Messages<EditApplied>>()
+        .drain()
+        .filter_map(|e| match e.edit {
+            GraphEdit::MoveNodes { drag, .. } => Some((e.edit.is_drag_step(), drag)),
+            _ => None,
+        })
+        .collect();
+    let progress = |is_final| {
+        Some(DragProgress {
+            total: Vec2::new(10.0, 4.0),
+            is_final,
+        })
+    };
+    assert_eq!(moves, [(true, progress(false)), (false, progress(true))]);
+    assert!(!GraphEdit::move_nodes(vec![node], Vec2::X).is_drag_step());
 }
 
 #[test]

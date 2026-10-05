@@ -198,12 +198,7 @@ fn observers_can_reject_and_rewrite() {
         ),
         Err(RejectReason::Rejected)
     );
-    let edit = GraphEdit::MoveNodes {
-        nodes: vec![n],
-        delta: Vec2::new(14.0, 26.0),
-        total: Vec2::ZERO,
-        is_final: true,
-    };
+    let edit = GraphEdit::move_nodes(vec![n], Vec2::new(14.0, 26.0));
     w.graph_edit(c, edit).unwrap();
     assert_eq!(w.get::<NodePosition>(n).unwrap().0, Vec2::new(10.0, 30.0));
 }
@@ -363,15 +358,8 @@ fn commands_apply_on_flush_and_types_are_auto_registered() {
     let w = app.world_mut();
     let (c, content) = canvas(w, None);
     let (n, _) = node(w, content, &[]);
-    w.commands().graph_edit(
-        c,
-        GraphEdit::MoveNodes {
-            nodes: vec![n],
-            delta: Vec2::X,
-            total: Vec2::X,
-            is_final: true,
-        },
-    );
+    w.commands()
+        .graph_edit(c, GraphEdit::move_nodes(vec![n], Vec2::X));
     w.flush();
     assert_eq!(w.get::<NodePosition>(n).unwrap().0, Vec2::X);
     let registry = w.resource::<AppTypeRegistry>().read();

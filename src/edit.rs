@@ -24,18 +24,15 @@ pub enum GraphEdit {
         /// The edge.
         edge: Entity,
     },
-    /// Move nodes by `delta` (graph units). Drags stream `is_final: false`
-    /// edits and end with one `is_final: true` edit carrying the gesture's
-    /// `total`: record that one for undo.
+    /// Move nodes by `delta` (graph units). Build one with
+    /// [`GraphEdit::move_nodes`]; pointer drags add their [`DragProgress`].
     MoveNodes {
         /// The nodes (others are ignored).
         nodes: Vec<Entity>,
-        /// This step's movement.
+        /// The movement.
         delta: Vec2,
-        /// The whole gesture's movement so far.
-        total: Vec2,
-        /// Whether this ends the gesture.
-        is_final: bool,
+        /// Set while a drag streams its steps; `None` for a complete move.
+        drag: Option<DragProgress>,
     },
     /// Despawn nodes with their ports and edges, and disconnect edges: a
     /// whole selection can be deleted at once.
@@ -50,6 +47,32 @@ pub enum GraphEdit {
         /// How `items` combine with the current selection.
         mode: SelectMode,
     },
+}
+
+impl GraphEdit {
+    /// A complete move of `nodes` by `delta`.
+    pub fn move_nodes(nodes: Vec<Entity>, delta: Vec2) -> Self {
+        Self::MoveNodes {
+            nodes,
+            delta,
+            drag: None,
+        }
+    }
+
+    /// Whether this is a step of a drag that has not ended: an undo stack
+    /// records the drag's last step instead.
+    pub fn is_drag_step(&self) -> bool {
+        matches!(self, Self::MoveNodes { drag: Some(drag), .. } if !drag.is_final)
+    }
+}
+
+/// How far a drag that streams [`GraphEdit::MoveNodes`] steps has gone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Reflect)]
+pub struct DragProgress {
+    /// The whole drag's movement so far.
+    pub total: Vec2,
+    /// Whether this step ends the drag.
+    pub is_final: bool,
 }
 
 /// How [`GraphEdit::Select`] combines its items with the current selection.

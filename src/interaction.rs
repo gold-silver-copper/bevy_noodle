@@ -24,7 +24,9 @@ use bevy::ui::{
 };
 
 use crate::components::*;
-use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, GraphWorldExt, SelectMode};
+use crate::edit::{
+    DragProgress, EditOrigin, GraphCommandsExt, GraphEdit, GraphWorldExt, SelectMode,
+};
 use crate::query::GraphQuery;
 
 /// Pointer interaction for canvases with [`CanvasInteraction`], and picking for edges with an [`EdgeHitbox`].
@@ -272,15 +274,8 @@ impl Ctx<'_, '_> {
         let scale = self.ui_scale.0 * self.view(canvas).zoom;
         let nodes = self.selection(canvas, node);
         let (delta, total) = (delta / scale, total / scale);
-        self.edit(
-            canvas,
-            GraphEdit::MoveNodes {
-                nodes,
-                delta,
-                total,
-                is_final,
-            },
-        );
+        let drag = Some(DragProgress { total, is_final });
+        self.edit(canvas, GraphEdit::MoveNodes { nodes, delta, drag });
     }
 
     fn edit(&mut self, canvas: Entity, edit: GraphEdit) {

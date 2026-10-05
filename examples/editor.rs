@@ -220,8 +220,7 @@ fn sum_of(node: Entity, graph: &GraphQuery, values: &Query<&Value>, depth: u8) -
 fn record_edits(mut applied: MessageReader<EditApplied>, mut commands: Commands) {
     let worth_undoing = |edit: &GraphEdit| match edit {
         GraphEdit::Select { .. } => false,
-        GraphEdit::MoveNodes { is_final, .. } => *is_final,
-        _ => true,
+        _ => !edit.is_drag_step(),
     };
     // Read every message (`any` would stop early and leave some for next frame).
     if applied.read().filter(|e| worth_undoing(&e.edit)).count() > 0 {

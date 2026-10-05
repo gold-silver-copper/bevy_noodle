@@ -133,13 +133,7 @@ fn keys(
     for (node, target) in targets {
         if let Ok(position) = nodes.get(node) {
             let delta = target - position.0;
-            let edit = GraphEdit::MoveNodes {
-                nodes: vec![node],
-                delta,
-                total: delta,
-                is_final: true,
-            };
-            commands.graph_edit(canvas, edit);
+            commands.graph_edit(canvas, GraphEdit::move_nodes(vec![node], delta));
         }
     }
 }
