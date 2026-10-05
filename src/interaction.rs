@@ -47,7 +47,8 @@ impl Plugin for NoodleInteractionPlugin {
 }
 
 /// Turns on pointer interaction for a canvas. Set any button to `None` to
-/// disable that interaction.
+/// disable that interaction. Key settings are lists: any of their keys
+/// works, and an empty list unbinds them.
 #[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Component, Default)]
 #[require(Hovered)]
@@ -70,7 +71,7 @@ pub struct CanvasInteraction {
     /// Held keys making selection additive.
     pub additive_keys: Vec<KeyCode>,
     /// Held keys making scrolling zoom.
-    pub zoom_keys: Vec<KeyCode>,
+    pub zoom_modifiers: Vec<KeyCode>,
     /// What scrolling does.
     pub scroll: ScrollMode,
     /// Trackpad pinch zooms.
@@ -87,19 +88,25 @@ impl Default for CanvasInteraction {
             pan_button: Some(PointerButton::Middle),
             detach_wires: true,
             raise_on_press: true,
-            additive_keys: vec![
-                ShiftLeft,
-                ShiftRight,
-                ControlLeft,
-                ControlRight,
-                SuperLeft,
-                SuperRight,
-            ],
-            zoom_keys: vec![ControlLeft, ControlRight, SuperLeft, SuperRight],
+            additive_keys: additive_keys(),
+            zoom_modifiers: vec![ControlLeft, ControlRight, SuperLeft, SuperRight],
             scroll: ScrollMode::Auto,
             pinch_zoom: true,
         }
     }
+}
+
+/// The default keys making selection additive, for pointer and keyboard.
+pub(crate) fn additive_keys() -> Vec<KeyCode> {
+    use KeyCode::*;
+    vec![
+        ShiftLeft,
+        ShiftRight,
+        ControlLeft,
+        ControlRight,
+        SuperLeft,
+        SuperRight,
+    ]
 }
 
 /// What scrolling over a canvas does.
@@ -510,7 +517,7 @@ fn on_scroll(mut scroll: On<Pointer<Scroll>>, mut ctx: Ctx) {
         MouseScrollUnit::Line => (1.1_f32.powf(scroll.y), 24.0),
         MouseScrollUnit::Pixel => ((scroll.y * 0.01).exp(), 1.0),
     };
-    let zoom = ctx.held(&settings.zoom_keys)
+    let zoom = ctx.held(&settings.zoom_modifiers)
         || settings.scroll == ScrollMode::Zoom
         || (settings.scroll == ScrollMode::Auto && scroll.unit == MouseScrollUnit::Line);
     let anchor = ctx.local(canvas, scroll.pointer_location.position);

@@ -181,3 +181,17 @@ fn keyboard_zoom_stays_within_the_view_limits() {
     press(&mut app, g.nodes[0], KeyCode::Equal);
     assert_eq!(app.world().get::<CanvasView>(g.canvas).unwrap().zoom, 1.1);
 }
+
+#[test]
+fn keys_are_lists_and_empty_lists_unbind() {
+    let (mut app, g) = app();
+    let mut keyboard = app.world_mut().get_mut::<CanvasKeyboard>(g.canvas).unwrap();
+    keyboard.select.clear();
+    keyboard.move_right = vec![KeyCode::KeyD];
+    press(&mut app, g.nodes[0], KeyCode::Enter);
+    assert!(app.world().get::<Selected>(g.nodes[0]).is_none());
+    press(&mut app, g.nodes[0], KeyCode::KeyD);
+    press(&mut app, g.nodes[0], KeyCode::ArrowRight);
+    let position = app.world().get::<NodePosition>(g.nodes[0]).unwrap().0;
+    assert_eq!(position, Vec2::new(10.0, 0.0));
+}

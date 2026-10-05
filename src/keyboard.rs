@@ -14,7 +14,7 @@ use bevy::ui::ComputedNode;
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{WireCandidate, retarget};
+use crate::interaction::{WireCandidate, additive_keys, retarget};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -32,30 +32,40 @@ impl Plugin for NoodleKeyboardPlugin {
     }
 }
 
-/// Turns on keyboard use for a canvas. Set a key to `None` to unbind it.
+/// Turns on keyboard use for a canvas. Every key setting is a list: any of
+/// its keys works, and an empty list unbinds it.
 #[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Component, Default)]
 #[require(TabGroup)]
 pub struct CanvasKeyboard {
     /// Selects the focused node; with an additive key held, toggles it.
-    pub select: Option<KeyCode>,
+    pub select: Vec<KeyCode>,
     /// On a port: starts a connection, or completes one started elsewhere.
-    pub connect: Option<KeyCode>,
+    pub connect: Vec<KeyCode>,
     /// Drops a connection being made.
-    pub cancel: Option<KeyCode>,
-    /// Left, right, up and down: move the selection (or the focused node).
-    pub move_keys: Option<[KeyCode; 4]>,
+    pub cancel: Vec<KeyCode>,
+    /// Move the selection (or the focused node) left.
+    pub move_left: Vec<KeyCode>,
+    /// Move it right.
+    pub move_right: Vec<KeyCode>,
+    /// Move it up.
+    pub move_up: Vec<KeyCode>,
+    /// Move it down.
+    pub move_down: Vec<KeyCode>,
     /// How far one key press moves, in graph units.
     pub step: f32,
-    /// Held keys making selection additive.
+    /// Held keys making selection additive (the same as
+    /// [`CanvasInteraction`](crate::CanvasInteraction)'s by default).
     pub additive_keys: Vec<KeyCode>,
     /// Held with a move key: pan the view instead, by `pan_step`.
     pub pan_modifiers: Vec<KeyCode>,
     /// How far one key press pans, in canvas pixels.
     pub pan_step: f32,
-    /// Zoom in and out around the canvas centre, by `zoom_step`. The zoom
-    /// stays within the [`CanvasView`] limits.
-    pub zoom_keys: Option<[KeyCode; 2]>,
+    /// Zoom in around the canvas centre, by `zoom_step`, within the
+    /// [`CanvasView`] limits.
+    pub zoom_in: Vec<KeyCode>,
+    /// Zoom out the same way.
+    pub zoom_out: Vec<KeyCode>,
     /// The zoom factor of one key press.
     pub zoom_step: f32,
 }
@@ -64,15 +74,19 @@ impl Default for CanvasKeyboard {
     fn default() -> Self {
         use KeyCode::*;
         Self {
-            select: Some(Enter),
-            connect: Some(Space),
-            cancel: Some(Escape),
-            move_keys: Some([ArrowLeft, ArrowRight, ArrowUp, ArrowDown]),
+            select: vec![Enter, NumpadEnter],
+            connect: vec![Space],
+            cancel: vec![Escape],
+            move_left: vec![ArrowLeft],
+            move_right: vec![ArrowRight],
+            move_up: vec![ArrowUp],
+            move_down: vec![ArrowDown],
             step: 10.0,
-            additive_keys: vec![ShiftLeft, ShiftRight],
+            additive_keys: additive_keys(),
             pan_modifiers: vec![ControlLeft, ControlRight, SuperLeft, SuperRight],
             pan_step: 60.0,
-            zoom_keys: Some([Equal, Minus]),
+            zoom_in: vec![Equal, NumpadAdd],
+            zoom_out: vec![Minus, NumpadSubtract],
             zoom_step: 1.2,
         }
     }
@@ -122,20 +136,21 @@ fn on_key(
     let Some((canvas, settings)) = canvas.and_then(|c| Some((c, keyboards.get(c).ok()?))) else {
         return;
     };
-    let code = Some(key.key_code);
+    let code = key.key_code;
+    let is = |keys: &[KeyCode]| keys.contains(&code);
     let node = graph.node_of(target).filter(|n| *n == target);
     let origin = EditOrigin::Interaction;
     let wire = wires.iter().find(|(_, w)| w.canvas == canvas);
-    let moves = settings.move_keys.map_or([None; 4], |k| k.map(Some));
-    let direction = moves.iter().position(|k| *k == code);
+    let s = settings;
+    let moves = [&s.move_left, &s.move_right, &s.move_up, &s.move_down];
+    let direction = moves.iter().position(|keys| is(keys));
     let directions = [Vec2::NEG_X, Vec2::X, Vec2::NEG_Y, Vec2::Y];
     let panning = keys.any_pressed(settings.pan_modifiers.iter().copied());
-    let zoom = settings.zoom_keys.and_then(|[zoom_in, zoom_out]| {
-        let step = settings.zoom_step;
-        (code == Some(zoom_in))
-            .then_some(step)
-            .or((code == Some(zoom_out)).then_some(1.0 / step))
-    });
+    let zoom = match () {
+        _ if is(&s.zoom_in) => Some(s.zoom_step),
+        _ if is(&s.zoom_out) => Some(1.0 / s.zoom_step),
+        _ => None,
+    };
     if let (Ok((mut view, computed)), true) = (
         views.get_mut(canvas),
         (panning && direction.is_some()) || zoom.is_some(),
@@ -148,7 +163,7 @@ fn on_key(
             let centre = computed.size() * computed.inverse_scale_factor() / 2.0;
             view.zoom_around(centre, factor);
         }
-    } else if code == settings.connect && graph.port(target).is_some() {
+    } else if is(&settings.connect) && graph.port(target).is_some() {
         match wire {
             Some((_, wire)) if wire.from != target => {
                 let (from, to) = (wire.from, target);
@@ -168,9 +183,9 @@ fn on_key(
             }
         }
         commands.entity(wire.expect("matched").0).despawn();
-    } else if let (Some((wire, _)), true) = (wire, code == settings.cancel) {
+    } else if let (Some((wire, _)), true) = (wire, is(&settings.cancel)) {
         commands.entity(wire).despawn();
-    } else if let (Some(node), true) = (node, code == settings.select) {
+    } else if let (Some(node), true) = (node, is(&settings.select)) {
         let additive = keys.any_pressed(settings.additive_keys.iter().copied());
         let mode = if additive {
             SelectMode::Toggle
