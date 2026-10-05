@@ -33,6 +33,19 @@ fn content_of(world: &mut World, canvas: Entity) -> Entity {
     **world.get::<Content>(canvas).unwrap()
 }
 
+/// Snapshots here hold no asset handles.
+struct NoAssets;
+
+impl bevy::asset::LoadFromPath for NoAssets {
+    fn load_from_path_erased(
+        &mut self,
+        _: std::any::TypeId,
+        path: bevy::asset::AssetPath<'static>,
+    ) -> bevy::asset::UntypedHandle {
+        panic!("no asset expected: {path}")
+    }
+}
+
 fn app() -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, NoodleCorePlugin));
@@ -123,6 +136,27 @@ fn snapshot_serializes_to_ron() {
     assert!(
         ron.contains("Payload") && ron.contains("EdgeSource"),
         "{ron}"
+    );
+    // And back: ports keep their types (compared by hash; the name stays out).
+    let loaded = {
+        use serde::de::DeserializeSeed;
+        let registry = w.resource::<AppTypeRegistry>().read();
+        bevy::world_serialization::serde::WorldDeserializer {
+            type_registry: &registry,
+            load_from_path: &mut NoAssets,
+        }
+        .deserialize(&mut ron::Deserializer::from_str(&ron).unwrap())
+        .unwrap()
+    };
+    let map = scene::restore(w, canvas, &loaded).unwrap();
+    assert_eq!(w.get::<Port>(map[&out]).unwrap().port_type, NUM);
+    let edit = GraphEdit::Connect {
+        from: map[&out],
+        to: map[&inp],
+    };
+    assert_eq!(
+        w.graph_edit(canvas, edit),
+        Err(bevy_noodle::RejectReason::AlreadyConnected)
     );
 }
 

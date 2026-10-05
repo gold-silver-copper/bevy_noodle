@@ -203,26 +203,68 @@ pub enum PortDirection {
 
 /// What a port carries. Ports connect when types are equal or either is
 /// [`PortType::ANY`]; add finer rules with a [`ConnectionCheck`](crate::ConnectionCheck) observer.
-#[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PortType(pub u64);
+/// Types compare by a hash of their name; the name is kept for `Debug`
+/// (except in types loaded from a snapshot, which show the hash).
+#[derive(Reflect, Clone, Copy)]
+#[reflect(Debug, PartialEq, Hash, Default)]
+pub struct PortType {
+    id: u64,
+    #[reflect(ignore)]
+    name: &'static str,
+}
 
 impl PortType {
     /// Connects to every type.
-    pub const ANY: PortType = PortType(0);
+    pub const ANY: PortType = PortType { id: 0, name: "any" };
 
     /// A type identified by name (FNV-1a; never `ANY`).
-    pub const fn named(name: &str) -> Self {
+    pub const fn named(name: &'static str) -> Self {
         let (bytes, mut hash, mut i) = (name.as_bytes(), 0xcbf2_9ce4_8422_2325_u64, 0);
         while i < bytes.len() {
             hash = (hash ^ bytes[i] as u64).wrapping_mul(0x0100_0000_01b3);
             i += 1;
         }
-        PortType(if hash == 0 { 1 } else { hash })
+        let id = if hash == 0 { 1 } else { hash };
+        PortType { id, name }
+    }
+
+    /// The hash types compare by.
+    pub const fn id(self) -> u64 {
+        self.id
     }
 
     /// Whether a port of this type may connect to one of `other`.
     pub fn accepts(self, other: PortType) -> bool {
         self == other || self == Self::ANY || other == Self::ANY
+    }
+}
+
+impl Default for PortType {
+    fn default() -> Self {
+        Self::ANY
+    }
+}
+
+impl PartialEq for PortType {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for PortType {}
+
+impl std::hash::Hash for PortType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl std::fmt::Debug for PortType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.name {
+            "" => write!(f, "PortType(#{:016x})", self.id),
+            name => write!(f, "PortType({name:?})"),
+        }
     }
 }
 
@@ -436,7 +478,10 @@ impl EdgeGeometry {
         self
     }
 
-    /// Cubic Bézier control points; `curvature` 0.5 is a good default.
+    /// Cubic Bézier control points; `curvature` 0.5 is a good default. The
+    /// handles reach `curvature` times the distance between the ends,
+    /// clamped to 30–240 graph units, so short wires still curve and long
+    /// ones do not balloon.
     pub fn bezier(&self, curvature: f32) -> [Vec2; 4] {
         let handle = (self.end.distance(self.start) * curvature).clamp(30.0, 240.0);
         [
@@ -492,6 +537,7 @@ mod tests {
         assert_eq!(NUMBER, PortType::named("number"));
         assert_ne!(NUMBER, PortType::named("text"));
         assert!(NUMBER.accepts(PortType::ANY) && !NUMBER.accepts(PortType::named("text")));
+        assert_eq!(format!("{NUMBER:?}"), r#"PortType("number")"#);
     }
 
     #[test]
