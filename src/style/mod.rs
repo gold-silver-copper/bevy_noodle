@@ -230,7 +230,7 @@ fn draw_edges(
     mut edges: Query<
         (
             Entity,
-            &EdgeGeometry,
+            Option<&EdgeGeometry>,
             Option<&EdgeStyle>,
             Option<&PendingWire>,
             Option<&EdgeVisual>,
@@ -250,6 +250,17 @@ fn draw_edges(
     mut materials: ResMut<Assets<WireMaterial>>,
 ) {
     for (entity, geometry, own, wire, visual, hitbox, selected, pointer) in &mut edges {
+        let visual = visual.and_then(|v| v.0.first().copied());
+        // Not laid out (yet, or any more): hidden and not pickable.
+        let Some(geometry) = geometry else {
+            if let Some((mut node, ..)) = visual.and_then(|v| visuals.get_mut(v).ok()) {
+                place(&mut node, None);
+            }
+            if hitbox.is_some() {
+                commands.entity(entity).remove::<EdgeHitbox>();
+            }
+            continue;
+        };
         let canvas = wire.map(|w| w.canvas).or_else(|| graph.canvas_of(entity));
         let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
         let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
@@ -295,7 +306,7 @@ fn draw_edges(
             (None, false) => ZIndex(i32::MAX - 1),
             (None, true) => ZIndex(-1),
         };
-        if wire.is_none() && geometry.valid {
+        if wire.is_none() {
             let radius = style.width / 2.0 + 3.0;
             let area = EdgeHitbox {
                 points,
@@ -308,8 +319,7 @@ fn draw_edges(
             }
         }
         // Wires are drawn by their own UI node, so the edge itself can be picked.
-        let visual = visual.and_then(|v| v.0.first().copied());
-        let shown = geometry.valid.then_some(rect);
+        let shown = Some(rect);
         let Some((visual, (mut node, mut z_index, handle, parent))) =
             visual.and_then(|v| Some((v, visuals.get_mut(v).ok()?)))
         else {

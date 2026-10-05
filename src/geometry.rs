@@ -50,36 +50,46 @@ pub(crate) fn endpoint(
 
 pub(crate) fn update_edge_geometry(
     changed: Query<(), Or<(Changed<NodePosition>, Changed<PortAnchor>, Added<Edge>)>>,
-    mut edges: Query<(&EdgeSource, &EdgeTarget, &mut EdgeGeometry)>,
-    mut wires: Query<(&PendingWire, &mut EdgeGeometry), Without<EdgeSource>>,
+    edges: Query<(Entity, &EdgeSource, &EdgeTarget, Option<&EdgeGeometry>)>,
+    wires: Query<(Entity, &PendingWire, Option<&EdgeGeometry>), Without<EdgeSource>>,
     ports: Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
     nodes: Query<&NodePosition>,
+    mut commands: Commands,
 ) {
     let end = |port| endpoint(port, &ports, &nodes);
-    for (source, target, mut current) in edges.iter_mut().filter(|_| !changed.is_empty()) {
+    // Inserted while both ends are laid out, removed otherwise.
+    let mut set = |entity, current: Option<&EdgeGeometry>, wanted: Option<EdgeGeometry>| match (
+        current, wanted,
+    ) {
+        (Some(current), Some(wanted)) if *current == wanted => {}
+        (_, Some(wanted)) => _ = commands.entity(entity).insert(wanted),
+        (Some(_), None) => _ = commands.entity(entity).remove::<EdgeGeometry>(),
+        (None, None) => {}
+    };
+    for (edge, source, target, current) in edges.iter().filter(|_| !changed.is_empty()) {
         let ends = end(source.0).zip(end(target.0));
-        let geometry = ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b));
-        current.set_if_neq(geometry.with_ports(Some(source.0), Some(target.0)));
+        let geometry = ends
+            .map(|(a, b)| EdgeGeometry::between(a, b).with_ports(Some(source.0), Some(target.0)));
+        set(edge, current, geometry);
     }
     // The dragged wire runs output → input; the pointer stands in for the free end.
-    for (wire, mut current) in &mut wires {
-        let Some(fixed) = end(wire.from) else {
-            continue;
-        };
-        let free = wire
-            .target
-            .and_then(end)
-            .unwrap_or((wire.pointer, -fixed.1));
-        let from_output = ports
-            .get(wire.from)
-            .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
-        let (from, to) = (Some(wire.from), wire.target);
-        let geometry = if from_output {
-            EdgeGeometry::between(fixed, free).with_ports(from, to)
-        } else {
-            EdgeGeometry::between(free, fixed).with_ports(to, from)
-        };
-        current.set_if_neq(geometry);
+    for (entity, wire, current) in &wires {
+        let geometry = end(wire.from).map(|fixed| {
+            let free = wire
+                .target
+                .and_then(end)
+                .unwrap_or((wire.pointer, -fixed.1));
+            let from_output = ports
+                .get(wire.from)
+                .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
+            let (from, to) = (Some(wire.from), wire.target);
+            if from_output {
+                EdgeGeometry::between(fixed, free).with_ports(from, to)
+            } else {
+                EdgeGeometry::between(free, fixed).with_ports(to, from)
+            }
+        });
+        set(entity, current, geometry);
     }
 }
 
@@ -151,5 +161,45 @@ pub(crate) fn follow_reparented(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::edit::GraphWorldExt;
+
+    #[test]
+    fn edges_have_geometry_only_while_laid_out() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin));
+        let w = app.world_mut();
+        let canvas = w.spawn((NodeCanvas, Node::default())).id();
+        let num = PortType::named("num");
+        let [out, inp] = [Port::output(num), Port::input(num)].map(|port| {
+            let node = (GraphNode, NodePosition::default(), ChildOf(canvas));
+            let node = w.spawn(node).id();
+            w.spawn((port, ChildOf(node))).id()
+        });
+        w.flush();
+        let edit = GraphEdit::Connect { from: out, to: inp };
+        let edge = w.graph_edit(canvas, edit).unwrap().unwrap();
+        app.update();
+        assert!(app.world().get::<EdgeGeometry>(edge).is_none());
+
+        let measure = |app: &mut App, x: Option<f32>| {
+            for (port, offset) in [(out, 0.0), (inp, 100.0)] {
+                let mut anchor = app.world_mut().get_mut::<PortAnchor>(port).unwrap();
+                anchor.offset = Vec2::new(offset, 0.0);
+                anchor.position = x.map(|x| Vec2::new(x + offset, 0.0));
+            }
+            app.update();
+        };
+        measure(&mut app, Some(0.0));
+        let geometry = *app.world().get::<EdgeGeometry>(edge).unwrap();
+        assert_eq!((geometry.start.x, geometry.end.x), (0.0, 100.0));
+        assert_eq!((geometry.output, geometry.input), (Some(out), Some(inp)));
+        measure(&mut app, None);
+        assert!(app.world().get::<EdgeGeometry>(edge).is_none());
     }
 }

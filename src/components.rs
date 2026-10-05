@@ -315,7 +315,6 @@ pub struct PortAnchor {
 /// content subtree is the whole graph) and despawned with either port.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
-#[require(EdgeGeometry)]
 pub struct Edge;
 
 /// The output port an [`Edge`] starts at.
@@ -399,9 +398,10 @@ impl EdgeHitbox {
 }
 
 /// Where an [`Edge`] or [`PendingWire`] runs, output → input, in graph space.
-/// Draw edges from it however you like.
-#[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
-#[reflect(Component, Default)]
+/// Draw edges from it however you like. It is there only while both ends
+/// are laid out.
+#[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
+#[reflect(Component)]
 pub struct EdgeGeometry {
     /// Output end.
     pub start: Vec2,
@@ -411,8 +411,6 @@ pub struct EdgeGeometry {
     pub start_tangent: Vec2,
     /// Points away from the input's node.
     pub end_tangent: Vec2,
-    /// `false` until both ends are laid out.
-    pub valid: bool,
     /// The port at the output end (none at a dragged wire's free end).
     pub output: Option<Entity>,
     /// The port at the input end (none at a dragged wire's free end).
@@ -420,14 +418,13 @@ pub struct EdgeGeometry {
 }
 
 impl EdgeGeometry {
-    /// A valid geometry between two `(position, tangent)` ends, without ports.
+    /// A geometry between two `(position, tangent)` ends, without ports.
     pub fn between((start, start_tangent): (Vec2, Vec2), (end, end_tangent): (Vec2, Vec2)) -> Self {
         Self {
             start,
             end,
             start_tangent,
             end_tangent,
-            valid: true,
             output: None,
             input: None,
         }
@@ -458,7 +455,6 @@ impl EdgeGeometry {
 /// the marks.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
-#[require(EdgeGeometry)]
 #[component(on_add = wire_added, on_remove = wire_removed)]
 pub struct PendingWire {
     /// The canvas it is dragged in.

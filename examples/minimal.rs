@@ -78,8 +78,8 @@ fn setup(mut commands: Commands) {
     }
 }
 
-/// No built-in renderer: `EdgeGeometry` (graph space) is on every edge and on
-/// the wire being dragged. Here it becomes gizmo curves; the canvas fills the
+/// No built-in renderer: `EdgeGeometry` (graph space) is on every laid-out
+/// edge and on the wire being dragged. Here it becomes gizmo curves; the canvas fills the
 /// viewport, so canvas-local positions are viewport positions.
 fn draw_edges(
     mut gizmos: Gizmos,
@@ -88,7 +88,7 @@ fn draw_edges(
     camera: Single<(&Camera, &GlobalTransform)>,
 ) {
     let (camera, transform) = *camera;
-    for geometry in edges.iter().filter(|g| g.valid) {
+    for geometry in &edges {
         let to_world = |p| {
             camera
                 .viewport_to_world_2d(transform, view.graph_to_canvas(p))
