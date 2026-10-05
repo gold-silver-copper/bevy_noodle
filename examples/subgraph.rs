@@ -24,13 +24,16 @@ use bevy::ui_widgets::{SliderPrecision, SliderStep, ValueChange, slider_self_upd
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
+mod feathers_fixes;
+use feathers_fixes::FeathersFixesPlugin;
+
 const NUMBER: PortType = PortType::named("number");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 const ORANGE: Color = Color::srgb(0.95, 0.6, 0.25);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((DefaultPlugins, FeathersPlugins, FeathersFixesPlugin))
         .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))

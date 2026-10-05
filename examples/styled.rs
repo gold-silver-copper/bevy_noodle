@@ -24,6 +24,9 @@ use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::{SelectionBoxStyle, kit};
 
+mod feathers_fixes;
+use feathers_fixes::FeathersFixesPlugin;
+
 const NUMBER: PortType = PortType::named("number");
 const TEXT: PortType = PortType::named("text");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
@@ -31,7 +34,7 @@ const GREEN: Color = Color::srgb(0.45, 0.8, 0.5);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((DefaultPlugins, FeathersPlugins, FeathersFixesPlugin))
         .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))

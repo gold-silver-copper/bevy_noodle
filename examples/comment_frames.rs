@@ -13,7 +13,7 @@
 
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
-use bevy::text::{EditableText, LineBreak};
+use bevy::text::{EditableText, LineBreak, TextCursorStyle};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -81,6 +81,13 @@ fn setup(mut commands: Commands) {
                 TextLayout::linebreak(LineBreak::NoWrap),
                 TextFont::from_font_size(16.0),
                 TextColor(Color::srgb(r, g, b)),
+                // Without a cursor style, Bevy draws no cursor or selection.
+                TextCursorStyle {
+                    color: Color::srgb(r, g, b),
+                    selection_color: Color::srgba(r, g, b, 0.3),
+                    unfocused_selection_color: Color::NONE,
+                    selected_text_color: None,
+                },
             )],
         ));
     }

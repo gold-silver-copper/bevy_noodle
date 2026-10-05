@@ -8,7 +8,7 @@
 
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
-use bevy::text::{EditableText, EditableTextFilter, LineBreak};
+use bevy::text::{EditableText, EditableTextFilter, LineBreak, TextCursorStyle};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -106,6 +106,13 @@ fn spawn_node(
                 text,
                 EditableTextFilter::new(|c| c.is_ascii_digit() || matches!(c, '.' | '-')),
                 TextLayout::linebreak(LineBreak::NoWrap),
+                // Without a cursor style, Bevy draws no cursor or selection.
+                TextCursorStyle {
+                    color: Color::WHITE,
+                    selection_color: BLUE.with_alpha(0.45),
+                    unfocused_selection_color: Color::NONE,
+                    selected_text_color: None,
+                },
                 BackgroundColor(Color::srgb_u8(28, 29, 33)),
                 BorderColor::all(Color::srgb_u8(70, 73, 81)),
                 ChildOf(node),

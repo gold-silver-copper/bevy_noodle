@@ -27,6 +27,9 @@ use bevy::ui_widgets::{Activate, SliderPrecision, ValueChange, slider_self_updat
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::{SelectedBorderColor, kit};
 
+mod feathers_fixes;
+use feathers_fixes::FeathersFixesPlugin;
+
 const SHAPE: PortType = PortType::named("shape");
 const PAINT: PortType = PortType::named("paint");
 const MOTION: PortType = PortType::named("motion");
@@ -39,7 +42,7 @@ const SKY: Color = Color::srgb(0.1, 0.11, 0.13);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((DefaultPlugins, FeathersPlugins, FeathersFixesPlugin))
         .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(SKY))

@@ -30,12 +30,15 @@ use bevy_noodle::prelude::*;
 use bevy_noodle::scene;
 use bevy_noodle::style::kit;
 
+mod feathers_fixes;
+use feathers_fixes::FeathersFixesPlugin;
+
 const NUMBER: PortType = PortType::named("number");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((DefaultPlugins, FeathersPlugins, FeathersFixesPlugin))
         .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))

@@ -58,6 +58,11 @@
   keyboard and comment_frames edit every value in the node, with Bevy's
   feathers controls (number fields, sliders, color pickers, a dropdown) or
   `EditableText`, and show results live.
+- Text fields show their cursor and selection: `math_graph` and
+  `comment_frames` give theirs a `TextCursorStyle`, and the feathers examples
+  work around two `bevy_feathers` 0.19 issues (`examples/feathers_fixes`):
+  fields spawned after startup got a near-invisible cursor, and a press on a
+  field's frame selected the node instead of focusing the field.
 
 ## 0.3.0
 

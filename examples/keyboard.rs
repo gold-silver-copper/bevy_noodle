@@ -27,13 +27,16 @@ use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
+mod feathers_fixes;
+use feathers_fixes::FeathersFixesPlugin;
+
 const NUMBER: PortType = PortType::named("number");
 const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
         // Feathers first: it adds the Tab navigation the keyboard plugin uses.
-        .add_plugins((DefaultPlugins, FeathersPlugins))
+        .add_plugins((DefaultPlugins, FeathersPlugins, FeathersFixesPlugin))
         .add_plugins((
             NoodlePlugins,
             NoodleKeyboardPlugin,
