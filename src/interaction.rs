@@ -293,7 +293,7 @@ impl Ctx<'_, '_> {
             .flatten()
             .copied();
         let others = siblings.filter(|s| *s != node && self.graph.node_of(*s) == Some(*s));
-        let top = others.map(|s| z(s)).max();
+        let top = others.map(&z).max();
         if z(node) >= 0 && top.is_some_and(|top| z(node) <= top) {
             let above = top.unwrap_or_default().saturating_add(1);
             self.commands.entity(node).insert(ZIndex(above));
@@ -382,7 +382,7 @@ fn on_drag_start(
             let picked = g
                 .edges_of(port)
                 .last()
-                .and_then(|e| Some((*e, g.edge_ports(*e)?)));
+                .and_then(|e| Some((e, g.edge_ports(e)?)));
             let mut from = port;
             if let (true, true, Some((edge, ends))) = (settings.detach_wires, is_input, picked) {
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
@@ -446,8 +446,7 @@ fn on_drag(
                 view.canvas_to_graph(rect.min),
                 view.canvas_to_graph(rect.max),
             );
-            let mut hits = ctx.graph.nodes_in(canvas);
-            hits.retain(|n| {
+            let hits = ctx.graph.nodes_in(canvas).filter(|n| {
                 nodes.get(*n).is_ok_and(|(p, c)| {
                     let size = c.size() * c.inverse_scale_factor();
                     !area
@@ -455,6 +454,7 @@ fn on_drag(
                         .is_empty()
                 })
             });
+            let hits = hits.collect();
             let additive = ctx.held(&settings.additive_keys);
             let mode = if additive {
                 SelectMode::Add
@@ -659,7 +659,7 @@ pub(crate) fn clear_candidates(world: &mut World) {
 /// that can exist.
 pub(crate) fn mark_candidates(world: &mut World, canvas: Entity, from: Entity) {
     let possible = |In((canvas, from)), graph: GraphQuery| {
-        let nodes = graph.nodes_in(canvas).into_iter();
+        let nodes = graph.nodes_in(canvas);
         let ports = nodes.flat_map(|n| graph.ports_of(n));
         let connections = ports.filter_map(|to| graph.check_connection(canvas, from, to).ok());
         connections.collect::<Vec<_>>()

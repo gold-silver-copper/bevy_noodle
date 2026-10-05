@@ -193,7 +193,12 @@ fn setup(
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In(wires): In<[(Entity, usize, Entity, usize); 9]>, g: GraphQuery| {
-            wires.map(|(a, i, b, j)| (g.outputs_of(a)[i], g.inputs_of(b)[j]))
+            wires.map(|(a, i, b, j)| {
+                (
+                    g.outputs_of(a).nth(i).unwrap(),
+                    g.inputs_of(b).nth(j).unwrap(),
+                )
+            })
         };
         for (from, to) in world.run_system_cached_with(ports, wires).unwrap() {
             world
@@ -364,7 +369,7 @@ fn source<'a>(
     kinds: &'a Query<(Entity, &Kind)>,
     input: Entity,
 ) -> Option<(Entity, &'a Kind)> {
-    let output = *graph.peers_of(input).first()?;
+    let output = graph.peers_of(input).next()?;
     kinds.get(graph.node_of(output)?).ok()
 }
 
@@ -378,7 +383,7 @@ fn objects(
     let Some((node, kind)) = graph.node_of(output).and_then(|n| kinds.get(n).ok()) else {
         return Vec::new();
     };
-    let inputs = graph.inputs_of(node);
+    let inputs: Vec<Entity> = graph.inputs_of(node).collect();
     let input = |i: usize| inputs.get(i).and_then(|p| source(graph, kinds, *p));
     match kind {
         Kind::Object(size) => {
@@ -401,10 +406,7 @@ fn objects(
             }]
         }
         Kind::Ring(count) if depth < 8 => {
-            let Some(inner) = inputs
-                .first()
-                .and_then(|p| graph.peers_of(*p).first().copied())
-            else {
+            let Some(inner) = inputs.first().and_then(|p| graph.peers_of(*p).next()) else {
                 return Vec::new();
             };
             let inner = objects(graph, kinds, inner, depth + 1);

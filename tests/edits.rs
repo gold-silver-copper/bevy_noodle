@@ -93,7 +93,10 @@ fn connect_normalizes_and_relates_ports() {
     assert_eq!(w.get::<EdgeSource>(edge).unwrap().0, a[0]);
     assert_eq!(**w.get::<OutgoingEdges>(a[0]).unwrap(), vec![edge]);
     assert_eq!(
-        query(w, |g| (g.peers_of(b[0]), g.canvas_of(edge))),
+        query(w, |g| (
+            g.peers_of(b[0]).collect::<Vec<_>>(),
+            g.canvas_of(edge)
+        )),
         (vec![a[0]], Some(c))
     );
     assert_eq!(log(&mut app), ["applied connect"]);
@@ -160,7 +163,10 @@ fn single_inputs_swap_and_wide_inputs_fill_up() {
         )
         .unwrap();
     }
-    assert_eq!(query(w, |g| g.peers_of(single[0])), vec![outs[1]]);
+    assert_eq!(
+        query(w, |g| g.peers_of(single[0]).collect::<Vec<_>>()),
+        vec![outs[1]]
+    );
     assert_eq!(
         w.graph_edit(
             c,
@@ -307,7 +313,13 @@ fn graphs_are_independent_and_can_nest() {
         ),
         Err(RejectReason::NotInCanvas)
     );
-    let (nodes1, ports1, canvas3) = query(w, |g| (g.nodes_in(c1), g.ports_of(n1), g.canvas_of(n3)));
+    let (nodes1, ports1, canvas3) = query(w, |g| {
+        (
+            g.nodes_in(c1).collect::<Vec<_>>(),
+            g.ports_of(n1).collect::<Vec<_>>(),
+            g.canvas_of(n3),
+        )
+    });
     assert_eq!((nodes1, ports1, canvas3), (vec![n1], p1.clone(), Some(c3)));
     assert_eq!(
         w.graph_edit(c2, GraphEdit::Delete { items: vec![n1] }),
@@ -627,5 +639,8 @@ fn full_replacing_ports_drop_their_oldest_edges() {
         })
         .collect();
     assert!(w.get_entity(edges[0]).is_err(), "the oldest made room");
-    assert_eq!(query(w, |g| g.peers_of(to)), vec![p[1], p[2]]);
+    assert_eq!(
+        query(w, |g| g.peers_of(to).collect::<Vec<_>>()),
+        vec![p[1], p[2]]
+    );
 }

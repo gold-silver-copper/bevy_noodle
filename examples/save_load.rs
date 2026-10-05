@@ -105,8 +105,8 @@ fn setup(mut commands: Commands) {
     let sum = spawn_sum(&mut commands, canvas, Vec2::new(420.0, 210.0));
     commands.queue(move |world: &mut World| {
         let ports = |In((numbers, sum)): In<([Entity; 3], Entity)>, graph: GraphQuery| {
-            let to = graph.inputs_of(sum)[0];
-            numbers.map(|n| (graph.outputs_of(n)[0], to))
+            let to = graph.inputs_of(sum).next().unwrap();
+            numbers.map(|n| (graph.outputs_of(n).next().unwrap(), to))
         };
         for (from, to) in world.run_system_cached_with(ports, (numbers, sum)).unwrap() {
             world
@@ -210,7 +210,6 @@ fn evaluate(
     for (node, shows) in &sums {
         let total: f32 = graph
             .inputs_of(node)
-            .into_iter()
             .flat_map(|input| graph.peers_of(input))
             .filter_map(|output| values.get(graph.node_of(output)?).ok())
             .map(|value| value.0)
@@ -280,15 +279,15 @@ fn clear(world: &mut World, canvas: Entity) -> Result<String> {
 fn save_model(world: &mut World, canvas: Entity) -> Result<String> {
     let read =
         |In(canvas), graph: GraphQuery, values: Query<&Value>, positions: Query<&NodePosition>| {
-            let nodes = graph.nodes_in(canvas);
+            let nodes: Vec<Entity> = graph.nodes_in(canvas).collect();
             let index = |n| nodes.iter().position(|m| *m == n);
             let kind = |n| values.get(n).map_or(Kind::Sum, |v| Kind::Number(v.0));
             let at = |n| positions.get(n).map_or([0.0; 2], |p| p.0.to_array());
-            let edges = graph.edges_in(canvas).into_iter().filter_map(|edge| {
+            let edges = graph.edges_in(canvas).filter_map(|edge| {
                 let PortPair { output, input } = graph.edge_ports(edge)?;
                 let (from, to) = (graph.node_of(output)?, graph.node_of(input)?);
-                let output = graph.outputs_of(from).iter().position(|p| *p == output)?;
-                let input = graph.inputs_of(to).iter().position(|p| *p == input)?;
+                let output = graph.outputs_of(from).position(|p| p == output)?;
+                let input = graph.inputs_of(to).position(|p| p == input)?;
                 Some([index(from)?, output, index(to)?, input])
             });
             let edges = edges.collect();
@@ -320,7 +319,8 @@ fn open_model(world: &mut World, canvas: Entity) -> Result<String> {
     world.flush();
     for [from, output, to, input] in &model.edges {
         let ports = |In((a, b)): In<(Entity, Entity)>, graph: GraphQuery| {
-            (graph.outputs_of(a), graph.inputs_of(b))
+            let outputs: Vec<Entity> = graph.outputs_of(a).collect();
+            (outputs, graph.inputs_of(b).collect::<Vec<_>>())
         };
         let (outputs, inputs) = world.run_system_cached_with(ports, (nodes[*from], nodes[*to]))?;
         let (from, to) = (outputs[*output], inputs[*input]);

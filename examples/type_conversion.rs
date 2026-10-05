@@ -144,8 +144,8 @@ fn demo_connection(
         return;
     };
     let (from, to) = (
-        graph.outputs_of(demo.int)[0],
-        graph.inputs_of(demo.multiply)[0],
+        graph.outputs_of(demo.int).next().unwrap(),
+        graph.inputs_of(demo.multiply).next().unwrap(),
     );
     if anchors.get(from).is_ok_and(|a| a.position.is_some()) {
         commands.graph_edit(demo.canvas, GraphEdit::Connect { from, to });
@@ -205,7 +205,12 @@ fn convert(
         .id();
     let canvas = request.canvas;
     commands.queue(move |world: &mut World| {
-        let ports = |In(n), graph: GraphQuery| (graph.inputs_of(n)[0], graph.outputs_of(n)[0]);
+        let ports = |In(n), graph: GraphQuery| {
+            (
+                graph.inputs_of(n).next().unwrap(),
+                graph.outputs_of(n).next().unwrap(),
+            )
+        };
         let (converter_in, converter_out) = world.run_system_cached_with(ports, converter).unwrap();
         for (from, to) in [(from, converter_in), (converter_out, to)] {
             world
@@ -238,7 +243,7 @@ fn edit_float(change: On<ValueChange<f32>>, graph: GraphQuery, mut calcs: Query<
 /// What a node outputs, following its inputs back through the graph.
 fn value(node: Entity, graph: &GraphQuery, calcs: &Query<&Calc>, depth: u8) -> Option<f32> {
     let input = |i: usize| {
-        let peer = *graph.peers_of(*graph.inputs_of(node).get(i)?).first()?;
+        let peer = graph.peers_of(graph.inputs_of(node).nth(i)?).next()?;
         // Wires can form a loop; give up on a deep chain.
         value(graph.node_of(peer)?, graph, calcs, depth.checked_sub(1)?)
     };

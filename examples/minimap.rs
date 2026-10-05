@@ -64,7 +64,12 @@ fn setup(mut commands: Commands) {
         let ports = |In(nodes): In<Vec<Entity>>, graph: GraphQuery| {
             let pairs = nodes.windows(2);
             pairs
-                .map(|n| (graph.outputs_of(n[0])[0], graph.inputs_of(n[1])[0]))
+                .map(|n| {
+                    (
+                        graph.outputs_of(n[0]).next().unwrap(),
+                        graph.inputs_of(n[1]).next().unwrap(),
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         for (from, to) in world.run_system_cached_with(ports, nodes).unwrap() {

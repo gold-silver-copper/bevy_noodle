@@ -80,7 +80,7 @@ fn setup(mut commands: Commands) {
 /// Connects the first output of `from` to the first input of `to`.
 fn connect(world: &mut World, canvas: Entity, from: Entity, to: Entity) {
     let ports = |In((a, b)): In<(Entity, Entity)>, graph: GraphQuery| {
-        Some((*graph.outputs_of(a).first()?, *graph.inputs_of(b).first()?))
+        Some((graph.outputs_of(a).next()?, graph.inputs_of(b).next()?))
     };
     if let Ok(Some((from, to))) = world.run_system_cached_with(ports, (from, to)) {
         world
@@ -115,8 +115,12 @@ fn reroute_on_right_click(
         world
             .graph_edit(canvas, GraphEdit::Disconnect { edge })
             .ok();
-        let ports =
-            |In(dot), graph: GraphQuery| (graph.inputs_of(dot)[0], graph.outputs_of(dot)[0]);
+        let ports = |In(dot), graph: GraphQuery| {
+            (
+                graph.inputs_of(dot).next().unwrap(),
+                graph.outputs_of(dot).next().unwrap(),
+            )
+        };
         let (dot_in, dot_out) = world.run_system_cached_with(ports, dot).unwrap();
         for (from, to) in [(output, dot_in), (dot_out, input)] {
             world

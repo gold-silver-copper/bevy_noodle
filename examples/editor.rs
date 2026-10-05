@@ -117,8 +117,9 @@ fn setup(mut commands: Commands) {
         .id();
     commands.queue(move |world: &mut World| {
         let connect = |In((a, b, add)): In<(Entity, Entity, Entity)>, graph: GraphQuery| {
-            let inputs = graph.inputs_of(add);
-            [(a, inputs[0]), (b, inputs[1])].map(|(n, to)| (graph.outputs_of(n)[0], to))
+            let inputs: Vec<Entity> = graph.inputs_of(add).collect();
+            [(a, inputs[0]), (b, inputs[1])]
+                .map(|(n, to)| (graph.outputs_of(n).next().unwrap(), to))
         };
         for (from, to) in world.run_system_cached_with(connect, (a, b, add)).unwrap() {
             world
@@ -209,7 +210,7 @@ fn sum_of(node: Entity, graph: &GraphQuery, values: &Query<&Value>, depth: u8) -
     let Some(depth) = depth.checked_sub(1) else {
         return 0.0; // Wires can form a loop; give up on a deep chain.
     };
-    let inputs = graph.inputs_of(node).into_iter();
+    let inputs = graph.inputs_of(node);
     let peers = inputs.flat_map(|p| graph.peers_of(p));
     let nodes = peers.filter_map(|p| graph.node_of(p));
     nodes.fold(0.0, |sum, n| sum + sum_of(n, graph, values, depth))

@@ -221,7 +221,13 @@ fn setup(mut commands: Commands) {
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In(wires): In<[Wire; 7]>, g: GraphQuery| {
-            wires.map(|(canvas, a, i, b, j)| (canvas, g.outputs_of(a)[i], g.inputs_of(b)[j]))
+            wires.map(|(canvas, a, i, b, j)| {
+                (
+                    canvas,
+                    g.outputs_of(a).nth(i).unwrap(),
+                    g.inputs_of(b).nth(j).unwrap(),
+                )
+            })
         };
         for (canvas, from, to) in world.run_system_cached_with(ports, wires).unwrap() {
             world
@@ -238,8 +244,8 @@ fn show_results(graph: GraphQuery, ops: Query<(Entity, &Op)>, mut texts: Query<&
         {
             let value = graph
                 .inputs_of(node)
-                .first()
-                .and_then(|input| input_value(&graph, &ops, *input, 0));
+                .next()
+                .and_then(|input| input_value(&graph, &ops, input, 0));
             let shown = value.map_or("?".into(), |v| v.to_string());
             text.set_if_neq(Text(shown));
         }
@@ -254,16 +260,16 @@ fn input_value(
     input: Entity,
     depth: u32,
 ) -> Option<f32> {
-    let output = *graph.peers_of(input).first()?;
+    let output = graph.peers_of(input).next()?;
     if depth > 64 {
         return None;
     }
     let node = graph.node_of(output)?;
     let input_of = |node: Entity, i: usize| {
-        let port = *graph.inputs_of(node).get(i)?;
+        let port = graph.inputs_of(node).nth(i)?;
         input_value(graph, ops, port, depth + 1)
     };
-    let index = graph.outputs_of(node).iter().position(|p| *p == output)?;
+    let index = graph.outputs_of(node).position(|p| p == output)?;
     match ops.get(node).ok()?.1 {
         Op::Number(value) => Some(*value),
         Op::Scale(k) => Some(k * input_of(node, 0)?),
@@ -272,7 +278,6 @@ fn input_value(
         Op::Group(inner) => {
             let out = graph
                 .nodes_in(*inner)
-                .into_iter()
                 .find(|n| matches!(ops.get(*n), Ok((_, Op::Out))))?;
             input_of(out, index)
         }

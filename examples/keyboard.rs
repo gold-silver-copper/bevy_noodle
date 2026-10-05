@@ -156,7 +156,7 @@ fn show_sum(
     mut sums: Query<(&mut Text, &ChildOf), With<Sum>>,
 ) {
     for (mut text, node) in &mut sums {
-        let inputs = graph.inputs_of(node.parent()).into_iter();
+        let inputs = graph.inputs_of(node.parent());
         let peers = inputs.flat_map(|p| graph.peers_of(p));
         let values = peers.filter_map(|p| values.get(graph.node_of(p)?).ok());
         let sum = values.fold(0.0, |sum, v| sum + v.0);

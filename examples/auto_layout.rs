@@ -66,7 +66,10 @@ fn setup(mut commands: Commands) {
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In((a, b, i)): In<(Entity, Entity, usize)>, graph: GraphQuery| {
-            (graph.outputs_of(a)[0], graph.inputs_of(b)[i])
+            (
+                graph.outputs_of(a).next().unwrap(),
+                graph.inputs_of(b).nth(i).unwrap(),
+            )
         };
         for (a, b, i) in wires {
             let (from, to) = world
@@ -121,7 +124,7 @@ fn keys(
                 .next()
                 .map(|t| t.0.clone())
         };
-        let nodes = graph.nodes_in(canvas).into_iter();
+        let nodes = graph.nodes_in(canvas);
         nodes
             .map(|n| (n, scrambled(&title(n).unwrap_or_default())))
             .collect()
@@ -152,7 +155,7 @@ fn frame_all(
         return;
     };
     let size = |c: &ComputedNode| c.size() * c.inverse_scale_factor();
-    let placed = graph.nodes_in(canvas).into_iter();
+    let placed = graph.nodes_in(canvas);
     let bounds = placed
         .filter_map(|n| nodes.get(n).ok())
         .map(|(p, c)| Rect::from_corners(p.0, p.0 + size(c)))
@@ -167,12 +170,9 @@ fn frame_all(
 /// Layered layout: layer = longest path from a source; within a layer, nodes
 /// sit in the average order of their inputs (one barycenter pass).
 fn layout(graph: &GraphQuery, canvas: Entity) -> HashMap<Entity, Vec2> {
-    let nodes = graph.nodes_in(canvas);
+    let nodes: Vec<Entity> = graph.nodes_in(canvas).collect();
     let inputs_of = |n: Entity| -> Vec<Entity> {
-        let ports = graph
-            .inputs_of(n)
-            .into_iter()
-            .flat_map(|p| graph.peers_of(p));
+        let ports = graph.inputs_of(n).flat_map(|p| graph.peers_of(p));
         ports.filter_map(|p| graph.node_of(p)).collect()
     };
     let mut layer: HashMap<Entity, usize> = nodes.iter().map(|n| (*n, 0)).collect();

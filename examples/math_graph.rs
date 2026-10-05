@@ -70,8 +70,8 @@ fn wire_demo(
         commands.graph_edit(
             canvas,
             GraphEdit::Connect {
-                from: graph.outputs_of(n[from])[0],
-                to: graph.inputs_of(n[to])[0],
+                from: graph.outputs_of(n[from]).next().unwrap(),
+                to: graph.inputs_of(n[to]).next().unwrap(),
             },
         );
     }
@@ -185,7 +185,6 @@ fn value_of(
     let (op, number) = ops.get(node).ok().filter(|_| depth < 64)?;
     let mut inputs = graph
         .inputs_of(node)
-        .into_iter()
         .flat_map(|i| graph.peers_of(i))
         .filter_map(|p| graph.node_of(p));
     Some(match op {
@@ -217,7 +216,6 @@ fn reject_cycles(mut check: On<ConnectionCheck>, graph: GraphQuery) {
         stack.extend(
             graph
                 .outputs_of(node)
-                .into_iter()
                 .flat_map(|o| graph.peers_of(o))
                 .filter_map(|p| graph.node_of(p)),
         );

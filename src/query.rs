@@ -105,49 +105,70 @@ impl GraphQuery<'_, '_> {
         self.ports.get(entity).ok().map(|(port, ..)| port)
     }
 
-    /// Nodes of a canvas (not of canvases nested inside them).
-    pub fn nodes_in(&self, canvas: Entity) -> Vec<Entity> {
-        self.children
-            .iter_descendants(canvas)
-            .filter(|e| self.nodes.contains(*e) && self.canvas_of(*e) == Some(canvas))
-            .collect()
+    /// Nodes of a canvas (not of canvases nested inside them), depth first.
+    pub fn nodes_in(&self, canvas: Entity) -> impl Iterator<Item = Entity> + '_ {
+        // The content's subtree, minus nested canvases.
+        self.walk(self.content_of(canvas), |e| self.canvases.contains(e))
+            .filter(|e| self.nodes.contains(*e))
     }
 
     /// Ports of a node (not of nodes nested inside it), in hierarchy order.
-    pub fn ports_of(&self, node: Entity) -> Vec<Entity> {
-        self.children
-            .iter_descendants_depth_first(node)
-            .filter(|e| self.ports.contains(*e) && self.node_of(*e) == Some(node))
-            .collect()
+    pub fn ports_of(&self, node: Entity) -> impl Iterator<Item = Entity> + '_ {
+        let nested = move |e| e != node && (self.nodes.contains(e) || self.canvases.contains(e));
+        self.walk(Some(node), nested)
+            .filter(|e| self.ports.contains(*e))
     }
 
     /// Input ports of a node, in hierarchy order.
-    pub fn inputs_of(&self, node: Entity) -> Vec<Entity> {
+    pub fn inputs_of(&self, node: Entity) -> impl Iterator<Item = Entity> + '_ {
         self.ports_toward(node, PortDirection::Input)
     }
 
     /// Output ports of a node, in hierarchy order.
-    pub fn outputs_of(&self, node: Entity) -> Vec<Entity> {
+    pub fn outputs_of(&self, node: Entity) -> impl Iterator<Item = Entity> + '_ {
         self.ports_toward(node, PortDirection::Output)
     }
 
-    fn ports_toward(&self, node: Entity, direction: PortDirection) -> Vec<Entity> {
-        let mut ports = self.ports_of(node);
-        ports.retain(|p| self.port(*p).is_some_and(|p| p.direction == direction));
-        ports
+    fn ports_toward(
+        &self,
+        node: Entity,
+        direction: PortDirection,
+    ) -> impl Iterator<Item = Entity> + '_ {
+        self.ports_of(node)
+            .filter(move |p| self.port(*p).is_some_and(|p| p.direction == direction))
+    }
+
+    /// `root` and its descendants, depth first, leaving out the subtrees of
+    /// entities that are `skip`ped.
+    fn walk<'a>(
+        &'a self,
+        root: Option<Entity>,
+        skip: impl Fn(Entity) -> bool + 'a,
+    ) -> impl Iterator<Item = Entity> + 'a {
+        let mut stack: Vec<Entity> = root.into_iter().collect();
+        std::iter::from_fn(move || {
+            let entity = stack.pop()?;
+            if let Ok(children) = self.children.get(entity) {
+                stack.extend(children.iter().rev().filter(|c| !skip(*c)));
+            }
+            Some(entity)
+        })
     }
 
     /// Edges attached to a port, incoming then outgoing, oldest first.
-    pub fn edges_of(&self, port: Entity) -> Vec<Entity> {
-        let Ok((_, outgoing, incoming)) = self.ports.get(port) else {
-            return Vec::new();
-        };
-        let incoming = incoming.map(|e| e.as_slice()).into_iter();
-        incoming
-            .chain(outgoing.map(|e| e.as_slice()))
-            .flatten()
-            .copied()
-            .collect()
+    pub fn edges_of(&self, port: Entity) -> impl Iterator<Item = Entity> + '_ {
+        let (incoming, outgoing) = self
+            .ports
+            .get(port)
+            .map_or((None, None), |(_, outgoing, incoming)| (incoming, outgoing));
+        let incoming = incoming
+            .into_iter()
+            .flat_map(|e| e.as_slice().iter().copied());
+        incoming.chain(
+            outgoing
+                .into_iter()
+                .flat_map(|e| e.as_slice().iter().copied()),
+        )
     }
 
     /// The ports of an edge.
@@ -158,23 +179,23 @@ impl GraphQuery<'_, '_> {
             .map(|(_, source, target)| PortPair::new(source.0, target.0))
     }
 
-    /// Edges of a canvas (not of canvases nested inside it).
-    pub fn edges_in(&self, canvas: Entity) -> Vec<Entity> {
-        self.edges
-            .iter()
-            .filter(|(_, source, _)| self.canvas_of(source.0) == Some(canvas))
-            .map(|(edge, ..)| edge)
-            .collect()
+    /// Edges of a canvas (not of canvases nested inside it): children of its
+    /// content.
+    pub fn edges_in(&self, canvas: Entity) -> impl Iterator<Item = Entity> + '_ {
+        let content = self.content_of(canvas);
+        let children = content.and_then(|c| self.children.get(c).ok());
+        children
+            .into_iter()
+            .flat_map(|c| c.iter())
+            .filter(move |e| self.edges.contains(*e) && self.canvas_of(*e) == Some(canvas))
     }
 
     /// The port at the other end of each edge of `port`: for an input, the
     /// outputs feeding it; for an output, the inputs it feeds.
-    pub fn peers_of(&self, port: Entity) -> Vec<Entity> {
+    pub fn peers_of(&self, port: Entity) -> impl Iterator<Item = Entity> + '_ {
         self.edges_of(port)
-            .into_iter()
             .filter_map(|edge| self.edge_ports(edge))
-            .map(|ends| ends.other(port))
-            .collect()
+            .map(move |ends| ends.other(port))
     }
 
     /// Checks a connection between ports `a` and `b` (either order) on
@@ -208,15 +229,16 @@ impl GraphQuery<'_, '_> {
         let mut refused = None;
         if !pa.port_type.accepts(pb.port_type) {
             refused = Some(RejectReason::IncompatibleTypes);
-        } else if self.peers_of(output).contains(&input) {
+        } else if self.peers_of(output).any(|p| p == input) {
             refused = Some(RejectReason::AlreadyConnected);
         }
         // A full port makes room by dropping its oldest edges, or refuses.
         let mut replaces = Vec::new();
         for port in [output, input] {
-            let (Some(port_info), edges) = (self.port(port), self.edges_of(port)) else {
+            let Some(port_info) = self.port(port) else {
                 continue;
             };
+            let edges: Vec<Entity> = self.edges_of(port).collect();
             let Some(max) = port_info.max_connections.map(|m| m as usize) else {
                 continue;
             };

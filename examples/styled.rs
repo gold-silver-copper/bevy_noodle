@@ -180,8 +180,8 @@ fn connect_demo(
         commands.graph_edit(
             canvas,
             GraphEdit::Connect {
-                from: graph.outputs_of(n[from])[0],
-                to: graph.inputs_of(n[to])[input],
+                from: graph.outputs_of(n[from]).next().unwrap(),
+                to: graph.inputs_of(n[to]).nth(input).unwrap(),
             },
         );
     }
@@ -229,8 +229,8 @@ type Kinds = (
 /// What `node` outputs, following its inputs back through the graph.
 fn output(node: Entity, graph: &GraphQuery, kinds: &Query<Kinds>, depth: u8) -> Option<Data> {
     let input = |i: usize| {
-        let port = *graph.inputs_of(node).get(i)?;
-        let peer = *graph.peers_of(port).first()?;
+        let port = graph.inputs_of(node).nth(i)?;
+        let peer = graph.peers_of(port).next()?;
         // Wires can form a loop; give up on a deep chain.
         output(graph.node_of(peer)?, graph, kinds, depth.checked_sub(1)?)
     };
@@ -254,8 +254,8 @@ fn evaluate(
     mut shown: Query<(&mut Text, &ChildOf), With<Shows>>,
 ) {
     for (mut text, parent) in &mut shown {
-        let port = graph.inputs_of(parent.parent())[0];
-        let peer = graph.peers_of(port).first().copied();
+        let port = graph.inputs_of(parent.parent()).next().unwrap();
+        let peer = graph.peers_of(port).next();
         let data = peer.and_then(|p| output(graph.node_of(p)?, &graph, &kinds, 32));
         let shown = match data {
             Some(Data::Text(text)) => text,
@@ -301,7 +301,7 @@ fn add_on_wire_drop(dropped: On<WireDropped>, graph: GraphQuery, mut commands: C
     let node = spawn(&mut commands, canvas, kind, dropped.position);
     commands.queue(move |world: &mut World| {
         let fits = |In((canvas, from, node)): In<(Entity, Entity, Entity)>, g: GraphQuery| {
-            g.ports_of(node).into_iter().find(|to| {
+            g.ports_of(node).find(|to| {
                 g.check_connection(canvas, from, *to)
                     .is_ok_and(|c| c.allowed())
             })
