@@ -35,6 +35,7 @@ impl Plugin for NoodleInteractionPlugin {
             .add_observer(on_drag)
             .add_observer(on_drag_end)
             .add_observer(on_scroll)
+            .add_message::<WireDropped>()
             // Registered here too, so apps without a picking backend still run.
             .add_message::<PointerHits>()
             .add_systems(Update, pinch_zoom)
@@ -130,9 +131,9 @@ pub struct WireCandidate;
 #[reflect(Component, Default)]
 pub struct WireTarget;
 
-/// Triggered on a canvas when a wire is dropped away from any port;
-/// `position` is in graph space.
-#[derive(EntityEvent, Clone, Copy, Debug)]
+/// Triggered on a canvas, and written as a message, when a wire is dropped
+/// away from any port; `position` is in graph space.
+#[derive(EntityEvent, Message, Clone, Copy, Debug)]
 pub struct WireDropped {
     /// The canvas.
     #[event_target]
@@ -479,11 +480,15 @@ fn on_drag_end(mut drag: On<Pointer<DragEnd>>, mut ctx: Ctx, wires: Query<(Entit
                 let (from, position) = (wire.from, wire.pointer);
                 match wire.target {
                     Some(to) => ctx.edit(canvas, GraphEdit::Connect { from, to }),
-                    None => ctx.commands.trigger(WireDropped {
-                        canvas,
-                        from,
-                        position,
-                    }),
+                    None => {
+                        let dropped = WireDropped {
+                            canvas,
+                            from,
+                            position,
+                        };
+                        ctx.commands.trigger(dropped);
+                        ctx.commands.write_message(dropped);
+                    }
                 }
             }
         }

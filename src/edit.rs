@@ -169,8 +169,8 @@ pub struct EditApplied {
     pub ports: Option<PortPair>,
 }
 
-/// Triggered on the canvas when an edit was refused.
-#[derive(EntityEvent, Clone, Debug)]
+/// Triggered on the canvas, and written as a message, when an edit was refused.
+#[derive(EntityEvent, Message, Clone, Debug)]
 pub struct EditRejected {
     /// The canvas.
     #[event_target]
@@ -274,11 +274,13 @@ impl GraphWorldExt for World {
     ) -> EditResult {
         let result = run(self, canvas, edit.clone(), origin);
         if let (Err(reason), Ok(_)) = (result, self.get_entity(canvas)) {
-            self.trigger(EditRejected {
+            let event = EditRejected {
                 canvas,
                 edit,
                 reason,
-            });
+            };
+            self.trigger(event.clone());
+            self.write_message(event);
         }
         result
     }

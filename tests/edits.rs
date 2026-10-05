@@ -121,6 +121,12 @@ fn invalid_connections_are_rejected() {
         .filter(|l| l.starts_with("rejected"))
         .count();
     assert_eq!(rejected, 4);
+    let messages = app
+        .world_mut()
+        .resource_mut::<Messages<EditRejected>>()
+        .drain()
+        .count();
+    assert_eq!(messages, 4, "also written as messages");
 }
 
 #[test]

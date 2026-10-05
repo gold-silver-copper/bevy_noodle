@@ -458,3 +458,19 @@ fn pressing_raises_nodes_without_reordering_them() {
     assert_eq!(z(w, frame), -1, "negative ZIndex stays under");
     assert_eq!(w.get::<Children>(content).unwrap().to_vec(), order);
 }
+
+#[test]
+fn wires_dropped_on_empty_canvas_are_reported() {
+    let mut app = app();
+    #[derive(Resource, Default)]
+    struct Dropped(Vec<Entity>);
+    app.init_resource::<Dropped>();
+    app.add_observer(|d: On<WireDropped>, mut dropped: ResMut<Dropped>| dropped.0.push(d.from));
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let [out] = one_node_each(w, content, [Port::output(NUM)]);
+    drag(w, out, Vec2::new(40.0, 0.0));
+    assert_eq!(w.resource::<Dropped>().0, [out]);
+    let messages: Vec<_> = w.resource_mut::<Messages<WireDropped>>().drain().collect();
+    assert_eq!((messages.len(), messages[0].canvas), (1, canvas));
+}

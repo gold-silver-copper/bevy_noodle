@@ -11,12 +11,19 @@
 //!
 //! Spawn nodes as children of a canvas; they move into its content. Any
 //! number of canvases can coexist or nest; every lookup resolves to the
-//! nearest one. Change graphs with [`GraphCommandsExt::graph_edit`]; react to
-//! [`ConnectionCheck`] (connection rules), [`EditRequested`] (to veto or
-//! redirect an edit) and [`EditApplied`]. Interaction is opt-in per
-//! canvas with [`CanvasInteraction`]. The core draws nothing: draw edges from
-//! [`EdgeGeometry`], or enable the `default_style` feature. The `scene` feature
-//! adds graph snapshots (undo, save and load).
+//! nearest one. Read graphs with [`GraphQuery`], change them with
+//! [`GraphCommandsExt::graph_edit`], and select with
+//! [`GraphCommandsExt::select`]. Interaction is opt-in per canvas with
+//! [`CanvasInteraction`]. The core draws nothing: draw edges from
+//! [`EdgeGeometry`], or enable the `default_style` feature. The `scene`
+//! feature adds graph snapshots (undo, save and load).
+//!
+//! Events follow one rule. What observers answer is only triggered on the
+//! canvas: [`ConnectionCheck`] (connection rules, also asked by previews) and
+//! [`EditRequested`] (rewrite or veto an edit about to apply). What happened
+//! is triggered on the canvas and also written as a message, for observers
+//! and systems alike: [`EditApplied`], [`EditRejected`] and [`WireDropped`].
+//! Selection is Bevy's `Selected` component: observe its `Add` and `Remove`.
 
 // Bevy's `AsBindGroup` derive trips a recursion lint on recent compilers.
 #![recursion_limit = "256"]
@@ -72,6 +79,7 @@ impl Plugin for NoodleCorePlugin {
     fn build(&self, app: &mut App) {
         use geometry::*;
         app.add_message::<EditApplied>()
+            .add_message::<EditRejected>()
             .add_observer(components::adopt_nodes)
             .configure_sets(
                 PostUpdate,
