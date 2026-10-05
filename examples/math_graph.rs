@@ -1,5 +1,5 @@
 //! A live calculator: your own components on nodes, Bevy's text input inside
-//! a node, evaluation through `GraphQuery`, and an `EditRequested` observer
+//! a node, evaluation through `GraphQuery`, and a `ConnectionCheck` observer
 //! rejecting connections that would create a cycle.
 //!
 //! ```sh
@@ -200,19 +200,19 @@ fn value_of(
     })
 }
 
-/// Rules are observers: refuse connections that would make a cycle.
-fn reject_cycles(mut request: On<EditRequested>, graph: GraphQuery) {
-    let GraphEdit::Connect { from, to } = request.edit else {
-        return;
-    };
-    let (Some(source), Some(target)) = (graph.node_of(from), graph.node_of(to)) else {
+/// Rules are observers: refuse connections that would make a cycle. Dragged
+/// wires ask too, so they do not snap where a cycle would form.
+fn reject_cycles(mut check: On<ConnectionCheck>, graph: GraphQuery) {
+    let ports = check.ports;
+    let (Some(source), Some(target)) = (graph.node_of(ports.output), graph.node_of(ports.input))
+    else {
         return;
     };
     // A cycle forms if `source` is already downstream of `target`.
     let mut stack = vec![target];
     while let Some(node) = stack.pop() {
         if node == source {
-            return request.reject();
+            return check.reject();
         }
         stack.extend(
             graph

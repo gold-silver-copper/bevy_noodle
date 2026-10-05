@@ -215,9 +215,9 @@ fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
 fn dragged_wires_snap_to_ports_observers_allow() {
     let mut app = app();
     const TEXT: PortType = PortType::named("text");
-    app.add_observer(|mut request: On<EditRequested>| {
-        if request.refused == Some(bevy_noodle::RejectReason::IncompatibleTypes) {
-            request.allow();
+    app.add_observer(|mut check: On<ConnectionCheck>| {
+        if check.refused == Some(bevy_noodle::RejectReason::IncompatibleTypes) {
+            check.allow();
         }
     });
     let w = app.world_mut();

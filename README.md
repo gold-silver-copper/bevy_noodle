@@ -119,8 +119,10 @@ NodeCanvas              one graph and its viewport
   children of the canvas.
 - **Select** with `commands.select(canvas, items, mode)`; selection is Bevy's
   `Selected` component, not an edit.
-- **Validate** in `On<EditRequested>` observers: `allow()` or `reject()` any
-  edit, including the built-in type rules.
+- **Validate** connections in `On<ConnectionCheck>` observers: `allow()` or
+  `reject()`, overriding the built-in type rules. Dragged wires ask them too.
+- **Redirect** edits in `On<EditRequested>` observers: rewrite or `reject()`
+  them, and do side effects there.
 - **React** to `EditApplied`.
 - **Style** from `Selected`, `WireCandidate`, `WireTarget` and `SelectionBox`.
 - **Controls inside nodes** (sliders, text fields, menus) keep their own

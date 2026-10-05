@@ -14,8 +14,8 @@ pub struct Connection {
     pub ports: PortPair,
     /// Edges the connection replaces (at ports limited to one edge).
     pub replaces: Vec<Entity>,
-    /// Why the built-in rules refuse it, if they do. [`EditRequested`](crate::EditRequested)
-    /// observers may override this.
+    /// Why the built-in rules refuse it, if they do.
+    /// [`ConnectionCheck`](crate::ConnectionCheck) observers may override this.
     pub refused: Option<RejectReason>,
 }
 
@@ -181,8 +181,9 @@ impl GraphQuery<'_, '_> {
     /// `canvas`, by the built-in rules only. One that cannot exist (missing
     /// ports, another canvas, the same node or direction) is an `Err`.
     /// Otherwise the [`Connection`] holds the built-in verdict (types, already
-    /// connected, full), which [`EditRequested`](crate::EditRequested)
-    /// observers may override.
+    /// connected, full), which [`ConnectionCheck`](crate::ConnectionCheck)
+    /// observers may override; [`GraphWorldExt::preview_connection`](crate::GraphWorldExt::preview_connection)
+    /// asks them.
     pub fn check_connection(
         &self,
         canvas: Entity,

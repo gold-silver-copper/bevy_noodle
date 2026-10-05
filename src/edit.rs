@@ -1,13 +1,13 @@
 //! Changing the graph. Every change, from interaction or code, runs through
-//! one pipeline: validation (failures trigger [`EditRejected`]), then
-//! [`EditRequested`] (observers may rewrite or reject it), then the change,
-//! then [`EditApplied`] (an entity event on the canvas and a message).
+//! one pipeline: validation, with [`ConnectionCheck`] for connections
+//! (failures trigger [`EditRejected`]), then [`EditRequested`] (observers may
+//! rewrite or reject it), then the change, then [`EditApplied`].
 
 use bevy::prelude::*;
 use bevy::ui::Selected;
 
 use crate::components::*;
-use crate::query::GraphQuery;
+use crate::query::{Connection, GraphQuery};
 
 /// A change to a graph.
 #[derive(Clone, Debug, PartialEq, Reflect)]
@@ -94,36 +94,61 @@ pub enum EditOrigin {
     Custom(u64),
 }
 
-/// Triggered on the canvas before an edit applies. Observers may change
-/// `edit`, and decide whether it applies: `refused` holds the built-in rules'
-/// verdict (e.g. [`RejectReason::IncompatibleTypes`]), which they may
-/// [`allow`](Self::allow) or [`reject`](Self::reject). Edits that cannot
-/// apply at all (missing entities, ports of the same node) never get here.
+/// Triggered on the canvas whenever a connection is considered: before a
+/// [`GraphEdit::Connect`] applies, and to preview one (the ports a dragged
+/// wire may snap to, [`GraphWorldExt::preview_connection`]). `refused` holds
+/// the built-in rules' verdict (e.g. [`RejectReason::IncompatibleTypes`]),
+/// which observers may [`allow`](Self::allow) or [`reject`](Self::reject).
+///
+/// Put connection rules here, so previews and edits agree. It can run for
+/// every port of a graph at once: decide from the graph, and change nothing
+/// (do that in [`EditRequested`]). Connections that cannot exist at all
+/// (missing ports, ports of one node, two inputs) never get here.
+#[derive(EntityEvent, Clone, Debug)]
+pub struct ConnectionCheck {
+    /// The canvas.
+    #[event_target]
+    pub canvas: Entity,
+    /// The ports.
+    pub ports: PortPair,
+    /// Why the connection is refused, if it is.
+    pub refused: Option<RejectReason>,
+}
+
+impl ConnectionCheck {
+    /// Refuse the connection: it reports [`RejectReason::Rejected`].
+    pub fn reject(&mut self) {
+        self.refused = Some(RejectReason::Rejected);
+    }
+
+    /// Allow the connection even if the built-in rules refuse it.
+    pub fn allow(&mut self) {
+        self.refused = None;
+    }
+}
+
+/// Triggered on the canvas before an edit applies, once it passed the
+/// built-in rules and (for a connection) [`ConnectionCheck`]. Observers may
+/// change `edit` (a changed connection is checked again) or
+/// [`reject`](Self::reject) it, e.g. to do something else instead: side
+/// effects belong here. Never triggered for previews.
 #[derive(EntityEvent, Clone, Debug)]
 pub struct EditRequested {
     /// The canvas edited.
     #[event_target]
     pub canvas: Entity,
-    /// The edit, which observers may change. The verdict stays as it is.
+    /// The edit, which observers may change.
     pub edit: GraphEdit,
     /// Where it came from.
     pub origin: EditOrigin,
-    /// Why the edit will be refused, if it will.
-    pub refused: Option<RejectReason>,
-    /// Only asking whether the edit would apply (e.g. which ports a dragged
-    /// wire may snap to): do nothing irreversible.
-    pub preview: bool,
+    /// Whether an observer rejected it.
+    pub rejected: bool,
 }
 
 impl EditRequested {
     /// Refuse the edit: it reports [`RejectReason::Rejected`].
     pub fn reject(&mut self) {
-        self.refused = Some(RejectReason::Rejected);
-    }
-
-    /// Apply the edit even if the built-in rules refuse it.
-    pub fn allow(&mut self) {
-        self.refused = None;
+        self.rejected = true;
     }
 }
 
@@ -177,7 +202,7 @@ pub enum RejectReason {
     PortFull,
     /// Nothing to do (e.g. no nodes of this canvas listed).
     Empty,
-    /// An [`EditRequested`] observer rejected it.
+    /// A [`ConnectionCheck`] or [`EditRequested`] observer rejected it.
     Rejected,
 }
 
@@ -223,9 +248,15 @@ pub trait GraphWorldExt {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code)
     }
 
-    /// Whether `edit` would apply, asking [`EditRequested`] observers (with
-    /// `preview` set) without changing anything.
-    fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason>;
+    /// Whether ports `a` and `b` (either order) of `canvas` may connect, by
+    /// the built-in rules and [`ConnectionCheck`] observers, without
+    /// changing anything.
+    fn preview_connection(
+        &mut self,
+        canvas: Entity,
+        a: Entity,
+        b: Entity,
+    ) -> Result<Connection, RejectReason>;
 
     /// Changes which nodes and edges of `canvas` carry [`Selected`], combining
     /// `items` (others are ignored) with the selection by `mode`. Selection
@@ -241,7 +272,7 @@ impl GraphWorldExt for World {
         edit: GraphEdit,
         origin: EditOrigin,
     ) -> EditResult {
-        let result = run(self, canvas, edit.clone(), origin, false);
+        let result = run(self, canvas, edit.clone(), origin);
         if let (Err(reason), Ok(_)) = (result, self.get_entity(canvas)) {
             self.trigger(EditRejected {
                 canvas,
@@ -252,8 +283,23 @@ impl GraphWorldExt for World {
         result
     }
 
-    fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason> {
-        run(self, canvas, edit, EditOrigin::Interaction, true).map(|_| ())
+    fn preview_connection(
+        &mut self,
+        canvas: Entity,
+        a: Entity,
+        b: Entity,
+    ) -> Result<Connection, RejectReason> {
+        let check = |In((canvas, a, b)), graph: GraphQuery| graph.check_connection(canvas, a, b);
+        let connection = self
+            .run_system_cached_with(check, (canvas, a, b))
+            .map_err(|_| RejectReason::InvalidEntity)??;
+        match ask(self, canvas, &connection) {
+            Some(reason) => Err(reason),
+            None => Ok(Connection {
+                refused: None,
+                ..connection
+            }),
+        }
     }
 
     fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
@@ -298,53 +344,71 @@ fn plan_selection(
     changes
 }
 
+/// The verdict on a connection, after [`ConnectionCheck`] observers.
+pub(crate) fn ask(
+    world: &mut World,
+    canvas: Entity,
+    connection: &Connection,
+) -> Option<RejectReason> {
+    let mut check = ConnectionCheck {
+        canvas,
+        ports: connection.ports,
+        refused: connection.refused,
+    };
+    world.trigger_ref(&mut check);
+    check.refused
+}
+
 /// A validated edit and its side effects.
 struct Plan {
     edit: GraphEdit,
-    /// The built-in rules' verdict, which observers may override.
-    refused: Option<RejectReason>,
+    /// A connect's built-in verdict, which observers may override.
+    connection: Option<Connection>,
     /// The canvas content, which new edges are children of.
     content: Option<Entity>,
     /// Edges (and their ports) removed first, each reported as a disconnect.
     disconnect: Vec<(Entity, PortPair)>,
 }
 
-fn run(
-    world: &mut World,
-    canvas: Entity,
-    edit: GraphEdit,
-    origin: EditOrigin,
-    preview: bool,
-) -> EditResult {
-    // Planned before `EditRequested`, so observers see the normalized edit,
-    // and again after, as they may have changed it or the world.
+fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -> EditResult {
     let plan = |world: &mut World, edit| {
         world
             .run_system_cached_with(plan_edit, (canvas, edit))
             .map_err(|_| RejectReason::InvalidEntity)?
     };
-    let Plan { edit, refused, .. } = plan(world, edit)?;
+    // A plan whose connection observers allow.
+    let checked = |world: &mut World, edit| {
+        let plan: Plan = plan(world, edit)?;
+        match plan.connection.as_ref().and_then(|c| ask(world, canvas, c)) {
+            Some(reason) => Err(reason),
+            None => Ok(plan),
+        }
+    };
+    // Checked before `EditRequested`, so observers see the normalized,
+    // allowed edit.
+    let Plan { edit, .. } = checked(world, edit)?;
     let mut request = EditRequested {
         canvas,
-        edit,
+        edit: edit.clone(),
         origin,
-        refused,
-        preview,
+        rejected: false,
     };
     world.trigger_ref(&mut request);
-    if let Some(reason) = request.refused {
-        return Err(reason);
+    if request.rejected {
+        return Err(RejectReason::Rejected);
     }
-    if preview {
-        return Ok(None);
-    }
-    // The verdict is the observers'; the plan only adds side effects.
+    // Planned again, as observers may have changed the world; a changed edit
+    // is checked again, an unchanged one keeps its verdict.
     let Plan {
         edit,
         content,
         disconnect,
         ..
-    } = plan(world, request.edit)?;
+    } = if request.edit == edit {
+        plan(world, edit)?
+    } else {
+        checked(world, request.edit)?
+    };
     let applied = |world: &mut World, edit, created, ports| {
         let event = EditApplied {
             canvas,
@@ -402,12 +466,13 @@ fn plan_edit(
     let here = |e: &Entity| graph.canvas_of(*e) == Some(canvas);
     let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && here(e);
     let edge = |e: &Entity| graph.edge_ports(*e).is_some() && here(e);
-    let (mut disconnect, mut refused) = (Vec::new(), None);
+    let (mut disconnect, mut connection) = (Vec::new(), None);
     match &mut edit {
         GraphEdit::Connect { from, to } => {
-            let connection = graph.check_connection(canvas, *from, *to)?;
-            (*from, *to) = (connection.ports.output, connection.ports.input);
-            (disconnect, refused) = (connection.replaces, connection.refused);
+            let checked = graph.check_connection(canvas, *from, *to)?;
+            (*from, *to) = (checked.ports.output, checked.ports.input);
+            disconnect = checked.replaces.clone();
+            connection = Some(checked);
         }
         GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
             return Err(RejectReason::InvalidEntity);
@@ -441,7 +506,7 @@ fn plan_edit(
         .collect();
     Ok(Plan {
         edit,
-        refused,
+        connection,
         content: graph.content_of(canvas),
         disconnect,
     })

@@ -436,10 +436,10 @@ fn graph(world: &mut World, ports: &[Port]) -> (Entity, Vec<Entity>) {
 }
 
 /// An observer allowing connections refused for `reason`.
-fn allow(reason: RejectReason) -> impl Fn(On<EditRequested>) {
-    move |mut request: On<EditRequested>| {
-        if request.refused == Some(reason) {
-            request.allow();
+fn allow(reason: RejectReason) -> impl Fn(On<ConnectionCheck>) {
+    move |mut check: On<ConnectionCheck>| {
+        if check.refused == Some(reason) {
+            check.allow();
         }
     }
 }
@@ -496,35 +496,81 @@ fn an_allowed_full_port_keeps_all_its_edges() {
 }
 
 #[test]
-fn previews_ask_observers_but_change_nothing() {
+fn previews_ask_connection_checks_but_change_nothing() {
     let mut app = app();
     #[derive(Resource, Default)]
-    struct Previews(u32);
-    app.init_resource::<Previews>();
-    app.add_observer(
-        |request: On<EditRequested>, mut previews: ResMut<Previews>| {
-            previews.0 += request.preview as u32;
-        },
-    );
+    struct Asked {
+        checks: u32,
+        requests: u32,
+    }
+    app.init_resource::<Asked>();
+    app.add_observer(|_: On<ConnectionCheck>, mut asked: ResMut<Asked>| asked.checks += 1);
+    app.add_observer(|_: On<EditRequested>, mut asked: ResMut<Asked>| asked.requests += 1);
     app.add_observer(allow(RejectReason::IncompatibleTypes));
-    // Structurally impossible edits never reach observers, even allowing ones.
-    app.add_observer(|mut request: On<EditRequested>| request.allow());
+    // Structurally impossible connections never reach observers, even allowing ones.
+    app.add_observer(|mut check: On<ConnectionCheck>| check.allow());
     let w = app.world_mut();
     let (canvas, p) = graph(
         w,
         &[Port::output(NUM), Port::input(TEXT), Port::output(NUM)],
     );
     let (from, to) = (p[0], p[1]);
+    let preview = w.preview_connection(canvas, to, from).unwrap();
+    assert_eq!(preview.ports, PortPair::new(from, to));
+    assert!(preview.allowed());
+    let asked = w.resource::<Asked>();
     assert_eq!(
-        w.preview_edit(canvas, GraphEdit::Connect { from, to }),
-        Ok(())
+        (asked.checks, asked.requests),
+        (1, 0),
+        "no EditRequested in previews"
     );
-    assert_eq!(w.resource::<Previews>().0, 1);
     assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
     assert!(log(&mut app).is_empty(), "no applied or rejected events");
     let w = app.world_mut();
     let same = GraphEdit::Connect { from, to: p[2] };
     assert_eq!(w.graph_edit(canvas, same), Err(RejectReason::SameDirection));
+    assert_eq!(
+        w.preview_connection(canvas, from, p[2]),
+        Err(RejectReason::SameDirection)
+    );
+}
+
+#[test]
+fn previews_and_edits_follow_the_same_rules() {
+    let mut app = app();
+    // Refuse anything into the second input.
+    let w = app.world_mut();
+    let (canvas, p) = graph(w, &[Port::output(NUM), Port::input(NUM), Port::input(NUM)]);
+    let blocked = p[2];
+    app.add_observer(move |mut check: On<ConnectionCheck>| {
+        if check.ports.input == blocked {
+            check.reject();
+        }
+    });
+    let w = app.world_mut();
+    let refused = Err(RejectReason::Rejected);
+    assert_eq!(
+        w.preview_connection(canvas, p[0], blocked).map(|_| ()),
+        refused
+    );
+    let edit = GraphEdit::Connect {
+        from: p[0],
+        to: blocked,
+    };
+    assert_eq!(w.graph_edit(canvas, edit).map(|_| ()), refused);
+    // An edit rewritten to the blocked port is checked again.
+    app.add_observer(move |mut request: On<EditRequested>| {
+        if let GraphEdit::Connect { to, .. } = &mut request.edit {
+            *to = blocked;
+        }
+    });
+    let w = app.world_mut();
+    let edit = GraphEdit::Connect {
+        from: p[0],
+        to: p[1],
+    };
+    assert_eq!(w.graph_edit(canvas, edit).map(|_| ()), refused);
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
 }
 
 #[test]

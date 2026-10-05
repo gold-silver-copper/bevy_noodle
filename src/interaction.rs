@@ -22,9 +22,7 @@ use bevy::ui::picking_backend::ui_picking;
 use bevy::ui::{ComputedNode, InteractionDisabled, UiScale, ui_transform::UiGlobalTransform};
 
 use crate::components::*;
-use crate::edit::{
-    DragProgress, EditOrigin, GraphCommandsExt, GraphEdit, GraphWorldExt, SelectMode,
-};
+use crate::edit::{DragProgress, EditOrigin, GraphCommandsExt, GraphEdit, SelectMode, ask};
 use crate::query::GraphQuery;
 
 /// Pointer interaction for canvases with [`CanvasInteraction`], and picking for edges with an [`EdgeHitbox`].
@@ -629,21 +627,23 @@ pub(crate) fn clear_candidates(world: &mut World) {
     }
 }
 
-/// Marks the ports a wire from `from` may connect to with [`WireCandidate`],
-/// asking [`EditRequested`](crate::EditRequested) observers (in preview).
+/// Marks the ports a wire from `from` may connect to with [`WireCandidate`]:
+/// one pass over the graph for the built-in rules, then
+/// [`ConnectionCheck`](crate::ConnectionCheck) observers for the connections
+/// that can exist.
 pub(crate) fn mark_candidates(world: &mut World, canvas: Entity, from: Entity) {
-    let ports = |In(canvas), graph: GraphQuery| {
+    let possible = |In((canvas, from)), graph: GraphQuery| {
         let nodes = graph.nodes_in(canvas).into_iter();
-        nodes.flat_map(|n| graph.ports_of(n)).collect::<Vec<_>>()
+        let ports = nodes.flat_map(|n| graph.ports_of(n));
+        let connections = ports.filter_map(|to| graph.check_connection(canvas, from, to).ok());
+        connections.collect::<Vec<_>>()
     };
-    let Ok(ports) = world.run_system_cached_with(ports, canvas) else {
+    let Ok(connections) = world.run_system_cached_with(possible, (canvas, from)) else {
         return;
     };
-    for to in ports {
-        if world
-            .preview_edit(canvas, GraphEdit::Connect { from, to })
-            .is_ok()
-        {
+    for connection in connections {
+        if ask(world, canvas, &connection).is_none() {
+            let to = connection.ports.other(from);
             world.entity_mut(to).insert(WireCandidate);
         }
     }

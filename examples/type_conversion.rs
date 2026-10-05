@@ -1,8 +1,7 @@
-//! Automatic type conversion with an `EditRequested` observer. The built-in
-//! rules refuse an int output on a float input (`IncompatibleTypes`); the
-//! observer sees that verdict, lets dragged wires snap there (in preview),
-//! and answers the real edit with an "int to float" converter node wired in
-//! between. Drag from "Int" to "a" or "b" to see it. Type into the Int and
+//! Automatic type conversion. The built-in rules refuse an int output on a
+//! float input (`IncompatibleTypes`); a `ConnectionCheck` observer allows it,
+//! so dragged wires snap there, and an `EditRequested` observer answers the
+//! real edit with an "int to float" converter node wired in between. Drag from "Int" to "a" or "b" to see it. Type into the Int and
 //! Float fields: the product follows live, through the converter.
 //!
 //! ```sh
@@ -37,6 +36,7 @@ fn main() {
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
         .add_systems(Update, (demo_connection, show_product))
+        .add_observer(allow_int_to_float)
         .add_observer(convert)
         .add_observer(edit_int)
         .add_observer(edit_float)
@@ -153,7 +153,20 @@ fn demo_connection(
     }
 }
 
-/// An int → float connection gets a converter in between.
+/// Whether a connection runs from an int output to a float input.
+fn int_to_float(graph: &GraphQuery, ports: PortPair) -> bool {
+    let port_type = |p| graph.port(p).map(|p| p.port_type);
+    (port_type(ports.output), port_type(ports.input)) == (Some(INT), Some(FLOAT))
+}
+
+/// The rule: ints may connect to floats.
+fn allow_int_to_float(mut check: On<ConnectionCheck>, graph: GraphQuery) {
+    if check.refused == Some(RejectReason::IncompatibleTypes) && int_to_float(&graph, check.ports) {
+        check.allow();
+    }
+}
+
+/// The side effect: an int → float connection gets a converter in between.
 fn convert(
     mut request: On<EditRequested>,
     graph: GraphQuery,
@@ -164,20 +177,11 @@ fn convert(
     let GraphEdit::Connect { from, to } = request.edit else {
         return;
     };
-    let types = (
-        graph.port(from).map(|p| p.port_type),
-        graph.port(to).map(|p| p.port_type),
-    );
-    let int_to_float = types == (Some(INT), Some(FLOAT));
-    if !int_to_float || request.refused != Some(RejectReason::IncompatibleTypes) {
+    if !int_to_float(&graph, PortPair::new(from, to)) {
         return;
     }
-    // Asked whether a dragged wire may connect here: yes.
-    if request.preview {
-        request.allow();
-        return;
-    }
-    // The direct connection stays refused; a converter goes in between.
+    // The direct connection is refused; a converter goes in between.
+    request.reject();
     let canvas = request.canvas;
     let position = |p| {
         anchors

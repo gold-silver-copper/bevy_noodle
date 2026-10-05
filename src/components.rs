@@ -202,7 +202,7 @@ pub enum PortDirection {
 }
 
 /// What a port carries. Ports connect when types are equal or either is
-/// [`PortType::ANY`]; add finer rules with an [`EditRequested`](crate::EditRequested) observer.
+/// [`PortType::ANY`]; add finer rules with a [`ConnectionCheck`](crate::ConnectionCheck) observer.
 #[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PortType(pub u64);
 
@@ -454,7 +454,7 @@ impl EdgeGeometry {
 /// The wire being dragged: its own entity with an [`EdgeGeometry`], so edge
 /// renderers draw it like any edge. Spawning one marks the ports it may
 /// connect to ([`WireCandidate`](crate::WireCandidate), asking
-/// [`EditRequested`](crate::EditRequested) observers); despawning it clears
+/// [`ConnectionCheck`](crate::ConnectionCheck) observers); despawning it clears
 /// the marks.
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
