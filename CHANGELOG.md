@@ -1,14 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-10-04
 
 ### Changed (breaking)
 - `EdgeStyle::layer: EdgeLayer` is now `below_nodes: bool`, the same bit
   `EdgeHitbox` already had. `EdgeLayer` is gone.
 - `GraphQuery::check_connection` returns the built-in verdict too:
   `(output, input, replaces, refusal)`, where `refusal` is what
-  `EditRequested` observers may override. For the old answer, check
-  `.is_ok_and(|c| c.3.is_none())`.
+  `EditRequested` observers may override.
 - `FrameAll` is gone: the `auto_layout` example frames every node (F) in a
   few lines of app code.
 - `NoodleSystems::Measure` is gone: ports are measured in Bevy's
@@ -67,8 +66,7 @@
 ## 0.3.0
 
 A smaller, Bevy-native core: you build and style the nodes and edges, the
-library handles the graph. See the README's "Migrating from 0.2" for every
-breaking change.
+library handles the graph.
 
 ### Added
 - Pickable edges: `EdgeHitbox` gives edges `Pointer` events; clicking selects

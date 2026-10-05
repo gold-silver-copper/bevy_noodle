@@ -4,27 +4,61 @@
 [![docs.rs](https://docs.rs/bevy_noodle/badge.svg)](https://docs.rs/bevy_noodle)
 [![CI](https://github.com/gold-silver-copper/bevy_noodle/actions/workflows/ci.yml/badge.svg)](https://github.com/gold-silver-copper/bevy_noodle/actions/workflows/ci.yml)
 
-A minimal, headless node graph library for [Bevy](https://bevyengine.org) UI.
-**You build and style the nodes and edges; bevy_noodle handles the graph.**
+A headless node graph library for [Bevy](https://bevyengine.org) UI.
+**You build and style the nodes; bevy_noodle handles the graph.**
 
-![A wire snapping onto a port, with the optional default style](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
+![A wire snapping onto a port](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/connecting.png)
 
-- **Everything is an entity.** Nodes are your UI entities tagged `GraphNode`.
-  Ports are any UI entities tagged `Port`. Edges are entities related to ports
-  through Bevy relationships, so despawning a node or port removes its edges.
-- **Nothing forced.** No background, no drawing, no key bindings. Pointer
-  interaction is opt-in per canvas (`CanvasInteraction`), with every button
-  configurable. The core only computes `EdgeGeometry`, which you draw however
-  you like, or you opt into the `default_style` look.
-- **Multiple graphs.** Each `NodeCanvas` is an independent graph. Canvases can
-  sit side by side or nest inside nodes.
-- **One edit pipeline.** UI and code edits both go through validation, then
-  `EditRequested` (observers can veto or rewrite the edit), then `EditApplied`.
-- **Bevy-native.** It uses Bevy picking events (any pointer), relationships,
-  `Selected`/`InteractionDisabled`, observers, required components, and
-  automatic `Reflect` registration.
+- **Just entities.** Nodes and ports are your UI entities with a marker
+  component; edges are Bevy relationships.
+- **Draws nothing by default.** Draw edges from `EdgeGeometry` yourself, or
+  enable the `default_style` look.
+- **Any number of graphs**, side by side or nested inside nodes.
+- **One edit pipeline** for UI and code, with observers that can veto or
+  rewrite any edit.
 
 Requires Bevy **0.19**.
+
+## Examples
+
+```sh
+cargo run --example <name> --all-features
+```
+
+<table>
+<tr>
+<td width="50%"><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png" alt="scene_builder_3d"><br><b>scene_builder_3d</b>: build a live 3D scene from a graph</td>
+<td width="50%"><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/edge_styles.png" alt="edge_styles"><br><b>edge_styles</b>: gradients, dashes and animated flow</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/subgraph.png" alt="subgraph"><br><b>subgraph</b>: graphs nested inside nodes</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png" alt="styled"><br><b>styled</b>: the default look with feathers controls</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/math_graph.png" alt="math_graph"><br><b>math_graph</b>: a live calculator that rejects cycles</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/editor.png" alt="editor"><br><b>editor</b>: undo/redo, copy/paste, edge selection</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/type_conversion.png" alt="type_conversion"><br><b>type_conversion</b>: auto-inserted converter nodes</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/comment_frames.png" alt="comment_frames"><br><b>comment_frames</b>: frames that carry their nodes</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/reroute.png" alt="reroute"><br><b>reroute</b>: reroute dots on edges</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimap.png" alt="minimap"><br><b>minimap</b>: a synced overview you can drag</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/auto_layout.png" alt="auto_layout"><br><b>auto_layout</b>: layered layout as undoable edits</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/keyboard.png" alt="keyboard"><br><b>keyboard</b>: Tab, arrows and Space to connect</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png" alt="save_load"><br><b>save_load</b>: save and load graphs as RON</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/stress.png" alt="stress"><br><b>stress</b>: hundreds of nodes rewired every frame (use <code>--release</code>)</td>
+</tr>
+<tr>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png" alt="minimal"><br><b>minimal</b>: plain Bevy UI, edges drawn as gizmos</td>
+<td></td>
+</tr>
+</table>
 
 ## Quick start
 
@@ -35,13 +69,20 @@ use bevy_noodle::prelude::*;
 const NUMBER: PortType = PortType::named("number");
 
 fn main() {
-    App::new().add_plugins((DefaultPlugins, NoodlePlugins)).add_systems(Startup, setup).run();
+    App::new()
+        .add_plugins((DefaultPlugins, NoodlePlugins))
+        .add_systems(Startup, setup)
+        .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands
-        .spawn((NodeCanvas, CanvasInteraction::default(), Node { width: percent(100), height: percent(100), ..default() }))
+        .spawn((
+            NodeCanvas,
+            CanvasInteraction::default(),
+            Node { width: percent(100), height: percent(100), ..default() },
+        ))
         .id();
     let content = commands.spawn((CanvasContent, ChildOf(canvas))).id();
     commands.spawn((
@@ -52,178 +93,45 @@ fn setup(mut commands: Commands) {
         BackgroundColor(Color::srgb(0.16, 0.18, 0.22)),
         children![
             (Text::new("Source"), Pickable::IGNORE),
-            (Port::output(NUMBER), Node { width: px(14), height: px(14), ..default() }, BackgroundColor(Color::WHITE)),
+            (
+                Port::output(NUMBER),
+                Node { width: px(14), height: px(14), ..default() },
+                BackgroundColor(Color::WHITE),
+            ),
         ],
     ));
 }
 ```
 
-## Examples
-
-| Example | Shows |
-|---|---|
-| `cargo run --example minimal` | Plain Bevy UI nodes, with edges drawn as gizmos from `EdgeGeometry`. |
-| `cargo run --example styled --features default_style` | The default look with Bevy's feathers controls in the nodes: type numbers and a template, and Print shows the result live. Plus app-level bindings: right-click adds a node, a dropped wire spawns a matching node, Delete removes the selection. |
-| `cargo run --example math_graph --features default_style` | A live calculator: your own components, Bevy's `EditableText` inside nodes, evaluation with `GraphQuery`, and a veto that rejects cycles. |
-| `cargo run --example edge_styles --features default_style` | Every `EdgeStyle` option: gradients, dashes, marching ants and travelling pulses, animated in the shader. Edges copy their look from the node they leave. |
-| `cargo run --example subgraph --features default_style` | Graphs of graphs: a Group node holds its own canvas, with In/Out nodes carrying values across the boundary. Number fields outside and a slider inside the group drive the result live. |
-| `cargo run --example scene_builder_3d --features default_style` | A graph panel over a 3D view, building `Mesh3d` entities live from in-node controls: a shape dropdown, color pickers, spin and size sliders, a ring count field. |
-| `cargo run --example editor --features default_style,scene` | Editor commands in app code: undo/redo from snapshots (value edits included), copy/paste/duplicate, selecting and deleting edges, right-click to remove an edge. Number fields feed a live sum. |
-| `cargo run --example keyboard --features default_style` | Keyboard-only use: Tab between nodes, fields and ports, Enter to select, arrows to move, Space on two ports to connect, with a focus outline. |
-| `cargo run --example comment_frames --features default_style` | Comment frames with editable titles: a frame node moves the nodes inside it, through an `EditApplied` observer with its own `EditOrigin`. |
-| `cargo run --example reroute --features default_style` | Reroute dots for routing edges; right-click an edge to insert one where you clicked. |
-| `cargo run --example type_conversion --features default_style` | An `EditRequested` observer overrides the built-in type rule: int outputs snap to float inputs, and connecting one inserts an "int to float" converter. Edit the int and float and the product follows. |
-| `cargo run --example minimap --features default_style` | A minimap of the same graph, kept in sync from `NodePosition`s and `CanvasView`; click or drag it to move the view. |
-| `cargo run --example auto_layout --features default_style` | A layered automatic layout applied as one undoable `MoveNodes` edit per node (L to lay out, S to scramble, F to frame everything). |
-| `cargo run --release --example stress --features default_style` | A self-driving stress test: hundreds of nodes spawned, wired, moved, rewired and deleted every frame while the camera drifts, with FPS and edits per second on screen. Space pauses, Up/Down change the size. |
-| `cargo run --example save_load --features default_style,scene` | Saving and loading as RON: a full snapshot (user components, such as the values typed into the fields, and entity references intact) or just the graph model, a few hundred bytes, rebuilt with ordinary spawns. |
-
-![The minimal example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png)
-![The styled example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/styled.png)
-![The math_graph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/math_graph.png)
-![The edge_styles example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/edge_styles.png)
-![The subgraph example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/subgraph.png)
-![The scene_builder_3d example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png)
-![The editor example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/editor.png)
-![The save_load example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/save_load.png)
-![The stress example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/stress.png)
-![The keyboard example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/keyboard.png)
-![The comment_frames example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/comment_frames.png)
-![The reroute example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/reroute.png)
-![The type_conversion example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/type_conversion.png)
-![The minimap example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimap.png)
-![The auto_layout example](https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/auto_layout.png)
-
-## Concepts
+## How it works
 
 ```text
-NodeCanvas              your UI node: one graph and its viewport
-└── CanvasContent       pans and zooms (driven by CanvasView); holds the nodes
-    ├── GraphNode       your UI node; NodePosition is optional (without it, your layout places it)
+NodeCanvas              one graph and its viewport
+└── CanvasContent       pans and zooms (CanvasView); holds the nodes
+    ├── GraphNode       your UI node
     │   └── … Port      your UI node marking a connection point
-    └── Edge            EdgeSource → output port, EdgeTarget → input port, plus EdgeGeometry
-PendingWire             the wire being dragged; also has EdgeGeometry
+    └── Edge            relates an output port to an input port; has EdgeGeometry
 ```
 
-- **Reading.** `GraphQuery` is a system param: `nodes_in`, `edges_in`,
-  `ports_of`, `inputs_of`, `outputs_of`, `peers_of`, `edges_of`, `edge_ports`,
-  `node_of`, `canvas_of`, `check_connection`.
-- **Writing.** `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`.
-  The other edits are `Disconnect`, `MoveNodes`, `Delete` and `Select`.
-  Spawning a node is just a spawn.
-- **Rules.** Ports connect when their `PortType`s match (or one is
-  `PortType::ANY`), the ports are not connected yet, and limits allow. That
-  verdict reaches `On<EditRequested>` observers as `refused`, and they have
-  the last word: `request.allow()` (e.g. ints into floats) or
-  `request.reject()`. Only connections that cannot exist at all (missing
-  ports, ports of one node, two inputs) never get there. Dragged wires snap to
-  the ports observers would allow: the library asks them with
-  `preview: true`, so do nothing irreversible then (`world.preview_edit` asks
-  the same way).
-- **Reacting.** `EditApplied` is an entity event on the canvas and a message,
-  with an `origin` (`Code`, `Interaction` or `Custom`), the `created` edge and
-  the `(output, input)` `ports` of a connect or disconnect. Drags end with a
-  `MoveNodes { is_final: true, total, .. }`.
-- **Interaction state** you can style: `Selected` on nodes and edges,
-  `WireCandidate` and `WireTarget` on ports, `SelectionBox` on the canvas. A
-  `WireDropped` event fires when a wire is released over empty canvas.
-- **Edges are pickable.** An edge with an `EdgeHitbox` (the default style adds
-  one) gets `Pointer` events like any UI entity, from a small picking backend
-  that respects overlays, clipping and ports. Clicking selects it, and
-  `Delete` removes listed edges along with nodes.
-- **Bindings** are just systems:
-  `commands.graph_edit(canvas, GraphEdit::Delete { items: selected.iter().collect() })`.
-- **Controls inside nodes.** Sliders, text fields, color pickers and menus
-  (`bevy_ui_widgets`, `bevy_feathers` or your own) work inside nodes. A press
-  or drag that starts in a focusable control (anything with a `TabIndex`, as
-  every feathers control and text field has) belongs to the control: it does
-  not select, raise or move the node.
+- **Read** with the `GraphQuery` system param (`nodes_in`, `edges_of`,
+  `peers_of`, …).
+- **Write** with `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`;
+  also `Disconnect`, `MoveNodes`, `Delete` and `Select`. Nodes are just spawned.
+- **Validate** in `On<EditRequested>` observers: `allow()` or `reject()` any
+  edit, including the built-in type rules.
+- **React** to `EditApplied`.
+- **Style** from `Selected`, `WireCandidate`, `WireTarget` and `SelectionBox`.
+- **Controls inside nodes** (sliders, text fields, menus) keep their own
+  presses and drags.
 
-### Optional default style (`default_style`)
+## Features
 
-Each piece is opt-in on the canvas or the entity:
-- **`EdgeStyle`:** wires drawn above or below the nodes, ending at port rims,
-  with optional gradients (`end_color`), dashes (`dash`) and animated flow
-  (`flow_speed`), all in the shader, and hover and selection highlights. Put
-  it on a canvas, or on a single edge to override.
-- **`CanvasGrid`:** a background grid.
-- **`SelectionBoxStyle`:** draws the selection box.
-- **`PortHighlight` + `PortColor`:** ports show connection and drag state.
-- **`SelectedBorderColor`:** a node border that follows selection.
-- **`style::kit`:** plain functions returning bundles: `kit::canvas()` (an
-  interactive canvas with the whole look), a node frame, a title and port rows.
-  `kit::input_dot`/`kit::output_dot` are rows without labels: no text to lay
-  out, for very large graphs.
+| Feature | Adds |
+|---|---|
+| `default_style` | Wire shader (`EdgeStyle`), `CanvasGrid`, selection box, port highlights, and `style::kit` node builders |
+| `scene` | `DynamicWorld` snapshots for undo, copy/paste and save/load |
 
-### Keyboard
-
-Add `NoodleKeyboardPlugin` and put `CanvasKeyboard` on a canvas. It builds on
-Bevy's `bevy_input_focus`: the canvas is a `TabGroup` and its nodes and ports
-get a `TabIndex`, so Tab and Shift+Tab move focus between them. Enter selects
-the focused node and the arrow keys move it; with Ctrl/Cmd held they pan the
-view, and +/- zoom it. Space on a port starts a connection and Space on a
-second port completes it (focusing a port it may connect to snaps the wire);
-Escape drops it. Every key is a field, and `None` unbinds it. With the default
-style, `FocusOutline` (part of `kit::canvas()`) outlines the keyboard focus.
-
-### Snapshots (`scene`)
-
-Snapshots are Bevy `DynamicWorld`s of nodes, ports, edges, nested canvases and
-your reflected components, with entity references remapped:
-- `scene::snapshot(world, canvas)` captures a whole graph, and
-  `scene::restore(world, canvas, &snapshot)` puts it back (undo, loading).
-- `scene::snapshot_nodes(world, &nodes)` captures some nodes and the edges
-  between them, and `scene::insert(world, canvas, &snapshot)` adds them to any
-  graph (copy and paste).
-- Save to files with `DynamicWorld::serialize`.
-- Mark UI you rebuild from your own data, such as controls inside nodes,
-  `scene::Transient`: snapshots leave it out (widget observers and text state
-  would not survive a restore), so keep the value in a reflected component and
-  rebuild the control for nodes that get one.
-
-See the `editor` and `save_load` examples.
-
-## Migrating from 0.2
-
-**Interaction and bindings**
-- Interaction is opt-in: add `CanvasInteraction::default()` to canvases that
-  should respond to the pointer. Its buttons and modifier keys are fields.
-- `NoodleKeyBindingsPlugin`/`CanvasKeymap` are gone: bind keys with a system,
-  as in the `styled` example.
-- The `DeleteSelection`, `SelectAll`, `ClearSelection`, `PanBy`, `ZoomBy` and
-  `CancelInteraction` actions are gone: use `graph_edit`, or change
-  `CanvasView`. (`FrameAll` went too, after 0.3: the `auto_layout` example
-  frames every node in a few lines.)
-- `CanvasWantsInput` is gone: `CanvasInteraction` requires `Hovered`; read that.
-- The node finder popup is gone: handle `WireDropped` (or a canvas click) and
-  spawn nodes yourself, as in the `styled` example.
-
-**Edits**
-- `GraphEdit::DeleteNodes { nodes }` is `GraphEdit::Delete { items }`, and
-  `GraphEdit::Select { nodes, mode }` is `GraphEdit::Select { items, mode }`.
-  Both take nodes and edges.
-- `EditApplied` has a `ports: Option<(output, input)>` field for connects and
-  disconnects.
-- `GraphCommandsExt`/`GraphWorldExt` only need `graph_edit_with_origin`
-  implemented; `graph_edit` is provided. `EditResult` names the return type.
-
-**Graph structure**
-- `Edge` is a marker (no `canvas` field) and edges are children of the
-  canvas's `CanvasContent`. Find an edge's canvas with `GraphQuery::canvas_of`.
-- `PortAnchor::measured` is gone: `PortAnchor::position` is `Some` once measured.
-- `GraphQuery`: `nodes_of` is `nodes_in`; `sources_of`/`targets_of` are
-  `peers_of`; `is_node`, `subtree_any` and `is_connected` are gone (use
-  `node_of`, `edges_of`); `edges_in` is new.
-
-**Default style (`default_style`)**
-- `EdgeStyle` has new fields (`end_color`, `dash`, `flow_speed`, `below_nodes`,
-  `trim_to_ports`, `selected_color`, `hover_width`): build it with
-  `..default()`.
-- `kit` functions take no `KitTheme`; `kit::port_dot` is `kit::port`.
-- `kit::body` is gone: put `kit::input`/`kit::output` rows straight into the
-  node after `kit::title`. Give other content a horizontal margin of
-  `kit::PADDING`.
-- `kit::canvas()` is new: an interactive, clipped canvas with the whole look.
+Keyboard use is a plugin: add `NoodleKeyboardPlugin` and `CanvasKeyboard`.
 
 ## License
 
