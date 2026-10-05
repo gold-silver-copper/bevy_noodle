@@ -140,10 +140,10 @@ fn apply_wire_look(
     looks: Query<&WireLook>,
     mut commands: Commands,
 ) {
-    let (Some(edge), Some((output, _))) = (applied.created, applied.ports) else {
+    let (Some(edge), Some(ports)) = (applied.created, applied.ports) else {
         return;
     };
-    if let Some(look) = graph.node_of(output).and_then(|n| looks.get(n).ok()) {
+    if let Some(look) = graph.node_of(ports.output).and_then(|n| looks.get(n).ok()) {
         commands.entity(edge).insert(look.0);
     }
 }

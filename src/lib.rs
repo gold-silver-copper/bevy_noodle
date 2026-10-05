@@ -40,7 +40,7 @@ pub use components::*;
 pub use edit::*;
 pub use interaction::*;
 pub use keyboard::*;
-pub use query::GraphQuery;
+pub use query::{Connection, GraphQuery};
 
 /// System sets, all in `PostUpdate`.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -95,7 +95,7 @@ pub mod prelude {
         EdgeHitbox, EdgeSource, EdgeTarget, EditApplied, EditOrigin, EditRequested,
         GraphCommandsExt, GraphEdit, GraphNode, GraphQuery, GraphWorldExt, NodeCanvas,
         NodeDragHandle, NodePosition, NoodleCorePlugin, NoodleInteractionPlugin,
-        NoodleKeyboardPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortType,
+        NoodleKeyboardPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortPair, PortType,
         SelectMode, WireDropped,
     };
 }

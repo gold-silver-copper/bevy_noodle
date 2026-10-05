@@ -58,8 +58,8 @@ pub(crate) fn update_edge_geometry(
     let end = |port| endpoint(port, &ports, &nodes);
     for (source, target, mut current) in edges.iter_mut().filter(|_| !changed.is_empty()) {
         let ends = end(source.0).zip(end(target.0));
-        let ports = [Some(source.0), Some(target.0)];
-        current.set_if_neq(ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b, ports)));
+        let geometry = ends.map_or_else(default, |(a, b)| EdgeGeometry::between(a, b));
+        current.set_if_neq(geometry.with_ports(Some(source.0), Some(target.0)));
     }
     // The dragged wire runs output → input; the pointer stands in for the free end.
     for (wire, mut current) in &mut wires {
@@ -74,12 +74,12 @@ pub(crate) fn update_edge_geometry(
             .get(wire.from)
             .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
         let (from, to) = (Some(wire.from), wire.target);
-        let (a, b, ports) = if from_output {
-            (fixed, free, [from, to])
+        let geometry = if from_output {
+            EdgeGeometry::between(fixed, free).with_ports(from, to)
         } else {
-            (free, fixed, [to, from])
+            EdgeGeometry::between(free, fixed).with_ports(to, from)
         };
-        current.set_if_neq(EdgeGeometry::between(a, b, ports));
+        current.set_if_neq(geometry);
     }
 }
 
@@ -136,10 +136,10 @@ pub(crate) fn follow_reparented(
     edges.sort();
     edges.dedup();
     for edge in edges {
-        let Some((source, target)) = graph.edge_ports(edge) else {
+        let Some(ends) = graph.edge_ports(edge) else {
             continue;
         };
-        match (graph.canvas_of(source), graph.canvas_of(target)) {
+        match (graph.canvas_of(ends.output), graph.canvas_of(ends.input)) {
             (Some(canvas), other) if other != Some(canvas) => {
                 commands.graph_edit(canvas, GraphEdit::Disconnect { edge });
             }

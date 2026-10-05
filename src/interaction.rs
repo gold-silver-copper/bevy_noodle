@@ -389,11 +389,9 @@ fn on_drag_start(
                 .last()
                 .and_then(|e| Some((*e, g.edge_ports(*e)?)));
             let mut from = port;
-            if let (true, true, Some((edge, (source, _)))) =
-                (settings.detach_wires, is_input, picked)
-            {
+            if let (true, true, Some((edge, ends))) = (settings.detach_wires, is_input, picked) {
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
-                from = source;
+                from = ends.output;
             }
             let pointer = ctx.graph_point(canvas, drag.pointer_location.position);
             ctx.commands.spawn(PendingWire {

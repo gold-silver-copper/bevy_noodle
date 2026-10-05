@@ -116,7 +116,7 @@ mod tests {
             (Vec2::ZERO, Vec2::X),
             (Vec2::new(300.0, 120.0), Vec2::NEG_X),
         );
-        let geometry = EdgeGeometry::between(ends.0, ends.1, [None; 2]);
+        let geometry = EdgeGeometry::between(ends.0, ends.1);
         let points = geometry.bezier(0.5);
         let (rect, _) = wire_material(points, [Color::WHITE; 2], 3.0, Vec3::ZERO);
         let curve = CubicSegment::new_bezier(points);

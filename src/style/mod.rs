@@ -255,7 +255,7 @@ fn draw_edges(
         let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
         };
-        let [start, end] = geometry.ports;
+        let (start, end) = (geometry.output, geometry.input);
         let port = |p: Option<Entity>| p.and_then(|p| ports.get(p).ok());
         let radius = |p| {
             port(p).map_or(0.0, |(_, computed, transform)| {

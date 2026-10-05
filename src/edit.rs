@@ -123,9 +123,9 @@ pub struct EditApplied {
     pub origin: EditOrigin,
     /// The edge a [`GraphEdit::Connect`] created.
     pub created: Option<Entity>,
-    /// The `(output, input)` ports of a connect or disconnect, so the edit can
-    /// be replayed or inverted after the edge is gone.
-    pub ports: Option<(Entity, Entity)>,
+    /// The ports of a connect or disconnect, so the edit can be replayed or
+    /// inverted after the edge is gone.
+    pub ports: Option<PortPair>,
 }
 
 /// Triggered on the canvas when an edit was refused.
@@ -236,7 +236,7 @@ struct Plan {
     /// The canvas content, which new edges are children of.
     content: Option<Entity>,
     /// Edges (and their ports) removed first, each reported as a disconnect.
-    disconnect: Vec<(Entity, (Entity, Entity))>,
+    disconnect: Vec<(Entity, PortPair)>,
     /// Selection changes.
     select: Vec<(Entity, bool)>,
 }
@@ -300,13 +300,13 @@ fn run(
             if let Some(content) = content {
                 edge.insert(ChildOf(content));
             }
-            (created, ports) = (Some(edge.id()), Some((*from, *to)));
+            (created, ports) = (Some(edge.id()), Some(PortPair::new(*from, *to)));
         }
         GraphEdit::Disconnect { edge } => {
             let ends = world
                 .get::<EdgeSource>(*edge)
                 .zip(world.get::<EdgeTarget>(*edge));
-            ports = ends.map(|(s, t)| (s.0, t.0));
+            ports = ends.map(|(s, t)| PortPair::new(s.0, t.0));
             world.despawn(*edge);
         }
         GraphEdit::MoveNodes { nodes, delta, .. } => {
@@ -347,9 +347,9 @@ fn plan_edit(
     let (mut disconnect, mut select, mut refused) = (Vec::new(), Vec::new(), None);
     match &mut edit {
         GraphEdit::Connect { from, to } => {
-            let replaces;
-            (*from, *to, replaces, refused) = graph.check_connection(*from, *to, canvas)?;
-            disconnect = replaces;
+            let connection = graph.check_connection(canvas, *from, *to)?;
+            (*from, *to) = (connection.ports.output, connection.ports.input);
+            (disconnect, refused) = (connection.replaces, connection.refused);
         }
         GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
             return Err(RejectReason::InvalidEntity);

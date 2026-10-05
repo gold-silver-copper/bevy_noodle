@@ -305,8 +305,8 @@ fn add_on_wire_drop(dropped: On<WireDropped>, graph: GraphQuery, mut commands: C
     commands.queue(move |world: &mut World| {
         let fits = |In((canvas, from, node)): In<(Entity, Entity, Entity)>, g: GraphQuery| {
             g.ports_of(node).into_iter().find(|to| {
-                g.check_connection(from, *to, canvas)
-                    .is_ok_and(|c| c.3.is_none())
+                g.check_connection(canvas, from, *to)
+                    .is_ok_and(|c| c.allowed())
             })
         };
         if let Ok(Some(to)) = world.run_system_cached_with(fits, (canvas, from, node)) {

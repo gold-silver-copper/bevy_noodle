@@ -99,7 +99,7 @@ fn reroute_on_right_click(
 ) {
     // Act once, on the edge itself (the click then bubbles up).
     let edge = click.original_event_target();
-    let (Some((output, input)), Some(canvas), true) = (
+    let (Some(PortPair { output, input }), Some(canvas), true) = (
         graph.edge_ports(edge),
         graph.canvas_of(edge),
         click.event_target() == edge,

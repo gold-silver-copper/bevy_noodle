@@ -212,6 +212,31 @@ pub struct EdgeSource(pub Entity);
 #[relationship(relationship_target = IncomingEdges)]
 pub struct EdgeTarget(pub Entity);
 
+/// The two ports of a connection, output → input.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PortPair {
+    /// Where the edge starts.
+    pub output: Entity,
+    /// Where the edge ends.
+    pub input: Entity,
+}
+
+impl PortPair {
+    /// The pair `output` → `input`.
+    pub const fn new(output: Entity, input: Entity) -> Self {
+        Self { output, input }
+    }
+
+    /// The port across from `port` (the output if `port` is not the output).
+    pub fn other(&self, port: Entity) -> Entity {
+        if port == self.output {
+            self.input
+        } else {
+            self.output
+        }
+    }
+}
+
 /// Edges leaving a port, maintained by Bevy.
 #[derive(Component, Reflect, Debug, Default, Clone, PartialEq, Deref)]
 #[reflect(Component, Default)]
@@ -270,26 +295,30 @@ pub struct EdgeGeometry {
     pub end_tangent: Vec2,
     /// `false` until both ends are laid out.
     pub valid: bool,
-    /// The ports at the output and input ends (the dragged wire's free end
-    /// has none until it snaps).
-    pub ports: [Option<Entity>; 2],
+    /// The port at the output end (none at a dragged wire's free end).
+    pub output: Option<Entity>,
+    /// The port at the input end (none at a dragged wire's free end).
+    pub input: Option<Entity>,
 }
 
 impl EdgeGeometry {
-    /// A valid geometry between two `(position, tangent)` ends, at `ports`.
-    pub fn between(
-        (start, start_tangent): (Vec2, Vec2),
-        (end, end_tangent): (Vec2, Vec2),
-        ports: [Option<Entity>; 2],
-    ) -> Self {
+    /// A valid geometry between two `(position, tangent)` ends, without ports.
+    pub fn between((start, start_tangent): (Vec2, Vec2), (end, end_tangent): (Vec2, Vec2)) -> Self {
         Self {
             start,
             end,
             start_tangent,
             end_tangent,
             valid: true,
-            ports,
+            output: None,
+            input: None,
         }
+    }
+
+    /// The same geometry, at these ports.
+    pub fn with_ports(mut self, output: Option<Entity>, input: Option<Entity>) -> Self {
+        (self.output, self.input) = (output, input);
+        self
     }
 
     /// Cubic Bézier control points; `curvature` 0.5 is a good default.

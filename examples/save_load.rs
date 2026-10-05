@@ -287,7 +287,7 @@ fn save_model(world: &mut World, canvas: Entity) -> Result<String> {
             let kind = |n| values.get(n).map_or(Kind::Sum, |v| Kind::Number(v.0));
             let at = |n| positions.get(n).map_or([0.0; 2], |p| p.0.to_array());
             let edges = graph.edges_in(canvas).into_iter().filter_map(|edge| {
-                let (output, input) = graph.edge_ports(edge)?;
+                let PortPair { output, input } = graph.edge_ports(edge)?;
                 let (from, to) = (graph.node_of(output)?, graph.node_of(input)?);
                 let output = graph.outputs_of(from).iter().position(|p| *p == output)?;
                 let input = graph.inputs_of(to).iter().position(|p| *p == input)?;

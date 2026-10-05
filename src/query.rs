@@ -6,6 +6,25 @@ use bevy::prelude::*;
 use crate::components::*;
 use crate::edit::RejectReason;
 
+/// A connection two ports may make, from [`GraphQuery::check_connection`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Connection {
+    /// The ports, normalized to output → input.
+    pub ports: PortPair,
+    /// Edges the connection replaces (at ports limited to one edge).
+    pub replaces: Vec<Entity>,
+    /// Why the built-in rules refuse it, if they do. [`EditRequested`](crate::EditRequested)
+    /// observers may override this.
+    pub refused: Option<RejectReason>,
+}
+
+impl Connection {
+    /// Whether the built-in rules allow it.
+    pub fn allowed(&self) -> bool {
+        self.refused.is_none()
+    }
+}
+
 /// Read access to graph structure. Every lookup resolves to the nearest
 /// enclosing canvas or node, so graphs can sit side by side or nest.
 #[derive(SystemParam)]
@@ -107,12 +126,12 @@ impl GraphQuery<'_, '_> {
             .collect()
     }
 
-    /// `(output, input)` ports of an edge.
-    pub fn edge_ports(&self, edge: Entity) -> Option<(Entity, Entity)> {
+    /// The ports of an edge.
+    pub fn edge_ports(&self, edge: Entity) -> Option<PortPair> {
         self.edges
             .get(edge)
             .ok()
-            .map(|(_, source, target)| (source.0, target.0))
+            .map(|(_, source, target)| PortPair::new(source.0, target.0))
     }
 
     /// Edges of a canvas (not of canvases nested inside it).
@@ -130,24 +149,22 @@ impl GraphQuery<'_, '_> {
         self.edges_of(port)
             .into_iter()
             .filter_map(|edge| self.edge_ports(edge))
-            .map(|(source, target)| if source == port { target } else { source })
+            .map(|ends| ends.other(port))
             .collect()
     }
 
-    /// Checks a connection (either order) on `canvas`. A connection that
-    /// cannot exist (missing ports, another canvas, the same node or
-    /// direction) is an `Err`. Otherwise it returns `(output, input, edges it
-    /// replaces, refusal)`: the refusal is the built-in rules' verdict (types,
-    /// already connected, full), which [`EditRequested`](crate::EditRequested)
-    /// observers may override;
-    /// [`GraphWorldExt::preview_edit`](crate::GraphWorldExt::preview_edit)
-    /// asks them.
+    /// Checks a connection between ports `a` and `b` (either order) on
+    /// `canvas`, by the built-in rules only. One that cannot exist (missing
+    /// ports, another canvas, the same node or direction) is an `Err`.
+    /// Otherwise the [`Connection`] holds the built-in verdict (types, already
+    /// connected, full), which [`EditRequested`](crate::EditRequested)
+    /// observers may override.
     pub fn check_connection(
         &self,
+        canvas: Entity,
         a: Entity,
         b: Entity,
-        canvas: Entity,
-    ) -> Result<(Entity, Entity, Vec<Entity>, Option<RejectReason>), RejectReason> {
+    ) -> Result<Connection, RejectReason> {
         let invalid = RejectReason::InvalidEntity;
         let (pa, pb) = (self.port(a).ok_or(invalid)?, self.port(b).ok_or(invalid)?);
         let (output, input) = match (pa.direction, pb.direction) {
@@ -183,6 +200,10 @@ impl GraphQuery<'_, '_> {
             }
         }
         replaces.dedup();
-        Ok((output, input, replaces, refused))
+        Ok(Connection {
+            ports: PortPair::new(output, input),
+            replaces,
+            refused,
+        })
     }
 }

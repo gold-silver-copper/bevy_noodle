@@ -62,7 +62,8 @@ fn applied_edits_report_their_ports() {
         .drain()
         .map(|e| e.ports)
         .collect();
-    assert_eq!(ports, [Some((out, inp)), Some((out, inp))]);
+    let pair = Some(PortPair::new(out, inp));
+    assert_eq!(ports, [pair, pair]);
 }
 
 #[test]

@@ -461,9 +461,10 @@ fn observers_may_allow_or_refuse_what_the_rules_decide() {
     let (canvas, p) = graph(w, &[Port::output(NUM), Port::input(TEXT)]);
     let (from, to) = (p[0], p[1]);
     // Inputs may come first; the refusal is the observers' to override.
-    let check = query(w, |g| g.check_connection(to, from, canvas));
-    let refusal = Some(RejectReason::IncompatibleTypes);
-    assert_eq!(check, Ok((from, to, vec![], refusal)));
+    let check = query(w, |g| g.check_connection(canvas, to, from)).unwrap();
+    assert_eq!(check.ports, PortPair::new(from, to));
+    assert_eq!(check.refused, Some(RejectReason::IncompatibleTypes));
+    assert!(check.replaces.is_empty() && !check.allowed());
     assert!(
         w.graph_edit(canvas, GraphEdit::Connect { from, to })
             .unwrap()
