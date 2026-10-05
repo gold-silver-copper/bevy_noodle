@@ -4,7 +4,7 @@ use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
+use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason, WhenFull};
 
 const NUM: PortType = PortType::named("num");
 const TEXT: PortType = PortType::named("text");
@@ -133,11 +133,10 @@ fn single_inputs_swap_and_wide_inputs_fill_up() {
         .map(|_| node(w, content, &[Port::output(NUM)]).1[0])
         .collect();
     let (_, single) = node(w, content, &[Port::input(NUM)]);
-    let (_, wide) = node(
-        w,
-        content,
-        &[Port::input(NUM).with_max_connections(Some(2))],
-    );
+    let wide = Port::input(NUM)
+        .with_max_connections(Some(2))
+        .when_full(WhenFull::Refuse);
+    let (_, wide) = node(w, content, &[wide]);
     for out in &outs[..2] {
         w.graph_edit(
             c,
@@ -472,7 +471,9 @@ fn observers_may_allow_or_refuse_what_the_rules_decide() {
 fn an_allowed_full_port_keeps_all_its_edges() {
     let mut app = app();
     let w = app.world_mut();
-    let wide = Port::input(NUM).with_max_connections(Some(2));
+    let wide = Port::input(NUM)
+        .with_max_connections(Some(2))
+        .when_full(WhenFull::Refuse);
     let out = Port::output(NUM);
     let (canvas, p) = graph(w, &[out, out, out, wide]);
     let to = p[3];
@@ -553,4 +554,23 @@ fn a_content_spawned_by_hand_replaces_the_empty_one() {
     w.flush();
     assert_eq!(query(w, |g| g.content_of(canvas)), Some(mine));
     assert_eq!(w.query::<&CanvasContent>().iter(w).count(), 1);
+}
+
+#[test]
+fn full_replacing_ports_drop_their_oldest_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let two = Port::input(NUM).with_max_connections(Some(2));
+    let out = Port::output(NUM);
+    let (canvas, p) = graph(w, &[out, out, out, two]);
+    let to = p[3];
+    let edges: Vec<Entity> = p[..3]
+        .iter()
+        .map(|from| {
+            let edit = GraphEdit::Connect { from: *from, to };
+            w.graph_edit(canvas, edit).unwrap().unwrap()
+        })
+        .collect();
+    assert!(w.get_entity(edges[0]).is_err(), "the oldest made room");
+    assert_eq!(query(w, |g| g.peers_of(to)), vec![p[1], p[2]]);
 }

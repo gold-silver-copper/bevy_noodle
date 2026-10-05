@@ -235,34 +235,53 @@ pub struct Port {
     pub direction: PortDirection,
     /// What the port carries.
     pub port_type: PortType,
-    /// `None` is unlimited. A full port with a limit of 1 swaps its edge; a
-    /// wider full port refuses (and keeps all its edges if an observer
-    /// allows the connection anyway).
+    /// How many edges it holds. `None` is unlimited.
     pub max_connections: Option<u32>,
+    /// What a new connection does when the port is full.
+    pub when_full: WhenFull,
+}
+
+/// What connecting to a full [`Port`] does.
+#[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WhenFull {
+    /// The connection is refused ([`RejectReason::PortFull`](crate::RejectReason::PortFull)).
+    /// If an observer allows it anyway, the port keeps all its edges.
+    #[default]
+    Refuse,
+    /// The port's oldest edges make room for it.
+    Replace,
 }
 
 impl Port {
-    /// An input accepting one connection.
+    /// An input holding one connection, which a new one replaces.
     pub const fn input(port_type: PortType) -> Self {
         Self {
             direction: PortDirection::Input,
             port_type,
             max_connections: Some(1),
+            when_full: WhenFull::Replace,
         }
     }
 
-    /// An output accepting any number of connections.
+    /// An output holding any number of connections.
     pub const fn output(port_type: PortType) -> Self {
         Self {
             direction: PortDirection::Output,
             port_type,
             max_connections: None,
+            when_full: WhenFull::Refuse,
         }
     }
 
     /// The same port with another connection limit (`None` is unlimited).
     pub const fn with_max_connections(mut self, max: Option<u32>) -> Self {
         self.max_connections = max;
+        self
+    }
+
+    /// The same port, doing `when_full` when full.
+    pub const fn when_full(mut self, when_full: WhenFull) -> Self {
+        self.when_full = when_full;
         self
     }
 

@@ -182,19 +182,22 @@ impl GraphQuery<'_, '_> {
         } else if self.peers_of(output).contains(&input) {
             refused = Some(RejectReason::AlreadyConnected);
         }
-        // A port limited to one edge swaps it; a full wider port refuses (and,
-        // if an observer allows it anyway, keeps all its edges).
+        // A full port makes room by dropping its oldest edges, or refuses.
         let mut replaces = Vec::new();
         for port in [output, input] {
-            let edges = self.edges_of(port);
-            match self.port(port).and_then(|p| p.max_connections) {
-                Some(1) if !edges.is_empty() => replaces.push(edges[0]),
-                Some(max) if edges.len() >= max as usize => {
-                    refused = refused.or(Some(RejectReason::PortFull));
-                }
-                _ => {}
+            let (Some(port_info), edges) = (self.port(port), self.edges_of(port)) else {
+                continue;
+            };
+            let Some(max) = port_info.max_connections.map(|m| m as usize) else {
+                continue;
+            };
+            match port_info.when_full {
+                _ if edges.len() < max => {}
+                WhenFull::Replace if max > 0 => replaces.extend(&edges[..=edges.len() - max]),
+                _ => refused = refused.or(Some(RejectReason::PortFull)),
             }
         }
+        replaces.sort();
         replaces.dedup();
         Ok(Connection {
             ports: PortPair::new(output, input),
