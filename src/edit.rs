@@ -40,13 +40,6 @@ pub enum GraphEdit {
         /// Nodes and edges (others are ignored).
         items: Vec<Entity>,
     },
-    /// Change which nodes and edges carry [`Selected`].
-    Select {
-        /// Nodes and edges (others are ignored).
-        items: Vec<Entity>,
-        /// How `items` combine with the current selection.
-        mode: SelectMode,
-    },
 }
 
 impl GraphEdit {
@@ -75,10 +68,10 @@ pub struct DragProgress {
     pub is_final: bool,
 }
 
-/// How [`GraphEdit::Select`] combines its items with the current selection.
+/// How [`GraphCommandsExt::select`] combines its items with the current selection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Reflect)]
 pub enum SelectMode {
-    /// Select exactly these nodes.
+    /// Select exactly these.
     #[default]
     Replace,
     /// Add these to the selection.
@@ -200,11 +193,18 @@ pub trait GraphCommandsExt {
     fn graph_edit(&mut self, canvas: Entity, edit: GraphEdit) {
         self.graph_edit_with_origin(canvas, edit, EditOrigin::Code);
     }
+
+    /// Queue a selection change (see [`GraphWorldExt::select`]).
+    fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode);
 }
 
 impl GraphCommandsExt for Commands<'_, '_> {
     fn graph_edit_with_origin(&mut self, canvas: Entity, edit: GraphEdit, origin: EditOrigin) {
         self.queue(move |world: &mut World| _ = world.graph_edit_with_origin(canvas, edit, origin));
+    }
+
+    fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
+        self.queue(move |world: &mut World| world.select(canvas, items, mode));
     }
 }
 
@@ -226,6 +226,12 @@ pub trait GraphWorldExt {
     /// Whether `edit` would apply, asking [`EditRequested`] observers (with
     /// `preview` set) without changing anything.
     fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason>;
+
+    /// Changes which nodes and edges of `canvas` carry [`Selected`], combining
+    /// `items` (others are ignored) with the selection by `mode`. Selection
+    /// is not an edit: react to it with `On<Add, Selected>` and
+    /// `On<Remove, Selected>` observers, or `Has<Selected>`.
+    fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode);
 }
 
 impl GraphWorldExt for World {
@@ -249,6 +255,47 @@ impl GraphWorldExt for World {
     fn preview_edit(&mut self, canvas: Entity, edit: GraphEdit) -> Result<(), RejectReason> {
         run(self, canvas, edit, EditOrigin::Interaction, true).map(|_| ())
     }
+
+    fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
+        let changes = self.run_system_cached_with(plan_selection, (canvas, items, mode));
+        for (item, on) in changes.unwrap_or_default() {
+            match on {
+                true => _ = self.entity_mut(item).insert(Selected),
+                false => _ = self.entity_mut(item).remove::<Selected>(),
+            }
+        }
+    }
+}
+
+/// The selection changes `items` make with `mode`: `(item, selected)`.
+fn plan_selection(
+    In((canvas, mut items, mode)): In<(Entity, Vec<Entity>, SelectMode)>,
+    graph: GraphQuery,
+) -> Vec<(Entity, bool)> {
+    let item = |e: &Entity| {
+        let node_or_edge = graph.node_of(*e) == Some(*e) || graph.edge_ports(*e).is_some();
+        node_or_edge && graph.canvas_of(*e) == Some(canvas)
+    };
+    items.retain(item);
+    // Only what is selected now or listed can change.
+    let mut candidates: Vec<Entity> = graph.selected_in(canvas).collect();
+    candidates.extend(items.iter().copied());
+    candidates.sort();
+    candidates.dedup();
+    let mut changes = Vec::new();
+    for item in candidates {
+        let (listed, on) = (items.contains(&item), graph.is_selected(item));
+        let want = match mode {
+            SelectMode::Replace => listed,
+            SelectMode::Add => on || listed,
+            SelectMode::Remove => on && !listed,
+            SelectMode::Toggle => on != listed,
+        };
+        if want != on {
+            changes.push((item, want));
+        }
+    }
+    changes
 }
 
 /// A validated edit and its side effects.
@@ -260,8 +307,6 @@ struct Plan {
     content: Option<Entity>,
     /// Edges (and their ports) removed first, each reported as a disconnect.
     disconnect: Vec<(Entity, PortPair)>,
-    /// Selection changes.
-    select: Vec<(Entity, bool)>,
 }
 
 fn run(
@@ -298,7 +343,6 @@ fn run(
         edit,
         content,
         disconnect,
-        select,
         ..
     } = plan(world, request.edit)?;
     let applied = |world: &mut World, edit, created, ports| {
@@ -341,14 +385,6 @@ fn run(
         }
         // Listed edges are already gone.
         GraphEdit::Delete { items } => items.iter().for_each(|e| _ = world.try_despawn(*e)),
-        GraphEdit::Select { .. } => {
-            for (node, on) in select {
-                match on {
-                    true => _ = world.entity_mut(node).insert(Selected),
-                    false => _ = world.entity_mut(node).remove::<Selected>(),
-                }
-            }
-        }
     }
     applied(world, edit, created, ports);
     Ok(created)
@@ -357,7 +393,6 @@ fn run(
 fn plan_edit(
     In((canvas, mut edit)): In<(Entity, GraphEdit)>,
     graph: GraphQuery,
-    selected: Query<Entity, With<Selected>>,
 ) -> Result<Plan, RejectReason> {
     if graph.canvas_of(canvas) != Some(canvas) {
         return Err(RejectReason::InvalidEntity);
@@ -367,7 +402,7 @@ fn plan_edit(
     let here = |e: &Entity| graph.canvas_of(*e) == Some(canvas);
     let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && here(e);
     let edge = |e: &Entity| graph.edge_ports(*e).is_some() && here(e);
-    let (mut disconnect, mut select, mut refused) = (Vec::new(), Vec::new(), None);
+    let (mut disconnect, mut refused) = (Vec::new(), None);
     match &mut edit {
         GraphEdit::Connect { from, to } => {
             let connection = graph.check_connection(canvas, *from, *to)?;
@@ -394,27 +429,6 @@ fn plan_edit(
             disconnect.sort();
             disconnect.dedup();
         }
-        GraphEdit::Select { items, mode } => {
-            items.retain(|e| mine(e) || edge(e));
-            // Only what is selected now or listed can change.
-            let mut candidates: Vec<Entity> =
-                selected.iter().filter(|e| mine(e) || edge(e)).collect();
-            candidates.extend(items.iter().copied());
-            candidates.sort();
-            candidates.dedup();
-            for item in candidates {
-                let (listed, on) = (items.contains(&item), selected.contains(item));
-                let want = match mode {
-                    SelectMode::Replace => listed,
-                    SelectMode::Add => on || listed,
-                    SelectMode::Remove => on && !listed,
-                    SelectMode::Toggle => on != listed,
-                };
-                if want != on {
-                    select.push((item, want));
-                }
-            }
-        }
     }
     if let GraphEdit::MoveNodes { nodes: items, .. } | GraphEdit::Delete { items } = &edit
         && items.is_empty()
@@ -430,6 +444,5 @@ fn plan_edit(
         refused,
         content: graph.content_of(canvas),
         disconnect,
-        select,
     })
 }

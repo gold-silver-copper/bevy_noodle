@@ -19,9 +19,7 @@ use bevy::picking::pointer::{PointerButton, PointerId, PointerLocation};
 use bevy::picking::{Pickable, PickingSystems};
 use bevy::prelude::*;
 use bevy::ui::picking_backend::ui_picking;
-use bevy::ui::{
-    ComputedNode, InteractionDisabled, Selected, UiScale, ui_transform::UiGlobalTransform,
-};
+use bevy::ui::{ComputedNode, InteractionDisabled, UiScale, ui_transform::UiGlobalTransform};
 
 use crate::components::*;
 use crate::edit::{
@@ -160,7 +158,6 @@ struct Ctx<'w, 's> {
         ),
     >,
     disabled: Query<'w, 's, (), With<InteractionDisabled>>,
-    selected: Query<'w, 's, (), With<Selected>>,
     handles: Query<'w, 's, (), With<NodeDragHandle>>,
     controls: Query<'w, 's, (), With<TabIndex>>,
     parents: Query<'w, 's, &'static ChildOf>,
@@ -266,7 +263,7 @@ impl Ctx<'_, '_> {
         is_final: bool,
     ) {
         let scale = self.ui_scale.0 * self.view(canvas).zoom;
-        let nodes = self.selection(canvas, node);
+        let nodes = self.graph.selection_with(node);
         let (delta, total) = (delta / scale, total / scale);
         let drag = Some(DragProgress { total, is_final });
         self.edit(canvas, GraphEdit::MoveNodes { nodes, delta, drag });
@@ -277,19 +274,8 @@ impl Ctx<'_, '_> {
             .graph_edit_with_origin(canvas, edit, EditOrigin::Interaction);
     }
 
-    fn select(&mut self, canvas: Entity, nodes: Vec<Entity>, mode: SelectMode) {
-        self.edit(canvas, GraphEdit::Select { items: nodes, mode });
-    }
-
-    /// The selected nodes of `canvas`, or just `node` if it isn't selected.
-    fn selection(&self, canvas: Entity, node: Entity) -> Vec<Entity> {
-        let mut nodes = self.graph.nodes_in(canvas);
-        nodes.retain(|n| self.selected.contains(*n));
-        if nodes.contains(&node) {
-            nodes
-        } else {
-            vec![node]
-        }
+    fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
+        self.commands.select(canvas, items, mode);
     }
 
     /// The entities from `original` up to, not including, `item`.
@@ -334,7 +320,7 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx) {
             press.propagate(false);
             if additive {
                 ctx.select(canvas, vec![item], SelectMode::Toggle);
-            } else if !ctx.selected.contains(item) {
+            } else if !ctx.graph.is_selected(item) {
                 ctx.select(canvas, vec![item], SelectMode::Replace);
             }
             if let (Hop::Node(_), true, Ok(parent)) =
@@ -390,7 +376,7 @@ fn on_drag_start(
                 target: None,
             });
         }
-        Gesture::Move(node) if !ctx.selected.contains(node) => {
+        Gesture::Move(node) if !ctx.graph.is_selected(node) => {
             ctx.select(canvas, vec![node], SelectMode::Replace);
         }
         _ => {}

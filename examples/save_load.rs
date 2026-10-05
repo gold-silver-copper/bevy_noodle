@@ -30,7 +30,6 @@ use bevy::feathers::theme::UiTheme;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::text::EditableText;
-use bevy::ui::Selected;
 use bevy::ui_widgets::ValueChange;
 use bevy::world_serialization::serde::WorldDeserializer;
 use bevy_noodle::prelude::*;
@@ -224,13 +223,13 @@ fn evaluate(
 
 fn keys(
     keys: Res<ButtonInput<KeyCode>>,
-    selected: Query<Entity, With<Selected>>,
-    graph: Res<Graph>,
+    graph: GraphQuery,
+    canvas: Res<Graph>,
     mut commands: Commands,
 ) {
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
-        let nodes = selected.iter().collect();
-        commands.graph_edit(graph.0, GraphEdit::Delete { items: nodes });
+        let items = graph.selected_in(canvas.0).collect();
+        commands.graph_edit(canvas.0, GraphEdit::Delete { items });
     }
     let action: fn(&mut World, Entity) -> Result<String> = match () {
         _ if keys.just_pressed(KeyCode::KeyS) => save,
@@ -240,7 +239,7 @@ fn keys(
         _ if keys.just_pressed(KeyCode::KeyO) => open_model,
         _ => return,
     };
-    let canvas = graph.0;
+    let canvas = canvas.0;
     commands.queue(move |world: &mut World| {
         let message = action(world, canvas).unwrap_or_else(|error| format!("failed: {error}"));
         info!("{message}");

@@ -19,7 +19,6 @@ use bevy::feathers::theme::UiTheme;
 use bevy::input_focus::InputFocus;
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextEditChange};
-use bevy::ui::Selected;
 use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::{SelectionBoxStyle, kit};
@@ -323,18 +322,14 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
 /// A key binding is just a system triggering an edit.
 fn delete_selection(
     keys: Res<ButtonInput<KeyCode>>,
-    selected: Query<Entity, With<Selected>>,
+    graph: GraphQuery,
     canvases: Query<Entity, With<NodeCanvas>>,
     mut commands: Commands,
 ) {
     if keys.just_pressed(KeyCode::Delete) {
         for canvas in &canvases {
-            commands.graph_edit(
-                canvas,
-                GraphEdit::Delete {
-                    items: selected.iter().collect(),
-                },
-            );
+            let items = graph.selected_in(canvas).collect();
+            commands.graph_edit(canvas, GraphEdit::Delete { items });
         }
     }
 }

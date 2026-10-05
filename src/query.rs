@@ -2,6 +2,7 @@
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
+use bevy::ui::Selected;
 
 use crate::components::*;
 use crate::edit::RejectReason;
@@ -44,6 +45,7 @@ pub struct GraphQuery<'w, 's> {
         ),
     >,
     edges: Query<'w, 's, (Entity, &'static EdgeSource, &'static EdgeTarget)>,
+    selected: Query<'w, 's, Entity, With<Selected>>,
 }
 
 impl GraphQuery<'_, '_> {
@@ -70,6 +72,32 @@ impl GraphQuery<'_, '_> {
     /// The [`CanvasContent`] of a canvas.
     pub fn content_of(&self, canvas: Entity) -> Option<Entity> {
         self.contents.get(canvas).ok().map(|c| **c)
+    }
+
+    /// Selected nodes and edges of a canvas (not of canvases nested inside it).
+    pub fn selected_in(&self, canvas: Entity) -> impl Iterator<Item = Entity> + '_ {
+        self.selected.iter().filter(move |e| {
+            let item = self.nodes.contains(*e) || self.edges.contains(*e);
+            item && self.canvas_of(*e) == Some(canvas)
+        })
+    }
+
+    /// What moving `node` moves: the selected nodes of its canvas if it is
+    /// one of them, else just `node`.
+    pub fn selection_with(&self, node: Entity) -> Vec<Entity> {
+        let canvas = self.canvas_of(node);
+        match (canvas, self.is_selected(node)) {
+            (Some(canvas), true) => self
+                .selected_in(canvas)
+                .filter(|e| self.nodes.contains(*e))
+                .collect(),
+            _ => vec![node],
+        }
+    }
+
+    /// Whether `entity` is [`Selected`].
+    pub fn is_selected(&self, entity: Entity) -> bool {
+        self.selected.contains(entity)
     }
 
     /// The [`Port`] on `entity`, if it is one.

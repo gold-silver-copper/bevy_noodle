@@ -217,10 +217,7 @@ fn sum_of(node: Entity, graph: &GraphQuery, values: &Query<&Value>, depth: u8) -
 
 /// Edits worth undoing record a snapshot once they have applied.
 fn record_edits(mut applied: MessageReader<EditApplied>, mut commands: Commands) {
-    let worth_undoing = |edit: &GraphEdit| match edit {
-        GraphEdit::Select { .. } => false,
-        _ => !edit.is_drag_step(),
-    };
+    let worth_undoing = |edit: &GraphEdit| !edit.is_drag_step();
     // Read every message (`any` would stop early and leave some for next frame).
     if applied.read().filter(|e| worth_undoing(&e.edit)).count() > 0 {
         commands.queue(record);
@@ -296,11 +293,7 @@ fn paste(world: &mut World) {
     // The next paste lands a step further along.
     let next = scene::snapshot_nodes(world, &nodes);
     world.resource_mut::<Clipboard>().0 = Some(next);
-    let select = GraphEdit::Select {
-        items: nodes,
-        mode: SelectMode::Replace,
-    };
-    world.graph_edit(canvas, select).ok();
+    world.select(canvas, nodes, SelectMode::Replace);
     record(world);
 }
 
@@ -366,12 +359,12 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
 /// Selected nodes and edges.
 fn delete_selection(
     keys: Res<ButtonInput<KeyCode>>,
-    selected: Query<Entity, With<Selected>>,
-    graph: Res<Graph>,
+    graph: GraphQuery,
+    canvas: Res<Graph>,
     mut commands: Commands,
 ) {
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
-        let nodes = selected.iter().collect();
-        commands.graph_edit(graph.0, GraphEdit::Delete { items: nodes });
+        let items = graph.selected_in(canvas.0).collect();
+        commands.graph_edit(canvas.0, GraphEdit::Delete { items });
     }
 }

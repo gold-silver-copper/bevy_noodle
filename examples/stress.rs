@@ -200,11 +200,7 @@ fn churn(
     // Selecting: now and then a random handful.
     if stress.below(20) == 0 {
         let picked = (0..10).filter_map(|_| stress.pick(&nodes)).collect();
-        let edit = GraphEdit::Select {
-            items: picked,
-            mode: SelectMode::Replace,
-        };
-        commands.graph_edit(canvas, edit);
+        commands.select(canvas, picked, SelectMode::Replace);
     }
 }
 

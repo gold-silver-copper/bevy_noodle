@@ -10,7 +10,7 @@ use bevy::input::keyboard::KeyboardInput;
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex, TabNavigationPlugin};
 use bevy::input_focus::{FocusGained, FocusedInput};
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, Selected};
+use bevy::ui::ComputedNode;
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
@@ -107,7 +107,6 @@ fn on_key(
     graph: GraphQuery,
     keyboards: Query<&CanvasKeyboard>,
     keys: Res<ButtonInput<KeyCode>>,
-    selected: Query<(), With<Selected>>,
     wires: Query<(Entity, &PendingWire)>,
     anchors: Query<&PortAnchor>,
     mut views: Query<(&mut CanvasView, &ComputedNode)>,
@@ -178,22 +177,11 @@ fn on_key(
         } else {
             SelectMode::Replace
         };
-        commands.graph_edit_with_origin(
-            canvas,
-            GraphEdit::Select {
-                items: vec![node],
-                mode,
-            },
-            origin,
-        );
+        commands.select(canvas, vec![node], mode);
     } else if let (Some(node), Some(direction)) = (node, direction) {
         let delta = directions[direction] * settings.step;
-        let mut nodes = graph.nodes_in(canvas);
-        nodes.retain(|n| selected.contains(*n));
-        if !nodes.contains(&node) {
-            nodes = vec![node];
-        }
-        commands.graph_edit_with_origin(canvas, GraphEdit::move_nodes(nodes, delta), origin);
+        let edit = GraphEdit::move_nodes(graph.selection_with(node), delta);
+        commands.graph_edit_with_origin(canvas, edit, origin);
     } else {
         return;
     }

@@ -309,8 +309,7 @@ fn graph_changed(
     added: Query<(), Added<GraphNode>>,
     edited: Query<(), Changed<Kind>>,
 ) -> bool {
-    let structural =
-        |edit: &GraphEdit| !matches!(edit, GraphEdit::Select { .. } | GraphEdit::MoveNodes { .. });
+    let structural = |edit: &GraphEdit| !matches!(edit, GraphEdit::MoveNodes { .. });
     // Read every message (`any` would stop early and leave some for next frame).
     applied.read().filter(|e| structural(&e.edit)).count() > 0
         || !added.is_empty()

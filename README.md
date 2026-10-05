@@ -115,8 +115,10 @@ NodeCanvas              one graph and its viewport
 - **Read** with the `GraphQuery` system param (`nodes_in`, `edges_of`,
   `peers_of`, …).
 - **Write** with `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`;
-  also `Disconnect`, `MoveNodes`, `Delete` and `Select`. Nodes are just
-  spawned, as children of the canvas.
+  also `Disconnect`, `MoveNodes` and `Delete`. Nodes are just spawned, as
+  children of the canvas.
+- **Select** with `commands.select(canvas, items, mode)`; selection is Bevy's
+  `Selected` component, not an edit.
 - **Validate** in `On<EditRequested>` observers: `allow()` or `reject()` any
   edit, including the built-in type rules.
 - **React** to `EditApplied`.

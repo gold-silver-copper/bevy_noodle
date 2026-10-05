@@ -22,7 +22,6 @@ use bevy::feathers::theme::UiTheme;
 use bevy::input_focus::{AutoFocus, InputFocus};
 use bevy::prelude::*;
 use bevy::text::EditableText;
-use bevy::ui::Selected;
 use bevy::ui_widgets::ValueChange;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
@@ -130,13 +129,13 @@ fn setup(mut commands: Commands) {
 /// A key binding is a system: Delete removes the selected nodes and edges.
 fn delete_selection(
     keys: Res<ButtonInput<KeyCode>>,
-    selected: Query<Entity, With<Selected>>,
-    graph: Res<Graph>,
+    graph: GraphQuery,
+    canvas: Res<Graph>,
     mut commands: Commands,
 ) {
     if keys.just_pressed(KeyCode::Delete) || keys.just_pressed(KeyCode::Backspace) {
-        let items = selected.iter().collect();
-        commands.graph_edit(graph.0, GraphEdit::Delete { items });
+        let items = graph.selected_in(canvas.0).collect();
+        commands.graph_edit(canvas.0, GraphEdit::Delete { items });
     }
 }
 

@@ -31,7 +31,6 @@ fn kind(edit: &GraphEdit) -> &'static str {
         GraphEdit::Disconnect { .. } => "disconnect",
         GraphEdit::MoveNodes { .. } => "move",
         GraphEdit::Delete { .. } => "delete",
-        GraphEdit::Select { .. } => "select",
     }
 }
 
@@ -246,14 +245,7 @@ fn selection_modes() {
     let (c, content) = canvas(w, None);
     let n: Vec<Entity> = (0..3).map(|_| node(w, content, &[]).0).collect();
     let mut select = |nodes: &[usize], mode| {
-        w.graph_edit(
-            c,
-            GraphEdit::Select {
-                items: nodes.iter().map(|i| n[*i]).collect(),
-                mode,
-            },
-        )
-        .unwrap();
+        w.select(c, nodes.iter().map(|i| n[*i]).collect(), mode);
         n.iter()
             .map(|e| w.get::<Selected>(*e).is_some())
             .collect::<Vec<_>>()
@@ -262,6 +254,20 @@ fn selection_modes() {
     assert_eq!(select(&[1, 2], SelectMode::Toggle), [true, false, true]);
     assert_eq!(select(&[0], SelectMode::Remove), [false, false, true]);
     assert_eq!(select(&[1], SelectMode::Add), [false, true, true]);
+    assert!(log(&mut app).is_empty(), "selection is not an edit");
+
+    // Other graphs' entities are ignored, and stay selected.
+    let w = app.world_mut();
+    let (other, other_content) = canvas(w, None);
+    let (stranger, _) = node(w, other_content, &[]);
+    w.select(other, vec![stranger], SelectMode::Replace);
+    w.select(c, vec![stranger, n[0]], SelectMode::Replace);
+    assert!(w.get::<Selected>(stranger).is_some());
+    let mut selected = query(w, |g| g.selected_in(c).collect::<Vec<_>>());
+    selected.sort();
+    assert_eq!(selected, [n[0]]);
+    assert_eq!(query(w, |g| g.selection_with(n[0])), [n[0]]);
+    assert_eq!(query(w, |g| g.selection_with(n[2])), [n[2]]);
 }
 
 #[test]
@@ -400,10 +406,7 @@ fn edges_can_be_selected_and_deleted_with_nodes() {
     };
     let e1 = connect(w, a[0], b[0]);
     let e2 = connect(w, a[0], cc[0]);
-    let select = |w: &mut World, nodes, mode| {
-        w.graph_edit(c, GraphEdit::Select { items: nodes, mode })
-            .unwrap();
-    };
+    let select = |w: &mut World, items, mode| w.select(c, items, mode);
     select(w, vec![e1, nb], SelectMode::Replace);
     assert!(w.get::<Selected>(e1).is_some() && w.get::<Selected>(nb).is_some());
     select(w, vec![nc], SelectMode::Replace);
