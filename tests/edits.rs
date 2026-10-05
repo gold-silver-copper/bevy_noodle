@@ -396,19 +396,6 @@ fn commands_apply_on_flush_and_types_are_auto_registered() {
     }
 }
 
-/// Raising a pressed node re-adds it to its parent; Bevy moves it last.
-#[test]
-fn re_adding_a_child_moves_it_last() {
-    let mut world = World::new();
-    let parent = world.spawn_empty().id();
-    let (first, second) = (
-        world.spawn(ChildOf(parent)).id(),
-        world.spawn(ChildOf(parent)).id(),
-    );
-    world.entity_mut(parent).add_child(first);
-    assert_eq!(**world.get::<Children>(parent).unwrap(), [second, first]);
-}
-
 #[test]
 fn edges_can_be_selected_and_deleted_with_nodes() {
     let mut app = app();

@@ -1,24 +1,54 @@
 # Changelog
 
-## 0.4.0 - 2026-10-04
+## 0.4.0 - 2026-10-05
 
 ### Changed (breaking)
-- `EdgeStyle::layer: EdgeLayer` is now `below_nodes: bool`, the same bit
-  `EdgeHitbox` already had. `EdgeLayer` is gone.
-- `GraphQuery::check_connection` returns the built-in verdict too:
-  `(output, input, replaces, refusal)`, where `refusal` is what
-  `EditRequested` observers may override.
-- `FrameAll` is gone: the `auto_layout` example frames every node (F) in a
-  few lines of app code.
-- `NoodleSystems::Measure` is gone: ports are measured in Bevy's
-  `UiSystems::PostLayout`; order your systems against that.
-- `EdgeGeometry` has a `ports` field (the output and input ports), and
-  `EdgeGeometry::between` takes it.
+- Canvases spawn their own `CanvasContent` (linked by the `ContentOf` /
+  `Content` relationship), and nodes spawned as children of a canvas move
+  into it: `commands.spawn((kit::node(at), ChildOf(canvas)))`.
+- Selection is not a graph edit: `GraphEdit::Select` is gone. Use
+  `commands.select(canvas, items, mode)` (or `world.select`), read it with
+  `GraphQuery::selected_in` and `selection_with`, and react to Bevy's
+  `Selected` being added or removed.
+- Connection rules live in `ConnectionCheck` observers (`allow()` /
+  `reject()` the built-in verdict), asked by real connects and by previews
+  alike (dragged wires, keyboard connections,
+  `GraphWorldExt::preview_connection`). `EditRequested` fires only for edits
+  about to apply, may rewrite them (a rewritten connect is checked again) or
+  `reject()` them, and is the place for side effects. Marking a dragged
+  wire's candidates is about six times faster.
+- `GraphQuery::check_connection(canvas, a, b)` takes the canvas first and
+  returns a `Connection { ports, replaces, refused }`. Port pairs are a
+  `PortPair { output, input }` everywhere (`edge_ports`, `EditApplied::ports`).
+- `GraphEdit::MoveNodes { nodes, delta, drag }`: build complete moves with
+  `GraphEdit::move_nodes`; pointer drags add a `DragProgress { total,
+  is_final }`, and `GraphEdit::is_drag_step` tells undo stacks what to skip.
+- Ports say what a full port does: `Port::when_full` is `WhenFull::Replace`
+  (the oldest edges make room; the default for inputs) or `WhenFull::Refuse`.
+- Zoom limits are `CanvasView::min_zoom`/`max_zoom`; `zoom_around` keeps to
+  them.
+- `GraphQuery` methods listing entities return iterators. `nodes_in` and
+  `ports_of` walk only the graph they are asked about.
+- Key settings are lists (empty unbinds): `CanvasKeyboard` has `move_left`
+  … `move_down` and `zoom_in`/`zoom_out`, and `CanvasInteraction::zoom_keys`
+  is `zoom_modifiers`. Both share one default for additive selection.
+- `EdgeGeometry` is present only while both ends are laid out (no `valid`
+  flag), with `output`/`input` ports; `EdgeGeometry::between` takes no ports
+  (`with_ports` adds them).
+- Pressing a node raises it with a `ZIndex` instead of reordering children;
+  nodes with a negative `ZIndex` stay under.
+- `EditRejected` and `WireDropped` are messages too, like `EditApplied`.
+- `PortType`'s fields are private (`PortType::named`, `id`); it prints its
+  name. `PortAnchor`'s fields are read-only (`GraphQuery::port_position`).
+- Core modules are private: everything is at the crate root, and the
+  prelude has what apps use. Snapshots are `SnapshotWorldExt` methods
+  (`world.snapshot`, `snapshot_nodes`, `insert_snapshot`, `restore_snapshot`).
+- `EdgeStyle::layer: EdgeLayer` is now `below_nodes: bool`. `FrameAll` and
+  `NoodleSystems::Measure` are gone: ports are measured in Bevy's
+  `UiSystems::PostLayout`.
 - Spawning a `PendingWire` marks the ports it may connect to with
-  `WireCandidate` (component hooks), and despawning it clears them, so custom
-  bindings that make wires get candidates for free.
-- The `FocusOutline` follows `InputFocus` (and `InputFocusVisible`) in a
-  system, so it also appears when focus becomes visible later.
+  `WireCandidate`, and despawning it clears them, so custom bindings that
+  make wires get candidates for free.
 
 ### Added
 - Controls inside nodes: a press or drag that starts in a focusable control
@@ -26,37 +56,31 @@
   fields, color pickers and menus no longer select, raise or move the node.
 - `scene::Transient`: snapshots leave out entities marked with it (and their
   descendants), for UI the app rebuilds from its own data.
-- Connection rules observers can override: `EditRequested::refused` carries
-  the built-in verdict (types, already connected, full port), and observers
-  may `allow()` or `reject()` it. `EditRequested::preview` and
-  `GraphWorldExt::preview_edit` ask observers without applying anything;
-  dragged wires and keyboard connections snap to ports observers would allow.
-  `type_conversion` now uses real int and float ports.
 - Keyboard use, opt-in per canvas: `NoodleKeyboardPlugin` and
   `CanvasKeyboard` (Tab focus, Enter, arrows, Space to connect, Escape), built
   on `bevy_input_focus`; a `FocusOutline` in the default style.
   Ctrl/Cmd+arrows pan the view and +/- zoom it. Example: `keyboard`.
-- Examples: `comment_frames`, `reroute`, `type_conversion`, `minimap`,
-  `auto_layout`.
+- Examples: `comment_frames`, `reroute`, `type_conversion` (int and float
+  ports with a converter), `minimap`, `auto_layout`.
 - `kit::input_dot`/`kit::output_dot`: port rows without labels, about a
   fifth fewer UI entities per node and no text to lay out. The `stress`
   example switches to them with T.
+- `tools/audit_inputs`: runs the examples and checks every text field's
+  focus and cursor.
 
 ### Fixed
 - Edges of an outer graph are pickable where they pass over a nested canvas.
 - New wires and selection boxes show in the frame they appear, not the next.
 - Restoring or inserting a snapshot no longer leaves children it left out
   listed in their parent's `Children`.
-
-### Changed
-- `save_load` also saves and opens the graph model alone (a few hundred
-  bytes instead of a full snapshot).
+- The `FocusOutline` also appears when focus becomes visible later.
 
 ### Examples
 - styled, editor, save_load, subgraph, scene_builder_3d, type_conversion,
   keyboard and comment_frames edit every value in the node, with Bevy's
   feathers controls (number fields, sliders, color pickers, a dropdown) or
-  `EditableText`, and show results live.
+  `EditableText`, and show results live. `save_load` also saves the graph
+  model alone (a few hundred bytes instead of a full snapshot).
 - Text fields show their cursor and selection: `math_graph` and
   `comment_frames` give theirs a `TextCursorStyle`, and the feathers examples
   work around two `bevy_feathers` 0.19 issues (`examples/feathers_fixes`):
