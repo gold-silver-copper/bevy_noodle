@@ -56,7 +56,7 @@ fn setup(mut commands: Commands) {
             Frame,
             GraphNode,
             NodePosition(at),
-            // Under the nodes, whatever order they are raised in.
+            // Under the nodes: raising leaves a negative `ZIndex` alone.
             ZIndex(-1),
             Node {
                 width: px(size.x),

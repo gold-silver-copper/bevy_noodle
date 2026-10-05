@@ -430,3 +430,31 @@ fn dragging_off_a_connected_input_picks_up_its_wire() {
     assert_eq!(w.query::<&Edge>().iter(w).count(), 0, "dropped on nothing");
     assert!(w.get::<WireCandidate>(input).is_none());
 }
+
+#[test]
+fn pressing_raises_nodes_without_reordering_them() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let spawn = |w: &mut World, z: i32| {
+        let node = (GraphNode, Node::default(), ZIndex(z), ChildOf(content));
+        w.spawn(node).id()
+    };
+    let (a, b, frame) = (spawn(w, 0), spawn(w, 0), spawn(w, -1));
+    let order = w.get::<Children>(content).unwrap().to_vec();
+    let press = |w: &mut World, node| {
+        let button = PointerButton::Primary;
+        let (hit, count) = (hit(), 1);
+        pointer(w, node, Press { button, hit, count });
+    };
+    let z = |w: &World, node| w.get::<ZIndex>(node).unwrap().0;
+    press(w, a);
+    assert!(z(w, a) > z(w, b));
+    press(w, b);
+    assert!(z(w, b) > z(w, a));
+    press(w, b);
+    assert_eq!(z(w, b), 2, "already on top");
+    press(w, frame);
+    assert_eq!(z(w, frame), -1, "negative ZIndex stays under");
+    assert_eq!(w.get::<Children>(content).unwrap().to_vec(), order);
+}

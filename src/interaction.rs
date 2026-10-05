@@ -62,7 +62,9 @@ pub struct CanvasInteraction {
     pub pan_button: Option<PointerButton>,
     /// Dragging from a connected input picks up its wire.
     pub detach_wires: bool,
-    /// Pressing a node moves it last among its siblings (on top).
+    /// Pressing a node raises it above its sibling nodes, with a `ZIndex`.
+    /// Nodes with a negative `ZIndex` stay where they are (e.g. frames meant
+    /// to stay under the others).
     pub raise_on_press: bool,
     /// Held keys making selection additive.
     pub additive_keys: Vec<KeyCode>,
@@ -160,6 +162,7 @@ struct Ctx<'w, 's> {
     controls: Query<'w, 's, (), With<TabIndex>>,
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
+    z_indices: Query<'w, 's, &'static ZIndex>,
     keys: Option<Res<'w, ButtonInput<KeyCode>>>,
     ui_scale: Res<'w, UiScale>,
     commands: Commands<'w, 's>,
@@ -276,6 +279,26 @@ impl Ctx<'_, '_> {
         self.commands.select(canvas, items, mode);
     }
 
+    /// Puts `node` above its sibling nodes, unless its `ZIndex` is negative.
+    fn raise(&mut self, node: Entity) {
+        let z = |e: Entity| self.z_indices.get(e).map_or(0, |z| z.0);
+        let Ok(parent) = self.parents.get(node) else {
+            return;
+        };
+        let siblings = self
+            .children
+            .get(parent.parent())
+            .into_iter()
+            .flatten()
+            .copied();
+        let others = siblings.filter(|s| *s != node && self.graph.node_of(*s) == Some(*s));
+        let top = others.map(|s| z(s)).max();
+        if z(node) >= 0 && top.is_some_and(|top| z(node) <= top) {
+            let above = top.unwrap_or_default().saturating_add(1);
+            self.commands.entity(node).insert(ZIndex(above));
+        }
+    }
+
     /// The entities from `original` up to, not including, `item`.
     fn path(&self, item: Entity, original: Entity) -> impl Iterator<Item = Entity> {
         let ancestors = std::iter::once(original).chain(self.parents.iter_ancestors(original));
@@ -321,10 +344,8 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx) {
             } else if !ctx.graph.is_selected(item) {
                 ctx.select(canvas, vec![item], SelectMode::Replace);
             }
-            if let (Hop::Node(_), true, Ok(parent)) =
-                (hop, settings.raise_on_press, ctx.parents.get(item))
-            {
-                ctx.commands.entity(parent.parent()).add_child(item);
+            if let (Hop::Node(_), true) = (hop, settings.raise_on_press) {
+                ctx.raise(item);
             }
         }
         Hop::Canvas if selecting && ctx.on_background(canvas, press.original_event_target()) => {
