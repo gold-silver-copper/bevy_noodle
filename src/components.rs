@@ -340,17 +340,32 @@ impl Port {
 #[reflect(Component)]
 pub struct PortTangent(pub Vec2);
 
-/// Where a port is, measured after layout (graph space).
+/// Where a port is, measured after layout (graph space). The library keeps
+/// it up to date; read it here or with [`GraphQuery::port_position`](crate::GraphQuery::port_position).
 #[derive(Component, Reflect, Debug, Default, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct PortAnchor {
-    /// The [`GraphNode`] the port belongs to.
     #[entities]
-    pub node: Option<Entity>,
+    pub(crate) node: Option<Entity>,
+    pub(crate) offset: Vec2,
+    pub(crate) position: Option<Vec2>,
+}
+
+impl PortAnchor {
+    /// The [`GraphNode`] the port belongs to.
+    pub fn node(&self) -> Option<Entity> {
+        self.node
+    }
+
     /// Center relative to the node's [`NodePosition`].
-    pub offset: Vec2,
-    /// Center in graph space at the last layout.
-    pub position: Option<Vec2>,
+    pub fn offset(&self) -> Vec2 {
+        self.offset
+    }
+
+    /// Center in graph space at the last layout; `None` until laid out.
+    pub fn position(&self) -> Option<Vec2> {
+        self.position
+    }
 }
 
 /// A connection, spawned as a child of the canvas' [`CanvasContent`] (so the

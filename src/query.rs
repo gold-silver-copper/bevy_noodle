@@ -42,6 +42,7 @@ pub struct GraphQuery<'w, 's> {
             &'static Port,
             Option<&'static OutgoingEdges>,
             Option<&'static IncomingEdges>,
+            &'static PortAnchor,
         ),
     >,
     edges: Query<'w, 's, (Entity, &'static EdgeSource, &'static EdgeTarget)>,
@@ -98,6 +99,12 @@ impl GraphQuery<'_, '_> {
     /// Whether `entity` is [`Selected`].
     pub fn is_selected(&self, entity: Entity) -> bool {
         self.selected.contains(entity)
+    }
+
+    /// Where a port's center is in graph space, as of the last layout;
+    /// `None` until it is laid out.
+    pub fn port_position(&self, port: Entity) -> Option<Vec2> {
+        self.ports.get(port).ok()?.3.position()
     }
 
     /// The [`Port`] on `entity`, if it is one.
@@ -160,7 +167,9 @@ impl GraphQuery<'_, '_> {
         let (incoming, outgoing) = self
             .ports
             .get(port)
-            .map_or((None, None), |(_, outgoing, incoming)| (incoming, outgoing));
+            .map_or((None, None), |(_, outgoing, incoming, _)| {
+                (incoming, outgoing)
+            });
         let incoming = incoming
             .into_iter()
             .flat_map(|e| e.as_slice().iter().copied());

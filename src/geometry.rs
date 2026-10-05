@@ -199,6 +199,9 @@ mod tests {
         let geometry = *app.world().get::<EdgeGeometry>(edge).unwrap();
         assert_eq!((geometry.start.x, geometry.end.x), (0.0, 100.0));
         assert_eq!((geometry.output, geometry.input), (Some(out), Some(inp)));
+        let mut state = bevy::ecs::system::SystemState::<GraphQuery>::new(app.world_mut());
+        let graph = state.get(app.world()).unwrap();
+        assert_eq!(graph.port_position(inp), Some(Vec2::new(100.0, 0.0)));
         measure(&mut app, None);
         assert!(app.world().get::<EdgeGeometry>(edge).is_none());
     }
