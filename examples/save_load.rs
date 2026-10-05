@@ -10,7 +10,7 @@
 //! connects.
 //!
 //! Type into a Number's field to change its value; the Sum updates live, and
-//! both kinds of save keep it. Fields are [`scene::Transient`]: a field is
+//! both kinds of save keep it. Fields are `Transient`: a field is
 //! rebuilt for every node that gets a `Value`, loaded ones included.
 //!
 //! S saves a snapshot, L loads it, M saves the model, O opens it, N clears
@@ -33,7 +33,6 @@ use bevy::text::EditableText;
 use bevy::ui_widgets::ValueChange;
 use bevy::world_serialization::serde::WorldDeserializer;
 use bevy_noodle::prelude::*;
-use bevy_noodle::scene;
 use bevy_noodle::style::kit;
 use serde::de::DeserializeSeed;
 
@@ -149,7 +148,7 @@ fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Comman
         let margin = UiRect::horizontal(px(kit::PADDING));
         let field = commands
             .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
-            .insert(scene::Transient)
+            .insert(Transient)
             .id();
         commands.entity(node).insert_child(1, field);
         commands.trigger(UpdateNumberInput {
@@ -248,7 +247,7 @@ fn keys(
 }
 
 fn save(world: &mut World, canvas: Entity) -> Result<String> {
-    let snapshot = scene::snapshot(world, canvas).ok_or("not a canvas")?;
+    let snapshot = world.snapshot(canvas).ok_or("not a canvas")?;
     let ron = snapshot.serialize(&world.resource::<AppTypeRegistry>().read())?;
     std::fs::write(file(), &ron)?;
     let (entities, bytes) = (snapshot.entities.len(), ron.len());
@@ -267,12 +266,12 @@ fn load(world: &mut World, canvas: Entity) -> Result<String> {
         load_from_path: &mut assets,
     }
     .deserialize(&mut ron::Deserializer::from_str(&ron)?)?;
-    scene::restore(world, canvas, &snapshot)?;
+    world.restore_snapshot(canvas, &snapshot)?;
     Ok(format!("loaded {} entities", snapshot.entities.len()))
 }
 
 fn clear(world: &mut World, canvas: Entity) -> Result<String> {
-    scene::restore(world, canvas, &default())?;
+    world.restore_snapshot(canvas, &default())?;
     Ok("cleared".into())
 }
 

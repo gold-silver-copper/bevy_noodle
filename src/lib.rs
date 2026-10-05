@@ -30,12 +30,12 @@
 #![allow(clippy::type_complexity)]
 #![warn(missing_docs)]
 
-pub mod components;
-pub mod edit;
+mod components;
+mod edit;
 mod geometry;
-pub mod interaction;
-pub mod keyboard;
-pub mod query;
+mod interaction;
+mod keyboard;
+mod query;
 #[cfg(feature = "scene")]
 pub mod scene;
 #[cfg(feature = "default_style")]
@@ -97,16 +97,23 @@ impl Plugin for NoodleCorePlugin {
     }
 }
 
-/// Everything most apps need: `use bevy_noodle::prelude::*;`.
+/// Everything most apps need: `use bevy_noodle::prelude::*;`. The rest
+/// (relationship targets, measured anchors) is at the crate root.
 pub mod prelude {
+    #[cfg(feature = "scene")]
+    pub use crate::scene::{SnapshotWorldExt, Transient};
     #[cfg(feature = "default_style")]
-    pub use crate::style::{CanvasGrid, EdgeStyle, NoodleDefaultStylePlugin, PortColor};
+    pub use crate::style::{
+        CanvasGrid, EdgeStyle, FocusOutline, NoodleDefaultStylePlugin, PortColor, PortHighlight,
+        SelectedBorderColor, SelectionBoxStyle,
+    };
     pub use crate::{
-        CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, ConnectionCheck, Edge,
-        EdgeGeometry, EdgeHitbox, EdgeSource, EdgeTarget, EditApplied, EditOrigin, EditRequested,
-        GraphCommandsExt, GraphEdit, GraphNode, GraphQuery, GraphWorldExt, NodeCanvas,
-        NodeDragHandle, NodePosition, NoodleCorePlugin, NoodleInteractionPlugin,
-        NoodleKeyboardPlugin, NoodlePlugins, PendingWire, Port, PortDirection, PortPair, PortType,
-        SelectMode, WireDropped,
+        CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Connection, ConnectionCheck,
+        DragProgress, Edge, EdgeGeometry, EdgeHitbox, EdgeSource, EdgeTarget, EditApplied,
+        EditOrigin, EditRejected, EditRequested, GraphCommandsExt, GraphEdit, GraphNode,
+        GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition, NoodleCorePlugin,
+        NoodleInteractionPlugin, NoodleKeyboardPlugin, NoodlePlugins, NoodleSystems, PendingWire,
+        Port, PortDirection, PortPair, PortTangent, PortType, RejectReason, ScrollMode, SelectMode,
+        SelectionBox, WhenFull, WireCandidate, WireDropped, WireTarget,
     };
 }

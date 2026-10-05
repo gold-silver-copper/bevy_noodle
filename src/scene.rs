@@ -29,16 +29,66 @@ use crate::components::*;
 #[derive(Component, Default, Clone, Copy, Debug)]
 pub struct Transient;
 
-/// Capture the whole graph of `canvas`. `None` if it has no [`CanvasContent`].
-pub fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
+/// Graph snapshots on a [`World`], as [`GraphWorldExt`](crate::GraphWorldExt)
+/// is for edits.
+pub trait SnapshotWorldExt {
+    /// Capture the whole graph of `canvas`. `None` if it is not a canvas.
+    fn snapshot(&self, canvas: Entity) -> Option<DynamicWorld>;
+
+    /// Capture some nodes (e.g. the selection, to copy) with the edges
+    /// between them. Edges to nodes left out are dropped.
+    fn snapshot_nodes(&self, nodes: &[Entity]) -> DynamicWorld;
+
+    /// Add a snapshot's entities to the graph of `canvas` (e.g. to paste),
+    /// and return the map from snapshot entities to the new ones.
+    fn insert_snapshot(
+        &mut self,
+        canvas: Entity,
+        snapshot: &DynamicWorld,
+    ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError>;
+
+    /// Replace the graph of `canvas` with `snapshot` (e.g. to load or undo),
+    /// and return the map from snapshot entities to the new ones.
+    fn restore_snapshot(
+        &mut self,
+        canvas: Entity,
+        snapshot: &DynamicWorld,
+    ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError>;
+}
+
+impl SnapshotWorldExt for World {
+    fn snapshot(&self, canvas: Entity) -> Option<DynamicWorld> {
+        snapshot(self, canvas)
+    }
+
+    fn snapshot_nodes(&self, nodes: &[Entity]) -> DynamicWorld {
+        snapshot_nodes(self, nodes)
+    }
+
+    fn insert_snapshot(
+        &mut self,
+        canvas: Entity,
+        snapshot: &DynamicWorld,
+    ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
+        insert(self, canvas, snapshot)
+    }
+
+    fn restore_snapshot(
+        &mut self,
+        canvas: Entity,
+        snapshot: &DynamicWorld,
+    ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
+        restore(self, canvas, snapshot)
+    }
+}
+
+fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
     let content = content(world, canvas)?;
     let roots = world.get::<Children>(content).map_or(&[][..], |c| c);
     Some(build(world, subtrees(world, roots)))
 }
 
-/// Capture some nodes (e.g. the selection, to copy) with the edges between
-/// them. Edges to nodes left out are dropped.
-pub fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
+fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
     let mut entities = subtrees(world, nodes);
     let inside: EntityHashSet = entities.iter().copied().collect();
     let edges = entities
@@ -55,9 +105,7 @@ pub fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
     build(world, entities)
 }
 
-/// Add a snapshot's entities to the graph of `canvas` (e.g. to paste), and
-/// return the map from snapshot entities to the new ones.
-pub fn insert(
+fn insert(
     world: &mut World,
     canvas: Entity,
     snapshot: &DynamicWorld,
@@ -102,9 +150,7 @@ pub fn insert(
     Ok(map)
 }
 
-/// Replace the graph of `canvas` with `snapshot` (e.g. to load or undo), and
-/// return the map from snapshot entities to the new ones.
-pub fn restore(
+fn restore(
     world: &mut World,
     canvas: Entity,
     snapshot: &DynamicWorld,

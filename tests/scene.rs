@@ -96,7 +96,7 @@ fn snapshot_round_trip() {
     let node = w.get::<ChildOf>(out).unwrap().parent();
     let control = w.spawn((scene::Transient, ChildOf(node))).id();
     w.spawn(ChildOf(control));
-    let saved = scene::snapshot(w, canvas).unwrap();
+    let saved = w.snapshot(canvas).unwrap();
     assert_eq!(saved.entities.len(), 5, "two nodes, two ports and an edge");
 
     // Change everything, then restore.
@@ -104,7 +104,7 @@ fn snapshot_round_trip() {
     w.graph_edit(canvas, GraphEdit::Delete { items: nodes })
         .unwrap();
     assert!(w.get::<Children>(content).is_none_or(|c| c.is_empty()));
-    let map = scene::restore(w, canvas, &saved).unwrap();
+    let map = w.restore_snapshot(canvas, &saved).unwrap();
     app.update();
 
     let w = app.world_mut();
@@ -129,7 +129,7 @@ fn snapshot_serializes_to_ron() {
     let (canvas, _, [out, inp]) = graph(w);
     w.graph_edit(canvas, GraphEdit::Connect { from: out, to: inp })
         .unwrap();
-    let saved = scene::snapshot(w, canvas).unwrap();
+    let saved = w.snapshot(canvas).unwrap();
     let ron = saved
         .serialize(&w.resource::<AppTypeRegistry>().read())
         .unwrap();
@@ -148,7 +148,7 @@ fn snapshot_serializes_to_ron() {
         .deserialize(&mut ron::Deserializer::from_str(&ron).unwrap())
         .unwrap()
     };
-    let map = scene::restore(w, canvas, &loaded).unwrap();
+    let map = w.restore_snapshot(canvas, &loaded).unwrap();
     assert_eq!(w.get::<Port>(map[&out]).unwrap().port_type, NUM);
     let edit = GraphEdit::Connect {
         from: map[&out],
@@ -177,11 +177,11 @@ fn copy_some_nodes_and_paste_them_anywhere() {
             .unwrap();
     }
     let node_of = |w: &World, port| w.get::<ChildOf>(port).unwrap().parent();
-    let copied = scene::snapshot_nodes(w, &[node_of(w, out), node_of(w, inp)]);
+    let copied = w.snapshot_nodes(&[node_of(w, out), node_of(w, inp)]);
     assert_eq!(copied.entities.len(), 5, "two nodes, two ports, one edge");
 
     // Paste into the same graph: the copy is wired only to itself.
-    let map = scene::insert(w, canvas, &copied).unwrap();
+    let map = w.insert_snapshot(canvas, &copied).unwrap();
     let (new_out, new_in) = (map[&out], map[&inp]);
     assert_eq!(w.get::<OutgoingEdges>(out).unwrap().len(), 2);
     let new_edges: Vec<_> = w.get::<OutgoingEdges>(new_out).unwrap().iter().collect();
@@ -196,7 +196,7 @@ fn copy_some_nodes_and_paste_them_anywhere() {
     // And into another graph.
     let other = w.spawn((NodeCanvas, Node::default())).id();
     let other_content = content_of(w, other);
-    let map = scene::insert(w, other, &copied).unwrap();
+    let map = w.insert_snapshot(other, &copied).unwrap();
     let edge = w.get::<OutgoingEdges>(map[&out]).unwrap()[0];
     assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), other_content);
     assert_eq!(w.get::<Children>(other_content).unwrap().len(), 3);
@@ -220,8 +220,8 @@ fn nested_canvases_restore_with_one_content_each() {
     ));
     w.flush();
     assert_eq!(w.get::<Children>(inner_content).map(|c| c.len()), Some(1));
-    let saved = scene::snapshot(w, canvas).unwrap();
-    let map = scene::restore(w, canvas, &saved).unwrap();
+    let saved = w.snapshot(canvas).unwrap();
+    let map = w.restore_snapshot(canvas, &saved).unwrap();
     app.update();
 
     let w = app.world_mut();

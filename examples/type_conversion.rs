@@ -16,7 +16,6 @@ use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
 use bevy::prelude::*;
 use bevy::ui_widgets::ValueChange;
-use bevy_noodle::RejectReason;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 

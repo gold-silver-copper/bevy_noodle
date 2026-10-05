@@ -9,7 +9,7 @@
 //!   Right-click adds a node on empty canvas, or removes the edge under it.
 //! - Type into a Number's field: Add shows the sum live, and the finished
 //!   edit (Enter or leaving the field) is recorded for undo too. Fields are
-//!   [`scene::Transient`]: snapshots keep the reflected `Value`, and a field
+//!   `Transient`: snapshots keep the reflected `Value`, and a field
 //!   is rebuilt for every node that gets one.
 //!
 //! ```sh
@@ -27,7 +27,6 @@ use bevy::ui::Selected;
 use bevy::ui_widgets::ValueChange;
 use bevy::world_serialization::DynamicWorld;
 use bevy_noodle::prelude::*;
-use bevy_noodle::scene;
 use bevy_noodle::style::kit;
 
 mod feathers_fixes;
@@ -159,7 +158,7 @@ fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Comman
         let margin = UiRect::horizontal(px(kit::PADDING));
         let field = commands
             .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
-            .insert(scene::Transient)
+            .insert(Transient)
             .id();
         commands.entity(node).insert_child(1, field);
         commands.trigger(UpdateNumberInput {
@@ -226,7 +225,7 @@ fn record_edits(mut applied: MessageReader<EditApplied>, mut commands: Commands)
 }
 
 fn record(world: &mut World) {
-    let Some(now) = scene::snapshot(world, world.resource::<Graph>().0) else {
+    let Some(now) = world.snapshot(world.resource::<Graph>().0) else {
         return;
     };
     let mut history = world.resource_mut::<History>();
@@ -259,7 +258,7 @@ fn copy(world: &mut World) {
     let mut selected = world.query_filtered::<Entity, (With<GraphNode>, With<Selected>)>();
     let nodes: Vec<_> = selected.iter(world).collect();
     if !nodes.is_empty() {
-        let copied = scene::snapshot_nodes(world, &nodes);
+        let copied = world.snapshot_nodes(&nodes);
         world.resource_mut::<Clipboard>().0 = Some(copied);
     }
 }
@@ -269,7 +268,7 @@ fn paste(world: &mut World) {
     let Some(copied) = world.resource_mut::<Clipboard>().0.take() else {
         return;
     };
-    let pasted = match scene::insert(world, canvas, &copied) {
+    let pasted = match world.insert_snapshot(canvas, &copied) {
         Ok(map) => copied
             .entities
             .iter()
@@ -292,7 +291,7 @@ fn paste(world: &mut World) {
         }
     }
     // The next paste lands a step further along.
-    let next = scene::snapshot_nodes(world, &nodes);
+    let next = world.snapshot_nodes(&nodes);
     world.resource_mut::<Clipboard>().0 = Some(next);
     world.select(canvas, nodes, SelectMode::Replace);
     record(world);
@@ -312,7 +311,7 @@ fn step(world: &mut World, redo: bool) {
             return;
         };
         to.push(shown);
-        if let Err(error) = scene::restore(world, canvas, &target) {
+        if let Err(error) = world.restore_snapshot(canvas, &target) {
             error!("restoring a snapshot failed: {error}");
         }
         *current = Some(target);
