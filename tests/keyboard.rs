@@ -170,3 +170,14 @@ fn modified_arrows_pan_and_plus_minus_zoom() {
     press(&mut app, g.nodes[0], KeyCode::Minus);
     assert!((app.world().get::<CanvasView>(g.canvas).unwrap().zoom - 1.0).abs() < 1e-5);
 }
+
+#[test]
+fn keyboard_zoom_stays_within_the_view_limits() {
+    let (mut app, g) = app();
+    app.world_mut()
+        .get_mut::<CanvasView>(g.canvas)
+        .unwrap()
+        .max_zoom = 1.1;
+    press(&mut app, g.nodes[0], KeyCode::Equal);
+    assert_eq!(app.world().get::<CanvasView>(g.canvas).unwrap().zoom, 1.1);
+}

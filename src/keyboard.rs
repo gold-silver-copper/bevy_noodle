@@ -14,7 +14,7 @@ use bevy::ui::{ComputedNode, Selected};
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{CanvasInteraction, WireCandidate, retarget};
+use crate::interaction::{WireCandidate, retarget};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -54,7 +54,7 @@ pub struct CanvasKeyboard {
     /// How far one key press pans, in canvas pixels.
     pub pan_step: f32,
     /// Zoom in and out around the canvas centre, by `zoom_step`. The zoom
-    /// stays within the canvas's [`CanvasInteraction`] limits (or 0.1 to 4).
+    /// stays within the [`CanvasView`] limits.
     pub zoom_keys: Option<[KeyCode; 2]>,
     /// The zoom factor of one key press.
     pub zoom_step: f32,
@@ -110,7 +110,7 @@ fn on_key(
     selected: Query<(), With<Selected>>,
     wires: Query<(Entity, &PendingWire)>,
     anchors: Query<&PortAnchor>,
-    mut views: Query<(&mut CanvasView, &ComputedNode, Option<&CanvasInteraction>)>,
+    mut views: Query<(&mut CanvasView, &ComputedNode)>,
     mut commands: Commands,
 ) {
     // Act once, where the key was pressed (it then bubbles up to the window).
@@ -137,7 +137,7 @@ fn on_key(
             .then_some(step)
             .or((code == Some(zoom_out)).then_some(1.0 / step))
     });
-    if let (Ok((mut view, computed, interaction)), true) = (
+    if let (Ok((mut view, computed)), true) = (
         views.get_mut(canvas),
         (panning && direction.is_some()) || zoom.is_some(),
     ) {
@@ -147,8 +147,7 @@ fn on_key(
         }
         if let Some(factor) = zoom {
             let centre = computed.size() * computed.inverse_scale_factor() / 2.0;
-            let (min, max) = interaction.map_or((0.1, 4.0), |i| (i.zoom_min, i.zoom_max));
-            view.zoom_around(centre, factor, min, max);
+            view.zoom_around(centre, factor);
         }
     } else if code == settings.connect && graph.port(target).is_some() {
         match wire {

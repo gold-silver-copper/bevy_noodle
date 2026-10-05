@@ -76,10 +76,6 @@ pub struct CanvasInteraction {
     pub scroll: ScrollMode,
     /// Trackpad pinch zooms.
     pub pinch_zoom: bool,
-    /// Smallest zoom.
-    pub zoom_min: f32,
-    /// Largest zoom.
-    pub zoom_max: f32,
 }
 
 impl Default for CanvasInteraction {
@@ -103,8 +99,6 @@ impl Default for CanvasInteraction {
             zoom_keys: vec![ControlLeft, ControlRight, SuperLeft, SuperRight],
             scroll: ScrollMode::Auto,
             pinch_zoom: true,
-            zoom_min: 0.1,
-            zoom_max: 4.0,
         }
     }
 }
@@ -512,7 +506,7 @@ fn on_scroll(mut scroll: On<Pointer<Scroll>>, mut ctx: Ctx) {
     let anchor = ctx.local(canvas, scroll.pointer_location.position);
     let view = &mut ctx.canvases.get_mut(canvas).expect("checked").1;
     if zoom {
-        view.zoom_around(anchor, factor, settings.zoom_min, settings.zoom_max);
+        view.zoom_around(anchor, factor);
     } else {
         view.pan += Vec2::new(scroll.x, scroll.y) * step;
     }
@@ -543,7 +537,7 @@ fn pinch_zoom(
     if settings.pinch_zoom {
         let anchor = ctx.local(canvas, location.position);
         let mut view = ctx.canvases.get_mut(canvas).expect("found").1;
-        view.zoom_around(anchor, 1.0 + magnify, settings.zoom_min, settings.zoom_max);
+        view.zoom_around(anchor, 1.0 + magnify);
     }
 }
 

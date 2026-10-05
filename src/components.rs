@@ -45,7 +45,9 @@ pub(crate) fn ensure_content(world: &mut World, canvas: Entity) -> Option<Entity
 }
 
 /// The canvas camera: `pan` is where the graph origin appears (canvas-local
-/// logical pixels) and `zoom` scales graph space.
+/// logical pixels) and `zoom` scales graph space, within `min_zoom` and
+/// `max_zoom` when zoomed with [`zoom_around`](Self::zoom_around) (as the
+/// pointer and keyboard do).
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component, Default)]
 pub struct CanvasView {
@@ -53,6 +55,10 @@ pub struct CanvasView {
     pub pan: Vec2,
     /// Scale of graph space: 1 is one logical pixel per graph unit.
     pub zoom: f32,
+    /// Smallest zoom.
+    pub min_zoom: f32,
+    /// Largest zoom.
+    pub max_zoom: f32,
 }
 
 impl Default for CanvasView {
@@ -60,6 +66,8 @@ impl Default for CanvasView {
         Self {
             pan: Vec2::ZERO,
             zoom: 1.0,
+            min_zoom: 0.1,
+            max_zoom: 4.0,
         }
     }
 }
@@ -75,11 +83,11 @@ impl CanvasView {
         (point - self.pan) / self.zoom.max(f32::EPSILON)
     }
 
-    /// Scales the zoom by `factor` (clamped) keeping the graph point under the
-    /// canvas-local `anchor` in place.
-    pub fn zoom_around(&mut self, anchor: Vec2, factor: f32, min: f32, max: f32) {
+    /// Scales the zoom by `factor`, within the limits, keeping the graph
+    /// point under the canvas-local `anchor` in place.
+    pub fn zoom_around(&mut self, anchor: Vec2, factor: f32) {
         let fixed = self.canvas_to_graph(anchor);
-        self.zoom = (self.zoom * factor).clamp(min, max);
+        self.zoom = (self.zoom * factor).clamp(self.min_zoom, self.max_zoom);
         self.pan = anchor - fixed * self.zoom;
     }
 }
@@ -476,7 +484,9 @@ mod tests {
         let mut view = CanvasView::default();
         let anchor = Vec2::new(300.0, 200.0);
         let before = view.canvas_to_graph(anchor);
-        view.zoom_around(anchor, 1.7, 0.1, 4.0);
+        view.zoom_around(anchor, 1.7);
         assert!((view.canvas_to_graph(anchor) - before).length() < 1e-3);
+        view.zoom_around(anchor, 100.0);
+        assert_eq!(view.zoom, view.max_zoom);
     }
 }

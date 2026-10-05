@@ -74,8 +74,8 @@ fn nested() -> impl Bundle {
         ..default()
     };
     let view = CanvasView {
-        pan: Vec2::ZERO,
         zoom: 0.7,
+        ..default()
     };
     (
         viewport,
