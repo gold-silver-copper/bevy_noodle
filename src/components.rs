@@ -1,11 +1,12 @@
 //! The components that make up a graph. You insert [`NodeCanvas`],
 //! [`CanvasContent`], [`GraphNode`] and [`Port`]; the library manages edges.
 
+use bevy::curve::cubic_splines::CubicSegment;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
-use bevy::math::cubic_splines::CubicSegment;
 use bevy::picking::Pickable;
 use bevy::prelude::*;
+use bevy::ui::Selectable;
 
 /// A graph and its viewport. Adds no background; it spawns its
 /// [`CanvasContent`] child, which holds the nodes. Spawn nodes as children of
@@ -155,15 +156,18 @@ fn content_node() -> Node {
 
 /// Marks the root UI entity of a node. Style it however you like. A node
 /// spawned as a child of a [`NodeCanvas`] moves into its [`CanvasContent`].
+/// Nodes are Bevy `Selectable`s: with an `AccessibilityNode`, their
+/// `Selected` state reaches screen readers.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
+#[require(Selectable)]
 pub struct GraphNode;
 
 /// A node put under a canvas moves into the canvas's content. An observer,
 /// not a hook: it runs after `ChildOf`'s hooks, so their queued commands
 /// (giving the canvas its `Children`) apply before the move.
 pub(crate) fn adopt_nodes(
-    insert: On<Insert, (GraphNode, ChildOf)>,
+    insert: On<Insert<(GraphNode, ChildOf)>>,
     nodes: Query<&ChildOf, With<GraphNode>>,
     canvases: Query<(), With<NodeCanvas>>,
     mut commands: Commands,
@@ -372,6 +376,7 @@ impl PortAnchor {
 /// content subtree is the whole graph) and despawned with either port.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
+#[require(Selectable)]
 pub struct Edge;
 
 /// The output port an [`Edge`] starts at.

@@ -31,7 +31,8 @@ fn app() -> (App, Graph) {
         NoodleKeyboardPlugin,
     ))
     .init_resource::<UiScale>()
-    .init_resource::<HoverMap>();
+    .init_resource::<HoverMap>()
+    .init_resource::<bevy::picking::pointer::PointerMap>();
     let w = app.world_mut();
     w.spawn((Window::default(), PrimaryWindow));
     let canvas = w

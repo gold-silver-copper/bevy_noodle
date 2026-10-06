@@ -1,20 +1,27 @@
-//! Workarounds for two `bevy_feathers` 0.19 text input issues, shared by the
-//! examples that put feathers fields in nodes. Drop them once fixed upstream.
+//! Feathers glue shared by the examples that put feathers fields in nodes:
+//! workarounds for two `bevy_feathers` text input issues (still present in
+//! 0.20; drop them once fixed upstream), and number fields that show what
+//! they send.
 
-use bevy::feathers::controls::{FeathersTextInput, FeathersTextInputContainer};
+use bevy::feathers::controls::{
+    FeathersNumberInput, FeathersTextInput, FeathersTextInputContainer, NumberInputValue,
+};
 use bevy::feathers::theme::UiTheme;
 use bevy::feathers::tokens;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::input_focus::{FocusCause, FocusGained, InputFocus};
 use bevy::prelude::*;
 use bevy::text::{EditableText, TextCursorStyle};
+use bevy::ui_widgets::ValueChange;
 
 pub struct FeathersFixesPlugin;
 
 impl Plugin for FeathersFixesPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PreUpdate, (color_new_cursors, focusable_frames))
-            .add_observer(focus_field_in_frame);
+            .add_observer(focus_field_in_frame)
+            .add_observer(show_number(NumberInputValue::F32))
+            .add_observer(show_number(NumberInputValue::I32));
     }
 }
 
@@ -58,5 +65,18 @@ fn focus_field_in_frame(
         && let Some(field) = children.iter().find(|&c| fields.contains(c))
     {
         focus.set(field, FocusCause::Pressed);
+    }
+}
+
+/// Feathers number fields are controlled: they show the value they are
+/// given, not what is typed or dragged. The examples keep the value in their
+/// own components, so each field shows what it just sent.
+fn show_number<T: Copy + Send + Sync + 'static>(
+    value: fn(T) -> NumberInputValue,
+) -> impl Fn(On<ValueChange<T>>, Query<(), With<FeathersNumberInput>>, Commands) {
+    move |change, fields, mut commands| {
+        if fields.contains(change.source) {
+            commands.entity(change.source).insert(value(change.value));
+        }
     }
 }

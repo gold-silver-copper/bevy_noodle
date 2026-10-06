@@ -21,7 +21,7 @@ pub(crate) fn sync_layout(
         node.top = Val::Px(position.y);
     }
     for (view, children) in &canvases {
-        let mut contents = contents.iter_many_mut(children);
+        let mut contents = contents.iter_many_mut(children).matched();
         while let Some(mut transform) = contents.fetch_next() {
             let wanted = UiTransform {
                 translation: Val2::px(view.pan.x, view.pan.y),

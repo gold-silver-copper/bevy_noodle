@@ -3,6 +3,9 @@
 ## 0.4.0 - 2026-10-05
 
 ### Changed (breaking)
+- Requires Bevy 0.20 and Rust 1.96. Pointer events are Bevy's flat
+  `PointerPress`, `PointerDrag`, … events; the default style's shaders are
+  WESL.
 - Canvases spawn their own `CanvasContent` (linked by the `ContentOf` /
   `Content` relationship), and nodes spawned as children of a canvas move
   into it: `commands.spawn((kit::node(at), ChildOf(canvas)))`.
@@ -51,6 +54,12 @@
   make wires get candidates for free.
 
 ### Added
+- Hover cursors from Bevy's `EntityCursor` in the default style: `kit`
+  nodes show a grab hand and ports a crosshair, which stays while a wire is
+  dragged (`OverrideCursor`). `NoodleDefaultStylePlugin` adds Bevy's
+  `CursorIconPlugin` if the app has not.
+- Nodes and edges are Bevy `Selectable`s, so with an `AccessibilityNode`
+  their `Selected` state reaches screen readers.
 - Controls inside nodes: a press or drag that starts in a focusable control
   (anything with a `TabIndex`) belongs to the control, so sliders, text
   fields, color pickers and menus no longer select, raise or move the node.
@@ -79,7 +88,9 @@
 - styled, editor, save_load, subgraph, scene_builder_3d, type_conversion,
   keyboard and comment_frames edit every value in the node, with Bevy's
   feathers controls (number fields, sliders, color pickers, a dropdown) or
-  `EditableText`, and show results live. `save_load` also saves the graph
+  `EditableText` with Bevy's `TextInput`, and show results live. Feathers
+  number fields can be dragged to scrub their value; the ring count in
+  `scene_builder_3d` has a `HardLimit`. `save_load` also saves the graph
   model alone (a few hundred bytes instead of a full snapshot).
 - Text fields show their cursor and selection: `math_graph` and
   `comment_frames` give theirs a `TextCursorStyle`, and the feathers examples

@@ -14,10 +14,12 @@ pub mod kit;
 mod render;
 
 use bevy::input_focus::{InputFocus, InputFocusVisible};
-use bevy::picking::Pickable;
+use bevy::picking::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor};
 use bevy::picking::hover::PickingInteraction;
+use bevy::picking::{Pickable, PickingSystems};
 use bevy::prelude::*;
 use bevy::ui::{ComputedNode, Selected};
+use bevy::window::SystemCursorIcon;
 
 use crate::interaction::{SelectionBox, WireCandidate, WireTarget};
 use crate::{NoodleSystems, components::*, query::GraphQuery};
@@ -28,18 +30,24 @@ pub struct NoodleDefaultStylePlugin;
 
 impl Plugin for NoodleDefaultStylePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(MaterialsPlugin).add_systems(
-            PostUpdate,
-            (
-                draw_edges,
-                draw_grids,
-                draw_selection_boxes,
-                highlight_ports,
-                selected_borders,
-                outline_focus,
+        // Bevy's hover cursors, for the cursors `kit` puts on nodes and ports.
+        if !app.is_plugin_added::<CursorIconPlugin>() {
+            app.add_plugins(CursorIconPlugin);
+        }
+        app.add_plugins(MaterialsPlugin)
+            .add_systems(
+                PostUpdate,
+                (
+                    draw_edges,
+                    draw_grids,
+                    draw_selection_boxes,
+                    highlight_ports,
+                    selected_borders,
+                    outline_focus,
+                )
+                    .in_set(NoodleSystems::Render),
             )
-                .in_set(NoodleSystems::Render),
-        );
+            .add_systems(PreUpdate, wire_cursor.after(PickingSystems::Last));
     }
 }
 
@@ -478,6 +486,29 @@ fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut 
     }
 }
 
+/// A crosshair while a wire is dragged, wherever the pointer is: Bevy's
+/// [`OverrideCursor`], set and cleared only by this system.
+fn wire_cursor(
+    wires: Query<(), With<PendingWire>>,
+    mut cursor: ResMut<OverrideCursor>,
+    mut ours: Local<bool>,
+) {
+    let crosshair = EntityCursor::System(SystemCursorIcon::Crosshair);
+    match (wires.is_empty(), *ours) {
+        (false, false) if cursor.0.is_none() => {
+            cursor.0 = Some(crosshair);
+            *ours = true;
+        }
+        (true, true) => {
+            if cursor.0 == Some(crosshair) {
+                cursor.0 = None;
+            }
+            *ours = false;
+        }
+        _ => {}
+    }
+}
+
 /// Keyboard focus on a node or port of a canvas with [`FocusOutline`] shows it.
 fn outline_focus(
     focus: Res<InputFocus>,
@@ -502,5 +533,35 @@ fn outline_focus(
         let outline = Outline::new(px(style.width), px(2), style.color);
         commands.entity(entity).insert(outline);
         *shown = Some(entity);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dragging_a_wire_overrides_the_cursor_until_it_ends() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin))
+            .init_resource::<OverrideCursor>()
+            .add_systems(Update, wire_cursor);
+        let w = app.world_mut();
+        let canvas = w.spawn((NodeCanvas, Node::default())).id();
+        let node = w.spawn((GraphNode, ChildOf(canvas))).id();
+        let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
+        let wire = PendingWire {
+            canvas,
+            from,
+            pointer: Vec2::ZERO,
+            target: None,
+        };
+        let wire = w.spawn(wire).id();
+        app.update();
+        let crosshair = Some(EntityCursor::System(SystemCursorIcon::Crosshair));
+        assert_eq!(app.world().resource::<OverrideCursor>().0, crosshair);
+        app.world_mut().despawn(wire);
+        app.update();
+        assert_eq!(app.world().resource::<OverrideCursor>().0, None);
     }
 }

@@ -9,9 +9,7 @@
 //! ```
 
 use bevy::feathers::FeathersPlugins;
-use bevy::feathers::controls::{
-    FeathersNumberInput, NumberFormat, NumberInputValue, UpdateNumberInput,
-};
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue};
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
 use bevy::prelude::*;
@@ -56,22 +54,21 @@ enum Calc {
 struct Shows;
 
 /// A field for a node's value, under its title.
+/// A number field; the value's variant (`I32`, `F32`) sets what it edits.
 fn field(commands: &mut Commands, node: Entity, value: NumberInputValue) {
     let margin = UiRect::horizontal(px(kit::PADDING));
-    let format = match value {
-        NumberInputValue::I32(_) => NumberFormat::I32,
-        _ => NumberFormat::F32,
-    };
-    let field = commands
-        .spawn_scene(
-            bsn! { @FeathersNumberInput { @number_format: format } Node { margin: {margin} } },
-        )
-        .id();
+    // Given at spawn, so the field starts with it.
+    let field = match value {
+        NumberInputValue::I32(value) => commands.spawn_scene(bsn! {
+            @FeathersNumberInput NumberInputValue::I32({value}) Node { margin: {margin} }
+        }),
+        NumberInputValue::F32(value) => commands.spawn_scene(bsn! {
+            @FeathersNumberInput NumberInputValue::F32({value}) Node { margin: {margin} }
+        }),
+        _ => unreachable!("this example has ints and floats"),
+    }
+    .id();
     commands.entity(node).insert_child(1, field);
-    commands.trigger(UpdateNumberInput {
-        entity: field,
-        value,
-    });
 }
 
 /// The connection made once laid out, to show the conversion.

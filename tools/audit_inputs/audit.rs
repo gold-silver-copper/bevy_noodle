@@ -13,7 +13,6 @@ use bevy::picking::pointer::{Location, PointerAction, PointerButton, PointerId, 
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use bevy::text::{EditableText, TextCursorStyle, TextLayoutInfo};
-use bevy::ui::widget::TextScroll;
 use bevy::ui::{ComputedNode, Selected, UiGlobalTransform};
 use bevy::window::{PrimaryWindow, WindowRef};
 use bevy_noodle::prelude::*;
@@ -252,12 +251,12 @@ fn check_press(world: &mut World, state: &mut State, probe: Probe) {
             (probe.kind, info.cursor, info.selection_rects.is_empty())
             && let Some(local) = local
         {
-            let end = info
-                .glyphs
-                .iter()
-                .map(|g| g.position.x + g.atlas_info.rect.size().x / 2.0)
-                .fold(0.0f32, f32::max);
-            let expect = local.x.min(end).max(0.0);
+            // The text may be centered: the cursor lands within its extent.
+            let half = |g: &bevy::text::PositionedGlyph| g.atlas_info.rect.size().x / 2.0;
+            let glyphs = info.glyphs.iter();
+            let start = glyphs.clone().map(|g| g.position.x - half(g)).fold(f32::MAX, f32::min);
+            let end = glyphs.map(|g| g.position.x + half(g)).fold(0.0f32, f32::max);
+            let expect = local.x.min(end).max(start.min(end));
             let tolerance = rect.height().max(8.0) * 0.6;
             if (rect.center().x - expect).abs() > tolerance {
                 problems.push(format!(
@@ -438,7 +437,7 @@ fn probe_point(world: &mut World, probe: Probe) -> Option<Vec2> {
         }
     };
     if let Some(clip) = world.get::<bevy::ui::CalculatedClip>(field)
-        && !clip.clip.contains(phys)
+        && !clip.contains_point(phys)
     {
         return None;
     }
@@ -457,7 +456,7 @@ fn to_text_local(world: &mut World, field: Entity, at: Vec2) -> Option<Vec2> {
     let phys = at * scale_factor(world);
     let node = world.get::<ComputedNode>(field)?;
     let gt = world.get::<UiGlobalTransform>(field)?;
-    let scroll = world.get::<TextScroll>(field).map_or(Vec2::ZERO, |s| s.0);
+    let scroll = world.get::<EditableText>(field)?.viewport.offset;
     Some(gt.try_inverse()?.transform_point2(phys) - node.content_box().min + scroll)
 }
 

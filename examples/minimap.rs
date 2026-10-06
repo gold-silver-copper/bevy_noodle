@@ -106,8 +106,8 @@ fn setup(mut commands: Commands) {
                 Pickable::IGNORE,
             )],
         ))
-        .observe(look_here::<Press>)
-        .observe(look_here::<Drag>);
+        .observe(look_here::<PointerPress>)
+        .observe(look_here::<PointerDrag>);
 }
 
 /// How graph space maps onto the minimap: graph point → minimap pixels.
@@ -191,20 +191,20 @@ fn draw_minimap(
 }
 
 /// Pressing or dragging on the minimap centers the main view there.
-fn look_here<E: std::fmt::Debug + Clone + Reflect>(
-    event: On<Pointer<E>>,
+fn look_here<E: PointerEvent>(
+    event: On<E>,
     graph: Res<Graph>,
     maps: Query<(&ComputedNode, &UiGlobalTransform), With<Minimap>>,
     mut views: Query<(&mut CanvasView, &ComputedNode), Without<Minimap>>,
     nodes: Query<(Entity, &NodePosition, &ComputedNode)>,
 ) {
-    let (Ok((map, transform)), Some(mapping)) = (maps.get(event.entity), Mapping::new(&nodes))
+    let (Ok((map, transform)), Some(mapping)) =
+        (maps.get(event.event_target()), Mapping::new(&nodes))
     else {
         return;
     };
     let scale_factor = map.inverse_scale_factor();
-    let Some(normalized) =
-        map.normalize_point(*transform, event.pointer_location.position / scale_factor)
+    let Some(normalized) = map.normalize_point(*transform, event.pointer().position / scale_factor)
     else {
         return;
     };

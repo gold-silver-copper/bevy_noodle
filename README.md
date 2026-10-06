@@ -17,7 +17,7 @@ A headless node graph library for [Bevy](https://bevyengine.org) UI.
 - **One edit pipeline** for UI and code, with observers that can veto or
   rewrite any edit.
 
-Requires Bevy **0.19**.
+Requires Bevy **0.20**.
 
 ## Examples
 

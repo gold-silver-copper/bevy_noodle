@@ -12,7 +12,9 @@
 //! margin of [`PADDING`] to line up with the rows.
 
 use bevy::picking::Pickable;
+use bevy::picking::cursor::EntityCursor;
 use bevy::prelude::*;
+use bevy::window::SystemCursorIcon;
 
 use super::{
     CanvasGrid, EdgeStyle, FocusOutline, PortColor, PortHighlight, SelectedBorderColor,
@@ -76,6 +78,8 @@ pub fn node(position: Vec2) -> impl Bundle {
             px(0),
             px(14),
         ),
+        // Controls inside keep their own cursors.
+        EntityCursor::System(SystemCursorIcon::Grab),
     )
 }
 
@@ -121,6 +125,7 @@ pub fn port(port: Port, color: Color) -> impl Bundle {
         PortHighlight,
         BackgroundColor(color),
         BorderColor::all(color),
+        EntityCursor::System(SystemCursorIcon::Crosshair),
     )
 }
 
