@@ -253,7 +253,9 @@ impl GraphQuery<'_, '_> {
             };
             match port_info.when_full {
                 _ if edges.len() < max => {}
-                WhenFull::Replace if max > 0 => replaces.extend(&edges[..=edges.len() - max]),
+                WhenFull::Replace if max > 0 => {
+                    replaces.extend(edges.iter().take(edges.len() + 1 - max))
+                }
                 _ => refused = refused.or(Some(RejectReason::PortFull)),
             }
         }

@@ -94,9 +94,9 @@ fn draw_edges(
                 .viewport_to_world_2d(transform, view.graph_to_canvas(p))
                 .unwrap_or_default()
         };
-        let curve = CubicBezier::new([geometry.bezier(0.5).map(to_world)])
-            .to_curve()
-            .unwrap();
+        let Ok(curve) = CubicBezier::new([geometry.bezier(0.5).map(to_world)]).to_curve() else {
+            continue;
+        };
         gizmos.linestrip_2d(curve.iter_positions(32), Color::srgb(0.4, 0.7, 1.0));
     }
 }

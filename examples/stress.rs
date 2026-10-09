@@ -76,7 +76,7 @@ impl Stress {
     }
 
     fn pick<T: Copy>(&mut self, items: &[T]) -> Option<T> {
-        (!items.is_empty()).then(|| items[self.below(items.len())])
+        items.get(self.below(items.len())).copied()
     }
 }
 

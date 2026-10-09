@@ -104,10 +104,12 @@ fn setup(mut commands: Commands) {
     let sum = spawn_sum(&mut commands, canvas, Vec2::new(420.0, 210.0));
     commands.queue(move |world: &mut World| {
         let ports = |In((numbers, sum)): In<([Entity; 3], Entity)>, graph: GraphQuery| {
-            let to = graph.inputs_of(sum).next().unwrap();
-            numbers.map(|n| (graph.outputs_of(n).next().unwrap(), to))
+            let to = graph.inputs_of(sum).next();
+            let ports = numbers.map(|n| Some((graph.outputs_of(n).next()?, to?)));
+            ports.into_iter().flatten().collect::<Vec<_>>()
         };
-        for (from, to) in world.run_system_cached_with(ports, (numbers, sum)).unwrap() {
+        let pairs = world.run_system_cached_with(ports, (numbers, sum));
+        for (from, to) in pairs.unwrap_or_default() {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();
@@ -243,7 +245,9 @@ fn keys(
         let message = action(world, canvas).unwrap_or_else(|error| format!("failed: {error}"));
         info!("{message}");
         let mut status = world.query_filtered::<&mut Text, With<Status>>();
-        status.single_mut(world).unwrap().0 = message;
+        if let Ok(mut status) = status.single_mut(world) {
+            status.0 = message;
+        }
     });
 }
 
@@ -322,8 +326,11 @@ fn open_model(world: &mut World, canvas: Entity) -> Result<String> {
             let outputs: Vec<Entity> = graph.outputs_of(a).collect();
             (outputs, graph.inputs_of(b).collect::<Vec<_>>())
         };
-        let (outputs, inputs) = world.run_system_cached_with(ports, (nodes[*from], nodes[*to]))?;
-        let (from, to) = (outputs[*output], inputs[*input]);
+        let ends = nodes.get(*from).zip(nodes.get(*to));
+        let (&a, &b) = ends.ok_or("an edge names a missing node")?;
+        let (outputs, inputs) = world.run_system_cached_with(ports, (a, b))?;
+        let ends = outputs.get(*output).zip(inputs.get(*input));
+        let (&from, &to) = ends.ok_or("an edge names a missing port")?;
         world
             .graph_edit(canvas, GraphEdit::Connect { from, to })
             .ok();

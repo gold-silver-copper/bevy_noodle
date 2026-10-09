@@ -127,11 +127,12 @@ fn connect_pairs(
     mut commands: Commands,
 ) {
     for (source, sink) in pairs {
-        let (from, to) = (
-            graph.outputs_of(source).next().unwrap(),
-            graph.inputs_of(sink).next().unwrap(),
-        );
-        commands.graph_edit(canvas, GraphEdit::Connect { from, to });
+        if let (Some(from), Some(to)) = (
+            graph.outputs_of(source).next(),
+            graph.inputs_of(sink).next(),
+        ) {
+            commands.graph_edit(canvas, GraphEdit::Connect { from, to });
+        }
     }
 }
 

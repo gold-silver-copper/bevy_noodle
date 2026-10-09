@@ -1,6 +1,14 @@
 //! Keyboard use, headless: keys go through Bevy's input focus dispatch, as in
 //! an app.
 
+// Test helpers may panic: a panic is a failed test.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex};

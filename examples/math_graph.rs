@@ -67,14 +67,18 @@ fn wire_demo(
     graph: GraphQuery,
     mut commands: Commands,
 ) {
-    for (from, to) in [(0, 3), (1, 3), (3, 4), (2, 4), (4, 5)] {
-        commands.graph_edit(
-            canvas,
-            GraphEdit::Connect {
-                from: graph.outputs_of(n[from]).next().unwrap(),
-                to: graph.inputs_of(n[to]).next().unwrap(),
-            },
-        );
+    let [a, b, c, add, multiply, display] = n;
+    for (from, to) in [
+        (a, add),
+        (b, add),
+        (add, multiply),
+        (c, multiply),
+        (multiply, display),
+    ] {
+        if let (Some(from), Some(to)) = (graph.outputs_of(from).next(), graph.inputs_of(to).next())
+        {
+            commands.graph_edit(canvas, GraphEdit::Connect { from, to });
+        }
     }
 }
 

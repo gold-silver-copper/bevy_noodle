@@ -174,14 +174,17 @@ fn connect_demo(
     graph: GraphQuery,
     mut commands: Commands,
 ) {
-    for (from, to, input) in [(0, 2, 0), (1, 2, 1), (2, 3, 0), (3, 4, 0)] {
-        commands.graph_edit(
-            canvas,
-            GraphEdit::Connect {
-                from: graph.outputs_of(n[from]).next().unwrap(),
-                to: graph.inputs_of(n[to]).nth(input).unwrap(),
-            },
-        );
+    let [a, b, add, format, print] = n;
+    for (from, to, input) in [
+        (a, add, 0),
+        (b, add, 1),
+        (add, format, 0),
+        (format, print, 0),
+    ] {
+        let output = graph.outputs_of(from).next();
+        if let (Some(from), Some(to)) = (output, graph.inputs_of(to).nth(input)) {
+            commands.graph_edit(canvas, GraphEdit::Connect { from, to });
+        }
     }
 }
 
@@ -252,8 +255,8 @@ fn evaluate(
     mut shown: Query<(&mut Text, &ChildOf), With<Shows>>,
 ) {
     for (mut text, parent) in &mut shown {
-        let port = graph.inputs_of(parent.parent()).next().unwrap();
-        let peer = graph.peers_of(port).next();
+        let port = graph.inputs_of(parent.parent()).next();
+        let peer = port.and_then(|port| graph.peers_of(port).next());
         let data = peer.and_then(|p| output(graph.node_of(p)?, &graph, &kinds, 32));
         let shown = match data {
             Some(Data::Text(text)) => text,

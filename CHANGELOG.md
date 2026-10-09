@@ -83,6 +83,9 @@
 - Restoring or inserting a snapshot no longer leaves children it left out
   listed in their parent's `Children`.
 - The `FocusOutline` also appears when focus becomes visible later.
+- The library and examples no longer panic: no `unwrap`, `expect`, indexing
+  or `panic!`, enforced by clippy lints. Loading a `save_load` model whose
+  edges name a missing node or port reports an error.
 
 ### Examples
 - styled, editor, save_load, subgraph, scene_builder_3d, type_conversion,

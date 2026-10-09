@@ -116,11 +116,14 @@ fn setup(mut commands: Commands) {
         .id();
     commands.queue(move |world: &mut World| {
         let connect = |In((a, b, add)): In<(Entity, Entity, Entity)>, graph: GraphQuery| {
-            let inputs: Vec<Entity> = graph.inputs_of(add).collect();
-            [(a, inputs[0]), (b, inputs[1])]
-                .map(|(n, to)| (graph.outputs_of(n).next().unwrap(), to))
+            [a, b]
+                .into_iter()
+                .zip(graph.inputs_of(add))
+                .filter_map(|(n, to)| Some((graph.outputs_of(n).next()?, to)))
+                .collect::<Vec<_>>()
         };
-        for (from, to) in world.run_system_cached_with(connect, (a, b, add)).unwrap() {
+        let pairs = world.run_system_cached_with(connect, (a, b, add));
+        for (from, to) in pairs.into_iter().flatten() {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();
@@ -273,7 +276,7 @@ fn paste(world: &mut World) {
         Ok(map) => copied
             .entities
             .iter()
-            .map(|e| map[&e.entity])
+            .filter_map(|e| map.get(&e.entity).copied())
             .collect::<Vec<_>>(),
         Err(error) => return error!("pasting failed: {error}"),
     };

@@ -68,7 +68,11 @@ impl Shape {
     const ALL: [Shape; 3] = [Shape::Cube, Shape::Sphere, Shape::Torus];
 
     fn name(self) -> &'static str {
-        ["Cube", "Sphere", "Torus"][self as usize]
+        match self {
+            Shape::Cube => "Cube",
+            Shape::Sphere => "Sphere",
+            Shape::Torus => "Torus",
+        }
     }
 }
 
@@ -103,6 +107,18 @@ struct Spin(f32, Quat);
 
 #[derive(Resource)]
 struct Meshes([Handle<Mesh>; 3]);
+
+impl Meshes {
+    fn of(&self, shape: Shape) -> Handle<Mesh> {
+        let [cube, sphere, torus] = &self.0;
+        match shape {
+            Shape::Cube => cube,
+            Shape::Sphere => sphere,
+            Shape::Torus => torus,
+        }
+        .clone()
+    }
+}
 
 /// One object to spawn.
 #[derive(Clone)]
@@ -193,14 +209,13 @@ fn setup(
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In(wires): In<[(Entity, usize, Entity, usize); 9]>, g: GraphQuery| {
-            wires.map(|(a, i, b, j)| {
-                (
-                    g.outputs_of(a).nth(i).unwrap(),
-                    g.inputs_of(b).nth(j).unwrap(),
-                )
-            })
+            wires
+                .into_iter()
+                .filter_map(|(a, i, b, j)| Some((g.outputs_of(a).nth(i)?, g.inputs_of(b).nth(j)?)))
+                .collect::<Vec<_>>()
         };
-        for (from, to) in world.run_system_cached_with(ports, wires).unwrap() {
+        let pairs = world.run_system_cached_with(ports, wires);
+        for (from, to) in pairs.into_iter().flatten() {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();
@@ -350,7 +365,7 @@ fn rebuild(
     for (i, item) in items.into_iter().enumerate() {
         let place = Transform::from_xyz(i as f32 * spacing - offset, 0.0, 0.0);
         for instance in item {
-            let mesh = meshes.0[instance.shape as usize].clone();
+            let mesh = meshes.of(instance.shape);
             let transform = place * instance.transform;
             let mut entity = commands.spawn((
                 Built,
@@ -541,7 +556,9 @@ fn add_on_right_click(
             Kind::Spin(-2.5),
         ];
         let at = view.canvas_to_graph(click.pointer.position);
-        spawn(&mut commands, canvas, kinds[*next % kinds.len()], at);
+        if let Some(&kind) = kinds.get(*next % kinds.len()) {
+            spawn(&mut commands, canvas, kind, at);
+        }
         *next += 1;
     }
 }

@@ -155,9 +155,10 @@ pub(crate) fn follow_reparented(
             }
             (None, _) => commands.entity(edge).despawn(),
             (Some(canvas), _) => {
-                let content = graph.content_of(canvas);
-                if content.is_some_and(|c| parents.get(edge).is_ok_and(|p| p.parent() != c)) {
-                    commands.entity(edge).insert(ChildOf(content.unwrap()));
+                if let Some(content) = graph.content_of(canvas)
+                    && parents.get(edge).is_ok_and(|p| p.parent() != content)
+                {
+                    commands.entity(edge).insert(ChildOf(content));
                 }
             }
         }

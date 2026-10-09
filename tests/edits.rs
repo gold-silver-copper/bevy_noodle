@@ -1,5 +1,13 @@
 //! Headless tests: no window, no rendering.
 
+// Test helpers may panic: a panic is a failed test.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::ui::Selected;

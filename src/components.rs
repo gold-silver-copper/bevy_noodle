@@ -223,10 +223,10 @@ impl PortType {
 
     /// A type identified by name (FNV-1a; never `ANY`).
     pub const fn named(name: &'static str) -> Self {
-        let (bytes, mut hash, mut i) = (name.as_bytes(), 0xcbf2_9ce4_8422_2325_u64, 0);
-        while i < bytes.len() {
-            hash = (hash ^ bytes[i] as u64).wrapping_mul(0x0100_0000_01b3);
-            i += 1;
+        let (mut bytes, mut hash) = (name.as_bytes(), 0xcbf2_9ce4_8422_2325_u64);
+        while let [byte, rest @ ..] = bytes {
+            hash = (hash ^ *byte as u64).wrapping_mul(0x0100_0000_01b3);
+            bytes = rest;
         }
         let id = if hash == 0 { 1 } else { hash };
         PortType { id, name }
@@ -452,7 +452,8 @@ impl EdgeHitbox {
     /// Distance from `point` to the curve, sampled like the default wire shader.
     pub fn distance(&self, point: Vec2) -> f32 {
         let samples: Vec<Vec2> = self.curve().iter_positions(32).collect();
-        let segments = samples.windows(2).map(|s| Segment2d::new(s[0], s[1]));
+        let ends = samples.iter().zip(samples.iter().skip(1));
+        let segments = ends.map(|(&a, &b)| Segment2d::new(a, b));
         segments
             .map(|s| s.closest_point(point).distance(point))
             .fold(f32::MAX, f32::min)
@@ -536,7 +537,9 @@ pub struct PendingWire {
 }
 
 fn wire_added(mut world: DeferredWorld, context: HookContext) {
-    let wire = *world.get::<PendingWire>(context.entity).expect("added");
+    let Some(&wire) = world.get::<PendingWire>(context.entity) else {
+        return;
+    };
     let (canvas, from) = (wire.canvas, wire.from);
     world
         .commands()

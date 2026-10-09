@@ -54,27 +54,25 @@ fn setup(mut commands: Commands) {
         commands.spawn((kit::output("out", NUMBER, BLUE), ChildOf(node)));
         node
     });
-    // (from, to, input) by index into `specs`.
+    let [sum, a, scale, display, b, offset, c, clamp] = nodes;
+    // (from, to, input).
     let wires = [
-        (1, 2, 0),
-        (2, 0, 0),
-        (4, 0, 1),
-        (0, 5, 0),
-        (6, 5, 1),
-        (5, 7, 0),
-        (7, 3, 0),
+        (a, scale, 0),
+        (scale, sum, 0),
+        (b, sum, 1),
+        (sum, offset, 0),
+        (c, offset, 1),
+        (offset, clamp, 0),
+        (clamp, display, 0),
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In((a, b, i)): In<(Entity, Entity, usize)>, graph: GraphQuery| {
-            (
-                graph.outputs_of(a).next().unwrap(),
-                graph.inputs_of(b).nth(i).unwrap(),
-            )
+            Some((graph.outputs_of(a).next()?, graph.inputs_of(b).nth(i)?))
         };
-        for (a, b, i) in wires {
-            let (from, to) = world
-                .run_system_cached_with(ports, (nodes[a], nodes[b], i))
-                .unwrap();
+        for wire in wires {
+            let Ok(Some((from, to))) = world.run_system_cached_with(ports, wire) else {
+                continue;
+            };
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();
@@ -181,7 +179,7 @@ fn layout(graph: &GraphQuery, canvas: Entity) -> HashMap<Entity, Vec2> {
         for node in &nodes {
             let deepest = inputs_of(*node)
                 .iter()
-                .map(|i| layer[i] + 1)
+                .filter_map(|i| layer.get(i).map(|l| l + 1))
                 .max()
                 .unwrap_or(0);
             layer.insert(*node, deepest);
@@ -191,7 +189,11 @@ fn layout(graph: &GraphQuery, canvas: Entity) -> HashMap<Entity, Vec2> {
     let mut order: HashMap<Entity, f32> = HashMap::new();
     let mut targets = HashMap::new();
     for l in 0..layers {
-        let mut column: Vec<Entity> = nodes.iter().copied().filter(|n| layer[n] == l).collect();
+        let mut column: Vec<Entity> = nodes
+            .iter()
+            .copied()
+            .filter(|n| layer.get(n) == Some(&l))
+            .collect();
         let center = |n: &Entity| {
             let inputs = inputs_of(*n);
             let sum: f32 = inputs.iter().filter_map(|i| order.get(i)).sum();

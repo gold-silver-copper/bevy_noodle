@@ -220,15 +220,15 @@ fn setup(mut commands: Commands) {
     ];
     commands.queue(move |world: &mut World| {
         let ports = |In(wires): In<[Wire; 7]>, g: GraphQuery| {
-            wires.map(|(canvas, a, i, b, j)| {
-                (
-                    canvas,
-                    g.outputs_of(a).nth(i).unwrap(),
-                    g.inputs_of(b).nth(j).unwrap(),
-                )
-            })
+            wires
+                .into_iter()
+                .filter_map(|(canvas, a, i, b, j)| {
+                    Some((canvas, g.outputs_of(a).nth(i)?, g.inputs_of(b).nth(j)?))
+                })
+                .collect::<Vec<_>>()
         };
-        for (canvas, from, to) in world.run_system_cached_with(ports, wires).unwrap() {
+        let pairs = world.run_system_cached_with(ports, wires);
+        for (canvas, from, to) in pairs.into_iter().flatten() {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();

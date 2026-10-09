@@ -67,12 +67,12 @@ fn setup(mut commands: Commands) {
             children![kit::title("Display"), kit::input("value", NUMBER, BLUE)],
         ))
         .id();
-    let dots = [Vec2::new(330.0, 150.0), Vec2::new(720.0, 150.0)]
+    let [first, second] = [Vec2::new(330.0, 150.0), Vec2::new(720.0, 150.0)]
         .map(|at| commands.spawn((reroute(at), ChildOf(canvas))).id());
-    let chain = [number, dots[0], dots[1], display];
+    let chain = [number, first, second, display];
     commands.queue(move |world: &mut World| {
-        for pair in chain.windows(2) {
-            connect(world, canvas, pair[0], pair[1]);
+        for (from, to) in chain.into_iter().zip(chain.into_iter().skip(1)) {
+            connect(world, canvas, from, to);
         }
     });
 }
@@ -112,16 +112,15 @@ fn reroute_on_right_click(
     let at = view.canvas_to_graph(click.pointer.position);
     let dot = commands.spawn((reroute(at), ChildOf(canvas))).id();
     commands.queue(move |world: &mut World| {
+        let ports = |In(dot), graph: GraphQuery| {
+            Some((graph.inputs_of(dot).next()?, graph.outputs_of(dot).next()?))
+        };
+        let Ok(Some((dot_in, dot_out))) = world.run_system_cached_with(ports, dot) else {
+            return;
+        };
         world
             .graph_edit(canvas, GraphEdit::Disconnect { edge })
             .ok();
-        let ports = |In(dot), graph: GraphQuery| {
-            (
-                graph.inputs_of(dot).next().unwrap(),
-                graph.outputs_of(dot).next().unwrap(),
-            )
-        };
-        let (dot_in, dot_out) = world.run_system_cached_with(ports, dot).unwrap();
         for (from, to) in [(output, dot_in), (dot_out, input)] {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
