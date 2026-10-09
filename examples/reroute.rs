@@ -91,7 +91,7 @@ fn connect(world: &mut World, canvas: Entity, from: Entity, to: Entity) {
 
 /// Right-click on an edge splits it with a reroute dot.
 fn reroute_on_right_click(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     graph: GraphQuery,
     views: Query<&CanvasView>,
     mut commands: Commands,
@@ -109,7 +109,7 @@ fn reroute_on_right_click(
         return;
     };
     // The canvas fills the window here, so window and canvas coordinates match.
-    let at = view.canvas_to_graph(click.pointer_location.position);
+    let at = view.canvas_to_graph(click.pointer.position);
     let dot = commands.spawn((reroute(at), ChildOf(canvas))).id();
     commands.queue(move |world: &mut World| {
         world

@@ -14,13 +14,11 @@
 //! ```
 
 use bevy::feathers::FeathersPlugins;
-use bevy::feathers::controls::{
-    FeathersNumberInput, FeathersSlider, NumberInputValue, UpdateNumberInput,
-};
+use bevy::feathers::controls::{FeathersNumberInput, FeathersSlider, NumberInputValue};
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
 use bevy::prelude::*;
-use bevy::ui_widgets::{SliderPrecision, SliderStep, ValueChange, slider_self_update};
+use bevy::ui_widgets::{SliderPrecision, SliderStep, SliderValue, ValueChange, slider_self_update};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -189,19 +187,20 @@ fn setup(mut commands: Commands) {
 
     // Controls under the titles: number fields, and a slider for the scale.
     let margin = UiRect::horizontal(px(kit::PADDING));
-    for (number, value) in [(three, 3.0), (four, 4.0)] {
+    for (number, value) in [(three, 3.0_f32), (four, 4.0)] {
         let field = commands
-            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .spawn_scene(bsn! {
+                @FeathersNumberInput
+                NumberInputValue::F32({value})
+                Node { margin: {margin} }
+            })
             .id();
         commands.entity(number).insert_child(1, field);
-        commands.trigger(UpdateNumberInput {
-            entity: field,
-            value: NumberInputValue::F32(value),
-        });
     }
     let slider = commands
         .spawn_scene(bsn! {
-            @FeathersSlider { @max: 4.0, @value: 2.0 }
+            @FeathersSlider { @max: 4.0 }
+            SliderValue(2.0)
             SliderStep(0.25)
             SliderPrecision(2)
             Node { margin: {margin} }

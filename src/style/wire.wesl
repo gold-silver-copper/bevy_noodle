@@ -1,7 +1,7 @@
 // Anti-aliased cubic Bézier stroke drawn inside a UI node, with an optional
 // color gradient, dashes, and flow animated by the global time.
-#import bevy_render::globals::Globals
-#import bevy_ui::ui_vertex_output::UiVertexOutput
+import bevy_render::globals::Globals;
+import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
 struct Wire {

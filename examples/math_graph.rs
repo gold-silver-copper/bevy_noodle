@@ -9,6 +9,7 @@
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::prelude::*;
 use bevy::text::{EditableText, EditableTextFilter, LineBreak, TextCursorStyle};
+use bevy::ui_widgets::TextInput;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
 
@@ -96,6 +97,8 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
                     border: UiRect::all(px(1)),
                     ..default()
                 },
+                // The widget behavior; `EditableText` is only its state.
+                TextInput,
                 text,
                 EditableTextFilter::new(|c| c.is_ascii_digit() || matches!(c, '.' | '-')),
                 TextLayout::linebreak(LineBreak::NoWrap),
@@ -104,7 +107,7 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
                     color: Color::WHITE,
                     selection_color: BLUE.with_alpha(0.45),
                     unfocused_selection_color: Color::NONE,
-                    selected_text_color: None,
+                    ..default()
                 },
                 BackgroundColor(Color::srgb_u8(28, 29, 33)),
                 BorderColor::all(Color::srgb_u8(70, 73, 81)),

@@ -18,12 +18,12 @@ use bevy::feathers::FeathersPlugins;
 use bevy::feathers::controls::{
     ColorChannel, ColorPlaneValue, FeathersColorPlane, FeathersColorSlider, FeathersMenu,
     FeathersMenuButton, FeathersMenuItem, FeathersMenuPopup, FeathersNumberInput, FeathersSlider,
-    NumberFormat, NumberInputValue, SliderBaseColor, UpdateNumberInput,
+    HardLimit, NumberInputValue, SliderBaseColor,
 };
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::{ThemedText, UiTheme};
 use bevy::prelude::*;
-use bevy::ui_widgets::{Activate, SliderPrecision, ValueChange, slider_self_update};
+use bevy::ui_widgets::{Activate, SliderPrecision, SliderValue, ValueChange, slider_self_update};
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::{SelectedBorderColor, kit};
 
@@ -250,7 +250,8 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
     let margin = UiRect::horizontal(px(kit::PADDING));
     let slider = |min: f32, max: f32, value: f32| {
         bsn! {
-            @FeathersSlider { @min: min, @max: max, @value: value }
+            @FeathersSlider { @min: min, @max: max }
+            SliderValue({value})
             SliderPrecision(2)
             Node { margin: {margin} }
             on(slider_self_update)
@@ -271,8 +272,10 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
                 @FeathersMenu
                 Node { margin: {margin} }
                 Children [
-                    @FeathersMenuButton { @caption: bsn! { Text(name) ThemedText Caption } },
-                    (@FeathersMenuPopup Children [ cube, sphere, torus ])
+                    @FeathersMenuButton { @caption: bsn! { Text(name) ThemedText Caption } }
+                    --
+                    @FeathersMenuPopup
+                    Children [ {cube} -- {sphere} -- {torus} ]
                 ]
             })
         }
@@ -291,17 +294,16 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
         Kind::Spin(speed) => commands.spawn_scene(slider(-4.0, 4.0, speed)),
         Kind::Object(size) => commands.spawn_scene(slider(0.25, 2.0, size)),
         Kind::Ring(count) => {
-            let field = commands
+            // Typed or dragged, the count stays within 0 to 64.
+            commands
                 .spawn_scene(bsn! {
-                    @FeathersNumberInput { @number_format: NumberFormat::I32 }
+                    @FeathersNumberInput
+                    NumberInputValue::I32({count})
+                    HardLimit::i32(0..=64)
                     Node { margin: {margin} }
                 })
-                .insert(ChildOf(node))
-                .id();
-            return commands.trigger(UpdateNumberInput {
-                entity: field,
-                value: NumberInputValue::I32(count),
-            });
+                .insert(ChildOf(node));
+            return;
         }
         Kind::Scene => return,
     }
@@ -518,7 +520,7 @@ fn show_paints(
 
 /// Right-click on empty canvas adds the next kind of node from a short list.
 fn add_on_right_click(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     graph: GraphQuery,
     views: Query<&CanvasView>,
     mut next: Local<usize>,
@@ -538,7 +540,7 @@ fn add_on_right_click(
             Kind::Ring(5),
             Kind::Spin(-2.5),
         ];
-        let at = view.canvas_to_graph(click.pointer_location.position);
+        let at = view.canvas_to_graph(click.pointer.position);
         spawn(&mut commands, canvas, kinds[*next % kinds.len()], at);
         *next += 1;
     }

@@ -15,8 +15,8 @@ pub(crate) struct MaterialsPlugin;
 
 impl Plugin for MaterialsPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "wire.wgsl");
-        embedded_asset!(app, "grid.wgsl");
+        embedded_asset!(app, "wire.wesl");
+        embedded_asset!(app, "grid.wesl");
         app.add_plugins((
             UiMaterialPlugin::<WireMaterial>::default(),
             UiMaterialPlugin::<GridMaterial>::default(),
@@ -48,7 +48,7 @@ pub(crate) struct Wire {
 
 impl UiMaterial for WireMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://bevy_noodle/style/wire.wgsl".into()
+        "embedded://bevy_noodle/style/wire.wesl".into()
     }
 }
 
@@ -72,7 +72,7 @@ pub(crate) struct Grid {
 
 impl UiMaterial for GridMaterial {
     fn fragment_shader() -> ShaderRef {
-        "embedded://bevy_noodle/style/grid.wgsl".into()
+        "embedded://bevy_noodle/style/grid.wesl".into()
     }
 }
 
@@ -108,7 +108,7 @@ pub(crate) fn wire_material(
 mod tests {
     use super::*;
     use crate::components::EdgeGeometry;
-    use bevy::math::cubic_splines::CubicSegment;
+    use bevy::curve::cubic_splines::CubicSegment;
 
     #[test]
     fn wire_bounds_contain_the_curve() {

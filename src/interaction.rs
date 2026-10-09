@@ -15,7 +15,7 @@ use bevy::input::mouse::MouseScrollUnit;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::{HitData, PointerHits};
 use bevy::picking::hover::{HoverMap, Hovered};
-use bevy::picking::pointer::{PointerButton, PointerId, PointerLocation};
+use bevy::picking::pointer::{PointerButton, PointerId, PointerLocation, PointerMap};
 use bevy::picking::{Pickable, PickingSystems};
 use bevy::prelude::*;
 use bevy::ui::picking_backend::ui_picking;
@@ -335,7 +335,7 @@ impl Ctx<'_, '_> {
     }
 }
 
-fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx) {
+fn on_press(mut press: On<PointerPress>, mut ctx: Ctx) {
     let Some((hop, canvas, settings)) = ctx.hop(press.event_target()) else {
         return;
     };
@@ -367,7 +367,7 @@ fn on_press(mut press: On<Pointer<Press>>, mut ctx: Ctx) {
 }
 
 fn on_drag_start(
-    mut drag: On<Pointer<DragStart>>,
+    mut drag: On<PointerDragStart>,
     mut ctx: Ctx,
     wires: Query<(Entity, &PendingWire)>,
 ) {
@@ -395,7 +395,7 @@ fn on_drag_start(
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = ends.output;
             }
-            let pointer = ctx.graph_point(canvas, drag.pointer_location.position);
+            let pointer = ctx.graph_point(canvas, drag.pointer.position);
             ctx.commands.spawn(PendingWire {
                 canvas,
                 from,
@@ -411,7 +411,7 @@ fn on_drag_start(
 }
 
 fn on_drag(
-    mut drag: On<Pointer<Drag>>,
+    mut drag: On<PointerDrag>,
     mut ctx: Ctx,
     mut wires: Query<&mut PendingWire>,
     nodes: Query<(&NodePosition, &ComputedNode)>,
@@ -423,13 +423,13 @@ fn on_drag(
         return;
     };
     drag.propagate(false);
-    let position = drag.pointer_location.position;
+    let position = drag.pointer.position;
     match gesture {
         Gesture::Wire(_) => {
             let pointer = ctx.graph_point(canvas, position);
             // Snap to a port it may connect to under the pointer.
             let under = hovered
-                .get(&drag.pointer_id)
+                .get(&drag.pointer.id)
                 .into_iter()
                 .flat_map(|h| h.keys());
             let target = under.copied().find(|p| candidates.contains(*p));
@@ -474,7 +474,7 @@ fn on_drag(
     }
 }
 
-fn on_drag_end(mut drag: On<Pointer<DragEnd>>, mut ctx: Ctx, wires: Query<(Entity, &PendingWire)>) {
+fn on_drag_end(mut drag: On<PointerDragEnd>, mut ctx: Ctx, wires: Query<(Entity, &PendingWire)>) {
     let target = (drag.event_target(), drag.original_event_target());
     let Some((gesture, canvas, _)) = ctx.gesture(target, drag.button) else {
         return;
@@ -504,7 +504,7 @@ fn on_drag_end(mut drag: On<Pointer<DragEnd>>, mut ctx: Ctx, wires: Query<(Entit
     }
 }
 
-fn on_scroll(mut scroll: On<Pointer<Scroll>>, mut ctx: Ctx) {
+fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
     let Some((Hop::Canvas, canvas, settings)) = ctx.hop(scroll.event_target()) else {
         return;
     };
@@ -520,7 +520,7 @@ fn on_scroll(mut scroll: On<Pointer<Scroll>>, mut ctx: Ctx) {
     let zoom = ctx.held(&settings.zoom_modifiers)
         || settings.scroll == ScrollMode::Zoom
         || (settings.scroll == ScrollMode::Auto && scroll.unit == MouseScrollUnit::Line);
-    let anchor = ctx.local(canvas, scroll.pointer_location.position);
+    let anchor = ctx.local(canvas, scroll.pointer.position);
     let view = &mut ctx.canvases.get_mut(canvas).expect("checked").1;
     if zoom {
         view.zoom_around(anchor, factor);
@@ -533,7 +533,8 @@ fn on_scroll(mut scroll: On<Pointer<Scroll>>, mut ctx: Ctx) {
 fn pinch_zoom(
     mut pinches: MessageReader<PinchGesture>,
     hovered: Res<HoverMap>,
-    pointers: Query<(&PointerId, &PointerLocation)>,
+    pointers: Option<Res<PointerMap>>,
+    locations: Query<&PointerLocation>,
     mut ctx: Ctx,
 ) {
     let magnify: f32 = pinches.read().map(|p| p.0).sum();
@@ -542,9 +543,8 @@ fn pinch_zoom(
         .and_then(|h| h.keys().next().copied());
     let canvas = top.and_then(|top| ctx.graph.canvas_of(top));
     let mouse = pointers
-        .iter()
-        .find(|(id, _)| id.is_mouse())
-        .and_then(|(_, l)| l.location());
+        .and_then(|p| p.get_entity(PointerId::Mouse))
+        .and_then(|e| locations.get(e).ok()?.location());
     let (Some(canvas), Some(location), true) = (canvas, mouse, magnify != 0.0) else {
         return;
     };
@@ -563,9 +563,11 @@ fn pinch_zoom(
 /// the topmost UI (or, for edges above nodes, one of its nodes, but not a
 /// port), so overlays, clipping and ports keep working. The hit shares the
 /// UI's layer, on top.
+#[allow(clippy::too_many_arguments, reason = "system parameters")]
 fn pick_edges(
     mut messages: ParamSet<(MessageReader<PointerHits>, MessageWriter<PointerHits>)>,
-    pointers: Query<(&PointerId, &PointerLocation)>,
+    pointers: Option<Res<PointerMap>>,
+    locations: Query<&PointerLocation>,
     cameras: Query<&Camera>,
     pickables: Query<&Pickable>,
     contents: Query<(&ComputedNode, &UiGlobalTransform), With<CanvasContent>>,
@@ -588,9 +590,9 @@ fn pick_edges(
             .canvas_of(*top)
             .filter(|_| graph.edge_ports(*top).is_none());
         let location = pointers
-            .iter()
-            .find(|(id, _)| **id == ui.pointer)
-            .and_then(|(_, l)| l.location());
+            .as_ref()
+            .and_then(|p| p.get_entity(ui.pointer))
+            .and_then(|e| locations.get(e).ok()?.location());
         let (Some(canvas), Some(location), Ok(camera), None) =
             (canvas, location, cameras.get(data.camera), graph.port(*top))
         else {

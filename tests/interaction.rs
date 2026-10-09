@@ -1,14 +1,12 @@
-//! Pointer interaction, headless: `Pointer` events are triggered directly, as
+//! Pointer interaction, headless: pointer events are triggered directly, as
 //! `bevy_picking` would.
-
-use std::fmt::Debug;
 
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::gestures::PinchGesture;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::HitData;
 use bevy::picking::hover::HoverMap;
-use bevy::picking::pointer::{Location, PointerId, PointerLocation};
+use bevy::picking::pointer::{Location, PointerId, PointerLocation, PointerMap};
 use bevy::prelude::*;
 use bevy::ui::{Selected, UiScale};
 use bevy_noodle::prelude::*;
@@ -20,7 +18,8 @@ fn app() -> App {
     let mut app = App::new();
     app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, NoodlePlugins))
         .init_resource::<UiScale>()
-        .init_resource::<HoverMap>();
+        .init_resource::<HoverMap>()
+        .init_resource::<PointerMap>();
     // Pointer events bubble through `PointerTraversal`, which reads `Window`.
     app.world_mut().register_component::<Window>();
     app
@@ -46,8 +45,29 @@ fn hit() -> HitData {
     HitData::new(Entity::PLACEHOLDER, 0.0, None, None)
 }
 
+/// A pointer event's own fields; `pointer` adds the target and the pointer.
+trait Fields {
+    fn trigger(self, world: &mut World, entity: Entity, pointer: Pointer);
+}
+
+macro_rules! fields {
+    ($name:ident => $event:ident { $($field:ident: $ty:ty),* }) => {
+        struct $name { $($field: $ty),* }
+        impl Fields for $name {
+            fn trigger(self, world: &mut World, entity: Entity, pointer: Pointer) {
+                world.trigger($event { entity, pointer, $($field: self.$field),* });
+            }
+        }
+    };
+}
+
+fields!(Press => PointerPress { button: PointerButton, hit: HitData, count: u8 });
+fields!(DragStart => PointerDragStart { button: PointerButton, hit: HitData });
+fields!(Drag => PointerDrag { button: PointerButton, distance: Vec2, delta: Vec2 });
+fields!(DragEnd => PointerDragEnd { button: PointerButton, distance: Vec2 });
+
 /// Triggers a pointer event on `target` (bubbling up), then applies its edits.
-fn pointer<E: Debug + Clone + Reflect>(world: &mut World, target: Entity, event: E) {
+fn pointer(world: &mut World, target: Entity, fields: impl Fields) {
     let target_none = NormalizedRenderTarget::None {
         width: 1,
         height: 1,
@@ -56,7 +76,7 @@ fn pointer<E: Debug + Clone + Reflect>(world: &mut World, target: Entity, event:
         target: target_none,
         position: Vec2::ZERO,
     };
-    world.trigger(Pointer::new(PointerId::Mouse, location, event, target));
+    fields.trigger(world, target, Pointer::new(PointerId::Mouse, location));
     world.flush();
 }
 

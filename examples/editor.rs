@@ -17,7 +17,7 @@
 //! ```
 
 use bevy::feathers::FeathersPlugins;
-use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue, UpdateNumberInput};
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue};
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
 use bevy::input_focus::InputFocus;
@@ -156,15 +156,16 @@ fn spawn_number(commands: &mut Commands, canvas: Entity, at: Vec2, value: f32) -
 fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Commands) {
     for (node, value) in &nodes {
         let margin = UiRect::horizontal(px(kit::PADDING));
+        let value = value.0;
         let field = commands
-            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
+            .spawn_scene(bsn! {
+                @FeathersNumberInput
+                NumberInputValue::F32({value})
+                Node { margin: {margin} }
+            })
             .insert(Transient)
             .id();
         commands.entity(node).insert_child(1, field);
-        commands.trigger(UpdateNumberInput {
-            entity: field,
-            value: NumberInputValue::F32(value.0),
-        });
     }
 }
 
@@ -327,7 +328,7 @@ fn show_history(history: Res<History>, mut text: Single<&mut Text, With<HistoryT
 }
 
 fn add_on_right_click(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     graph: GraphQuery,
     views: Query<&CanvasView>,
     mut commands: Commands,
@@ -344,7 +345,7 @@ fn add_on_right_click(
         // Edges get pointer events like any UI entity.
         commands.graph_edit(canvas, GraphEdit::Disconnect { edge: clicked });
     } else if graph.node_of(clicked).is_none() {
-        let at = view.canvas_to_graph(click.pointer_location.position);
+        let at = view.canvas_to_graph(click.pointer.position);
         spawn_number(&mut commands, canvas, at, 0.0);
         // Spawning is not a graph edit, so record it here.
         commands.queue(record);

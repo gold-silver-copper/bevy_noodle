@@ -1,5 +1,5 @@
 // Infinite background grid for the node graph canvas.
-#import bevy_ui::ui_vertex_output::UiVertexOutput
+import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
 struct Grid {
     background: vec4<f32>,

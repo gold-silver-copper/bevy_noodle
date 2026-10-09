@@ -16,7 +16,7 @@
 //! ```
 
 use bevy::feathers::FeathersPlugins;
-use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue, UpdateNumberInput};
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputValue};
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
 use bevy::input_focus::{AutoFocus, InputFocus};
@@ -77,14 +77,13 @@ fn setup(mut commands: Commands) {
             ))
             .id();
         let margin = UiRect::horizontal(px(kit::PADDING));
-        let field = commands
-            .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
-            .insert(ChildOf(node))
-            .id();
-        commands.trigger(UpdateNumberInput {
-            entity: field,
-            value: NumberInputValue::F32(value),
-        });
+        commands
+            .spawn_scene(bsn! {
+                @FeathersNumberInput
+                NumberInputValue::F32({value})
+                Node { margin: {margin} }
+            })
+            .insert(ChildOf(node));
         commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
         if y < 200.0 {
             commands.entity(node).insert(AutoFocus);

@@ -12,7 +12,6 @@
 use bevy::feathers::FeathersPlugins;
 use bevy::feathers::controls::{
     FeathersNumberInput, FeathersTextInput, FeathersTextInputContainer, NumberInputValue,
-    UpdateNumberInput,
 };
 use bevy::feathers::dark_theme::create_dark_theme;
 use bevy::feathers::theme::UiTheme;
@@ -76,14 +75,13 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
             let node = commands
                 .spawn((node, Value(value), children![kit::title("Number")]))
                 .id();
-            let field = commands
-                .spawn_scene(bsn! { @FeathersNumberInput Node { margin: {margin} } })
-                .insert(ChildOf(node))
-                .id();
-            commands.trigger(UpdateNumberInput {
-                entity: field,
-                value: NumberInputValue::F32(value),
-            });
+            commands
+                .spawn_scene(bsn! {
+                    @FeathersNumberInput
+                    NumberInputValue::F32({value})
+                    Node { margin: {margin} }
+                })
+                .insert(ChildOf(node));
             commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
             node
         }
@@ -268,7 +266,7 @@ fn evaluate(
 
 /// Right-click on empty canvas adds a Number node there.
 fn add_on_right_click(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     graph: GraphQuery,
     views: Query<&CanvasView>,
     mut commands: Commands,
@@ -281,7 +279,7 @@ fn add_on_right_click(
         && graph.node_of(click.original_event_target()).is_none()
     {
         // The canvas fills the window here, so window and canvas coordinates match.
-        let at = view.canvas_to_graph(click.pointer_location.position);
+        let at = view.canvas_to_graph(click.pointer.position);
         spawn(&mut commands, canvas, Kind::Number, at);
     }
 }
