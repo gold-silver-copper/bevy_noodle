@@ -125,7 +125,7 @@ Edge                    relates an output port to an input port; has EdgeGeometr
   `reject()`, overriding the built-in type rules. Dragged wires ask them too.
 - **Redirect** edits in `On<EditRequested>` observers: rewrite or `reject()`
   them, and do side effects there.
-- **React** to `EditApplied`.
+- **React** to `EditApplied`: its `GraphChange` says what changed.
 - **Style** from `Selected`, the dragged wire's `WireCandidates` and `WireTarget`, and `SelectionBox`.
 - **Controls inside nodes** (sliders, text fields, menus) keep their own
   presses and drags.

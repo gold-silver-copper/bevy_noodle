@@ -27,10 +27,14 @@
   wire's candidates is about six times faster.
 - `GraphQuery::check_connection(canvas, a, b)` takes the canvas first and
   returns a `Connection { ports, replaces, refused }`. Port pairs are a
-  `PortPair { output, input }` everywhere (`edge_ports`, `EditApplied::ports`).
+  `PortPair { output, input }` everywhere (`edge_ports`, `GraphChange`).
+- Edits report what they changed as a `GraphChange`: `Connected { edge,
+  ports }`, `Disconnected { edge, ports }`, `Moved { nodes, delta, drag }` or
+  `Deleted { items }`. `EditApplied` carries it as `change` (instead of
+  `edit`, `created` and `ports`), and `graph_edit` returns it.
 - `GraphEdit::MoveNodes { nodes, delta, drag }`: build complete moves with
   `GraphEdit::move_nodes`; pointer drags add a `DragProgress { total,
-  is_final }`, and `GraphEdit::is_drag_step` tells undo stacks what to skip.
+  is_final }`, and `GraphChange::is_drag_step` tells undo stacks what to skip.
 - A port's limit and what a full port does are one `Port::capacity`:
   `Capacity::Unlimited` (the default for outputs), `Capacity::Replace(n)`
   (the oldest edges make room; inputs default to one) or
