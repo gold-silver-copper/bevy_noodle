@@ -115,7 +115,11 @@ fn insert(
         return Ok(map);
     };
     snapshot.write_to_world(world, &mut map)?;
-    for entity in snapshot.entities.iter().map(|e| map[&e.entity]) {
+    for entity in snapshot
+        .entities
+        .iter()
+        .filter_map(|e| map.get(&e.entity).copied())
+    {
         // Top-level entities still point at the snapshot's content: adopt them.
         let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
         if parent.is_none_or(|p| world.get_entity(p).is_err()) {
@@ -142,7 +146,11 @@ fn insert(
     // Nested canvases may have spawned a content of their own while the
     // snapshot was written; the snapshot's replaces it.
     world.flush();
-    for entity in snapshot.entities.iter().map(|e| map[&e.entity]) {
+    for entity in snapshot
+        .entities
+        .iter()
+        .filter_map(|e| map.get(&e.entity).copied())
+    {
         if world.get::<CanvasContent>(entity).is_some() {
             link_content(world, entity);
         }

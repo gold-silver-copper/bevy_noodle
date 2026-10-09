@@ -62,17 +62,17 @@ fn setup(mut commands: Commands) {
         .collect();
     commands.queue(move |world: &mut World| {
         let ports = |In(nodes): In<Vec<Entity>>, graph: GraphQuery| {
-            let pairs = nodes.windows(2);
+            let pairs = nodes.iter().zip(nodes.iter().skip(1));
             pairs
-                .map(|n| {
-                    (
-                        graph.outputs_of(n[0]).next().unwrap(),
-                        graph.inputs_of(n[1]).next().unwrap(),
-                    )
+                .filter_map(|(&a, &b)| {
+                    Some((graph.outputs_of(a).next()?, graph.inputs_of(b).next()?))
                 })
                 .collect::<Vec<_>>()
         };
-        for (from, to) in world.run_system_cached_with(ports, nodes).unwrap() {
+        let pairs = world
+            .run_system_cached_with(ports, nodes)
+            .unwrap_or_default();
+        for (from, to) in pairs {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
                 .ok();

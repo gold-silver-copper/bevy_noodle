@@ -246,20 +246,22 @@ impl Ctx<'_, '_> {
         Some((gesture, canvas, settings))
     }
 
-    fn view(&self, canvas: Entity) -> CanvasView {
-        *self.canvases.get(canvas).expect("checked by hop").1
+    fn view(&self, canvas: Entity) -> Option<CanvasView> {
+        self.canvases.get(canvas).ok().map(|c| *c.1)
     }
 
     /// Window position → canvas-local pixels.
-    fn local(&self, canvas: Entity, position: Vec2) -> Vec2 {
-        let (_, _, computed, transform) = self.canvases.get(canvas).expect("checked by hop");
-        canvas_local(computed, transform, position)
+    fn local(&self, canvas: Entity, position: Vec2) -> Option<Vec2> {
+        let (_, _, computed, transform) = self.canvases.get(canvas).ok()?;
+        Some(canvas_local(computed, transform, position))
     }
 
     /// Window position → graph space.
-    fn graph_point(&self, canvas: Entity, position: Vec2) -> Vec2 {
-        self.view(canvas)
-            .canvas_to_graph(self.local(canvas, position))
+    fn graph_point(&self, canvas: Entity, position: Vec2) -> Option<Vec2> {
+        Some(
+            self.view(canvas)?
+                .canvas_to_graph(self.local(canvas, position)?),
+        )
     }
 
     /// Moves `node` (with the selection) by window-pixel `delta`, `total` so far.
@@ -271,7 +273,10 @@ impl Ctx<'_, '_> {
         total: Vec2,
         is_final: bool,
     ) {
-        let scale = self.ui_scale.0 * self.view(canvas).zoom;
+        let Some(view) = self.view(canvas) else {
+            return;
+        };
+        let scale = self.ui_scale.0 * view.zoom;
         let nodes = self.graph.selection_with(node);
         let (delta, total) = (delta / scale, total / scale);
         let drag = Some(DragProgress { total, is_final });
@@ -390,12 +395,14 @@ fn on_drag_start(
                 .edges_of(port)
                 .last()
                 .and_then(|e| Some((e, g.edge_ports(e)?)));
+            let Some(pointer) = ctx.graph_point(canvas, drag.pointer.position) else {
+                return;
+            };
             let mut from = port;
             if let (true, true, Some((edge, ends))) = (settings.detach_wires, is_input, picked) {
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = ends.output;
             }
-            let pointer = ctx.graph_point(canvas, drag.pointer.position);
             ctx.commands.spawn(PendingWire {
                 canvas,
                 from,
@@ -426,7 +433,9 @@ fn on_drag(
     let position = drag.pointer.position;
     match gesture {
         Gesture::Wire(_) => {
-            let pointer = ctx.graph_point(canvas, position);
+            let Some(pointer) = ctx.graph_point(canvas, position) else {
+                return;
+            };
             // Snap to a port it may connect to under the pointer.
             let under = hovered
                 .get(&drag.pointer.id)
@@ -441,14 +450,19 @@ fn on_drag(
         Gesture::Move(node) => ctx.move_nodes(canvas, node, drag.delta, drag.distance, false),
         Gesture::Pan => {
             let delta = drag.delta / ctx.ui_scale.0;
-            ctx.canvases.get_mut(canvas).expect("checked").1.pan += delta;
+            if let Ok((_, mut view, ..)) = ctx.canvases.get_mut(canvas) {
+                view.pan += delta;
+            }
         }
         Gesture::Box => {
-            let rect = Rect::from_corners(
+            let (Some(start), Some(end), Some(view)) = (
                 ctx.local(canvas, position - drag.distance),
                 ctx.local(canvas, position),
-            );
-            let view = ctx.view(canvas);
+                ctx.view(canvas),
+            ) else {
+                return;
+            };
+            let rect = Rect::from_corners(start, end);
             let area = Rect::from_corners(
                 view.canvas_to_graph(rect.min),
                 view.canvas_to_graph(rect.max),
@@ -520,8 +534,12 @@ fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
     let zoom = ctx.held(&settings.zoom_modifiers)
         || settings.scroll == ScrollMode::Zoom
         || (settings.scroll == ScrollMode::Auto && scroll.unit == MouseScrollUnit::Line);
-    let anchor = ctx.local(canvas, scroll.pointer.position);
-    let view = &mut ctx.canvases.get_mut(canvas).expect("checked").1;
+    let Some(anchor) = ctx.local(canvas, scroll.pointer.position) else {
+        return;
+    };
+    let Ok((_, mut view, ..)) = ctx.canvases.get_mut(canvas) else {
+        return;
+    };
     if zoom {
         view.zoom_around(anchor, factor);
     } else {
@@ -553,8 +571,9 @@ fn pinch_zoom(
     };
     if settings.pinch_zoom {
         let anchor = ctx.local(canvas, location.position);
-        let mut view = ctx.canvases.get_mut(canvas).expect("found").1;
-        view.zoom_around(anchor, 1.0 + magnify);
+        if let (Some(anchor), Ok((_, mut view, ..))) = (anchor, ctx.canvases.get_mut(canvas)) {
+            view.zoom_around(anchor, 1.0 + magnify);
+        }
     }
 }
 

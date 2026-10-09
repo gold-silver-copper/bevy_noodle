@@ -100,3 +100,12 @@ required-features = ["default_style"]
 
 [package.metadata.docs.rs]
 all-features = true
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"

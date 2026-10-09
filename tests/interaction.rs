@@ -1,6 +1,14 @@
 //! Pointer interaction, headless: pointer events are triggered directly, as
 //! `bevy_picking` would.
 
+// Test helpers may panic: a panic is a failed test.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use bevy::camera::NormalizedRenderTarget;
 use bevy::input::gestures::PinchGesture;
 use bevy::input_focus::tab_navigation::TabIndex;

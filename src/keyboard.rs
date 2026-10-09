@@ -143,8 +143,11 @@ fn on_key(
     let wire = wires.iter().find(|(_, w)| w.canvas == canvas);
     let s = settings;
     let moves = [&s.move_left, &s.move_right, &s.move_up, &s.move_down];
-    let direction = moves.iter().position(|keys| is(keys));
     let directions = [Vec2::NEG_X, Vec2::X, Vec2::NEG_Y, Vec2::Y];
+    let direction = moves
+        .into_iter()
+        .zip(directions)
+        .find_map(|(keys, direction)| is(keys).then_some(direction));
     let panning = keys.any_pressed(settings.pan_modifiers.iter().copied());
     let zoom = match () {
         _ if is(&s.zoom_in) => Some(s.zoom_step),
@@ -157,7 +160,7 @@ fn on_key(
     ) {
         if let Some(direction) = direction.filter(|_| panning) {
             // The view moves the way the key points, so the graph moves back.
-            view.pan -= directions[direction] * settings.pan_step;
+            view.pan -= direction * settings.pan_step;
         }
         if let Some(factor) = zoom {
             let centre = computed.size() * computed.inverse_scale_factor() / 2.0;
@@ -165,11 +168,14 @@ fn on_key(
         }
     } else if is(&settings.connect) && graph.port(target).is_some() {
         match wire {
-            Some((_, wire)) if wire.from != target => {
-                let (from, to) = (wire.from, target);
-                commands.graph_edit_with_origin(canvas, GraphEdit::Connect { from, to }, origin);
+            Some((entity, wire)) => {
+                if wire.from != target {
+                    let (from, to) = (wire.from, target);
+                    let edit = GraphEdit::Connect { from, to };
+                    commands.graph_edit_with_origin(canvas, edit, origin);
+                }
+                commands.entity(entity).despawn();
             }
-            Some(_) => {}
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
                 commands.spawn(PendingWire {
@@ -182,7 +188,6 @@ fn on_key(
                 return;
             }
         }
-        commands.entity(wire.expect("matched").0).despawn();
     } else if let (Some((wire, _)), true) = (wire, is(&settings.cancel)) {
         commands.entity(wire).despawn();
     } else if let (Some(node), true) = (node, is(&settings.select)) {
@@ -194,7 +199,7 @@ fn on_key(
         };
         commands.select(canvas, vec![node], mode);
     } else if let (Some(node), Some(direction)) = (node, direction) {
-        let delta = directions[direction] * settings.step;
+        let delta = direction * settings.step;
         let edit = GraphEdit::move_nodes(graph.selection_with(node), delta);
         commands.graph_edit_with_origin(canvas, edit, origin);
     } else {

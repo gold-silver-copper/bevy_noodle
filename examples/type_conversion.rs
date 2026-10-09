@@ -58,16 +58,9 @@ struct Shows;
 fn field(commands: &mut Commands, node: Entity, value: NumberInputValue) {
     let margin = UiRect::horizontal(px(kit::PADDING));
     // Given at spawn, so the field starts with it.
-    let field = match value {
-        NumberInputValue::I32(value) => commands.spawn_scene(bsn! {
-            @FeathersNumberInput NumberInputValue::I32({value}) Node { margin: {margin} }
-        }),
-        NumberInputValue::F32(value) => commands.spawn_scene(bsn! {
-            @FeathersNumberInput NumberInputValue::F32({value}) Node { margin: {margin} }
-        }),
-        _ => unreachable!("this example has ints and floats"),
-    }
-    .id();
+    let field = commands
+        .spawn_scene(bsn! { @FeathersNumberInput ~{value} Node { margin: {margin} } })
+        .id();
     commands.entity(node).insert_child(1, field);
 }
 
@@ -134,10 +127,12 @@ fn demo_connection(demo: Option<Res<Demo>>, graph: GraphQuery, mut commands: Com
     let Some(demo) = demo else {
         return;
     };
-    let (from, to) = (
-        graph.outputs_of(demo.int).next().unwrap(),
-        graph.inputs_of(demo.multiply).next().unwrap(),
-    );
+    let (Some(from), Some(to)) = (
+        graph.outputs_of(demo.int).next(),
+        graph.inputs_of(demo.multiply).next(),
+    ) else {
+        return;
+    };
     if graph.port_position(from).is_some() {
         commands.graph_edit(demo.canvas, GraphEdit::Connect { from, to });
         commands.remove_resource::<Demo>();
@@ -186,12 +181,13 @@ fn convert(mut request: On<EditRequested>, graph: GraphQuery, mut commands: Comm
     let canvas = request.canvas;
     commands.queue(move |world: &mut World| {
         let ports = |In(n), graph: GraphQuery| {
-            (
-                graph.inputs_of(n).next().unwrap(),
-                graph.outputs_of(n).next().unwrap(),
-            )
+            Some((graph.inputs_of(n).next()?, graph.outputs_of(n).next()?))
         };
-        let (converter_in, converter_out) = world.run_system_cached_with(ports, converter).unwrap();
+        let Ok(Some((converter_in, converter_out))) =
+            world.run_system_cached_with(ports, converter)
+        else {
+            return;
+        };
         for (from, to) in [(from, converter_in), (converter_out, to)] {
             world
                 .graph_edit(canvas, GraphEdit::Connect { from, to })
