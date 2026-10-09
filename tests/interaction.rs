@@ -214,6 +214,31 @@ fn dragging_from_a_port_snaps_to_the_hovered_port_and_connects() {
 }
 
 #[test]
+fn panning_works_from_an_edge() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let [from, to] = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
+    let edge = w.graph_edit(canvas, GraphEdit::Connect { from, to });
+    let edge = edge.unwrap().unwrap();
+    // Edges have no parent, so their events never bubble to the canvas.
+    let button = PointerButton::Middle;
+    let by = Vec2::new(30.0, -10.0);
+    pointer(w, edge, DragStart { button, hit: hit() });
+    let (distance, delta) = (by, by);
+    pointer(
+        w,
+        edge,
+        Drag {
+            button,
+            distance,
+            delta,
+        },
+    );
+    assert_eq!(w.get::<CanvasView>(canvas).unwrap().pan, by);
+}
+
+#[test]
 fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
     let mut app = app();
     let w = app.world_mut();
@@ -337,14 +362,8 @@ fn outer_edges_are_pickable_over_nested_canvases() {
             radius: 4.0,
             below_nodes: false,
         };
-        w.spawn((
-            Edge,
-            EdgeSource(ports[0]),
-            EdgeTarget(ports[1]),
-            hitbox,
-            ChildOf(content),
-        ))
-        .id()
+        w.spawn((Edge, EdgeSource(ports[0]), EdgeTarget(ports[1]), hitbox))
+            .id()
     };
     let outer_edge = edge_in(w, outer);
     // Over the nested canvas, where only the outer edge passes.
