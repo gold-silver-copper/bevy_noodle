@@ -195,15 +195,11 @@ impl GraphQuery<'_, '_> {
             .map(|(_, source, target)| PortPair::new(source.0, target.0))
     }
 
-    /// Edges of a canvas (not of canvases nested inside it): children of its
-    /// content.
+    /// Edges of a canvas (not of canvases nested inside it): the edges
+    /// leaving its nodes' outputs, in hierarchy order.
     pub fn edges_in(&self, canvas: Entity) -> impl Iterator<Item = Entity> + '_ {
-        let content = self.content_of(canvas);
-        let children = content.and_then(|c| self.children.get(c).ok());
-        children
-            .into_iter()
-            .flat_map(|c| c.iter())
-            .filter(move |e| self.edges.contains(*e) && self.canvas_of(*e) == Some(canvas))
+        let outputs = self.nodes_in(canvas).flat_map(|n| self.outputs_of(n));
+        outputs.flat_map(|p| self.edges_of(p))
     }
 
     /// The port at the other end of each edge of `port`: for an input, the

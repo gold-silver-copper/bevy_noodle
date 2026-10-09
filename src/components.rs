@@ -351,8 +351,9 @@ impl PortAnchor {
     }
 }
 
-/// A connection, spawned as a child of the canvas' [`CanvasContent`] (so the
-/// content subtree is the whole graph) and despawned with either port.
+/// A connection: an entity without a parent, in the graph of its ports and
+/// despawned with either port. Pointer events on it bubble to the window,
+/// not to the canvas; observe them on the edge or app-wide.
 #[derive(Component, Reflect, Debug, Default, Clone, Copy)]
 #[reflect(Component, Default)]
 #[require(Selectable)]

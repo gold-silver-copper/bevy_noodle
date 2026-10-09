@@ -366,8 +366,6 @@ struct Plan {
     edit: GraphEdit,
     /// A connect's built-in verdict, which observers may override.
     connection: Option<Connection>,
-    /// The canvas content, which new edges are children of.
-    content: Option<Entity>,
     /// Edges (and their ports) removed first, each reported as a disconnect.
     disconnect: Vec<(Entity, PortPair)>,
 }
@@ -402,10 +400,7 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
     // Planned again, as observers may have changed the world; a changed edit
     // is checked again, an unchanged one keeps its verdict.
     let Plan {
-        edit,
-        content,
-        disconnect,
-        ..
+        edit, disconnect, ..
     } = if request.edit == edit {
         plan(world, edit)?
     } else {
@@ -429,11 +424,8 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
     let (mut created, mut ports) = (None, None);
     match &edit {
         GraphEdit::Connect { from, to } => {
-            let mut edge = world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to)));
-            if let Some(content) = content {
-                edge.insert(ChildOf(content));
-            }
-            (created, ports) = (Some(edge.id()), Some(PortPair::new(*from, *to)));
+            let edge = world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to))).id();
+            (created, ports) = (Some(edge), Some(PortPair::new(*from, *to)));
         }
         GraphEdit::Disconnect { edge } => {
             let ends = world
@@ -509,7 +501,6 @@ fn plan_edit(
     Ok(Plan {
         edit,
         connection,
-        content: graph.content_of(canvas),
         disconnect,
     })
 }

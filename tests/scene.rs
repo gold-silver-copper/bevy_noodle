@@ -61,18 +61,6 @@ fn app() -> App {
 }
 
 #[test]
-fn edges_are_children_of_the_content() {
-    let mut app = app();
-    let w = app.world_mut();
-    let (canvas, content, [out, inp]) = graph(w);
-    let edge = w
-        .graph_edit(canvas, GraphEdit::Connect { from: inp, to: out })
-        .unwrap()
-        .unwrap();
-    assert_eq!(w.get::<ChildOf>(edge).map(ChildOf::parent), Some(content));
-}
-
-#[test]
 fn applied_edits_report_their_ports() {
     let mut app = app();
     app.add_message::<EditApplied>();
@@ -117,10 +105,9 @@ fn snapshot_round_trip() {
 
     let w = app.world_mut();
     let children = w.get::<Children>(content).unwrap().to_vec();
-    assert_eq!(children.len(), 3, "two nodes and an edge");
-    let mut edges = w.query_filtered::<(Entity, &EdgeSource, &EdgeTarget), With<Edge>>();
-    let (edge, source, target) = edges.single(w).unwrap();
-    assert!(children.contains(&edge));
+    assert_eq!(children.len(), 2, "two nodes");
+    let mut edges = w.query_filtered::<(&EdgeSource, &EdgeTarget), With<Edge>>();
+    let (source, target) = edges.single(w).unwrap();
     assert_eq!((source.0, target.0), (map[&out], map[&inp]));
     assert_eq!(w.get::<OutgoingEdges>(map[&out]).map(|e| e.len()), Some(1));
     let node = w.get::<ChildOf>(map[&inp]).unwrap().parent();
@@ -195,7 +182,6 @@ fn copy_some_nodes_and_paste_them_anywhere() {
     let new_edges: Vec<_> = w.get::<OutgoingEdges>(new_out).unwrap().iter().collect();
     assert_eq!(new_edges.len(), 1);
     assert_eq!(w.get::<EdgeTarget>(new_edges[0]).unwrap().0, new_in);
-    assert_eq!(w.get::<ChildOf>(new_edges[0]).unwrap().parent(), content);
     assert_eq!(
         w.get::<ChildOf>(node_of(w, new_out)).unwrap().parent(),
         content
@@ -206,8 +192,11 @@ fn copy_some_nodes_and_paste_them_anywhere() {
     let other_content = content_of(w, other);
     let map = w.insert_snapshot(other, &copied).unwrap();
     let edge = w.get::<OutgoingEdges>(map[&out]).unwrap()[0];
-    assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), other_content);
-    assert_eq!(w.get::<Children>(other_content).unwrap().len(), 3);
+    assert!(
+        w.get::<ChildOf>(edge).is_none(),
+        "edges stay out of the hierarchy"
+    );
+    assert_eq!(w.get::<Children>(other_content).unwrap().len(), 2);
 }
 
 #[test]
