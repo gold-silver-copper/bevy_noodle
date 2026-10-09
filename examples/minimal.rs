@@ -39,7 +39,7 @@ fn setup(mut commands: Commands) {
         (
             "Sink",
             Vec2::new(420.0, 200.0),
-            Port::input(NUMBER).with_max_connections(None),
+            Port::input(NUMBER).with_capacity(Capacity::Unlimited),
         ),
     ] {
         let side = if port.direction == PortDirection::Input {

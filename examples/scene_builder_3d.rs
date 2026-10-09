@@ -249,7 +249,7 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
     controls(commands, node, kind);
     for (label, port_type, color) in inputs {
         let port = match kind {
-            Kind::Scene => Port::input(*port_type).with_max_connections(None),
+            Kind::Scene => Port::input(*port_type).with_capacity(Capacity::Unlimited),
             _ => Port::input(*port_type),
         };
         commands.spawn((kit::input_with(*label, port, *color), ChildOf(node)));

@@ -108,12 +108,13 @@ pub mod prelude {
         SelectedBorderColor, SelectionBoxStyle,
     };
     pub use crate::{
-        CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Connection, ConnectionCheck,
-        DragProgress, Edge, EdgeGeometry, EdgeHitbox, EdgeSource, EdgeTarget, EditApplied,
-        EditOrigin, EditRejected, EditRequested, GraphCommandsExt, GraphEdit, GraphNode,
-        GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition, NoodleCorePlugin,
-        NoodleInteractionPlugin, NoodleKeyboardPlugin, NoodlePlugins, NoodleSystems, PendingWire,
-        Port, PortDirection, PortPair, PortTangent, PortType, RejectReason, ScrollMode, SelectMode,
-        SelectionBox, WhenFull, WireCandidates, WireDropped, WireOf, WireTarget,
+        CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Capacity, Connection,
+        ConnectionCheck, DragProgress, Edge, EdgeGeometry, EdgeHitbox, EdgeSource, EdgeTarget,
+        EditApplied, EditOrigin, EditRejected, EditRequested, GraphCommandsExt, GraphEdit,
+        GraphNode, GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition,
+        NoodleCorePlugin, NoodleInteractionPlugin, NoodleKeyboardPlugin, NoodlePlugins,
+        NoodleSystems, PendingWire, Port, PortDirection, PortPair, PortTangent, PortType,
+        RejectReason, ScrollMode, SelectMode, SelectionBox, WireCandidates, WireDropped, WireOf,
+        WireTarget,
     };
 }

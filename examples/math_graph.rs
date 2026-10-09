@@ -124,7 +124,7 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
             commands.spawn((
                 kit::input_with(
                     "values",
-                    Port::input(NUMBER).with_max_connections(None),
+                    Port::input(NUMBER).with_capacity(Capacity::Unlimited),
                     BLUE,
                 ),
                 ChildOf(node),

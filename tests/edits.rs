@@ -8,14 +8,17 @@
     clippy::panic
 )]
 
+use std::num::NonZeroU32;
+
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason, WhenFull};
+use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
 
 const NUM: PortType = PortType::named("num");
 const TEXT: PortType = PortType::named("text");
+const TWO: NonZeroU32 = NonZeroU32::new(2).unwrap();
 
 #[derive(Resource, Default)]
 struct Log(Vec<String>);
@@ -149,9 +152,7 @@ fn single_inputs_swap_and_wide_inputs_fill_up() {
         .map(|_| node(w, content, &[Port::output(NUM)]).1[0])
         .collect();
     let (_, single) = node(w, content, &[Port::input(NUM)]);
-    let wide = Port::input(NUM)
-        .with_max_connections(Some(2))
-        .when_full(WhenFull::Refuse);
+    let wide = Port::input(NUM).with_capacity(Capacity::Refuse(TWO));
     let (_, wide) = node(w, content, &[wide]);
     for out in &outs[..2] {
         w.graph_edit(
@@ -487,9 +488,7 @@ fn observers_may_allow_or_refuse_what_the_rules_decide() {
 fn an_allowed_full_port_keeps_all_its_edges() {
     let mut app = app();
     let w = app.world_mut();
-    let wide = Port::input(NUM)
-        .with_max_connections(Some(2))
-        .when_full(WhenFull::Refuse);
+    let wide = Port::input(NUM).with_capacity(Capacity::Refuse(TWO));
     let out = Port::output(NUM);
     let (canvas, p) = graph(w, &[out, out, out, wide]);
     let to = p[3];
@@ -622,7 +621,7 @@ fn a_content_spawned_by_hand_replaces_the_empty_one() {
 fn full_replacing_ports_drop_their_oldest_edges() {
     let mut app = app();
     let w = app.world_mut();
-    let two = Port::input(NUM).with_max_connections(Some(2));
+    let two = Port::input(NUM).with_capacity(Capacity::Replace(TWO));
     let out = Port::output(NUM);
     let (canvas, p) = graph(w, &[out, out, out, two]);
     let to = p[3];
