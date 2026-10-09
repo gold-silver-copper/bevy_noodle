@@ -3,7 +3,7 @@
 ## 0.4.0 - 2026-10-05
 
 ### Changed (breaking)
-- Requires Bevy 0.20 and Rust 1.96. Pointer events are Bevy's flat
+- Requires Bevy 0.20 and Rust 1.97.1. Pointer events are Bevy's flat
   `PointerPress`, `PointerDrag`, … events; the default style's shaders are
   WESL.
 - Canvases spawn their own `CanvasContent` (linked by the `ContentOf` /

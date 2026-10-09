@@ -2,7 +2,7 @@
 name = "bevy_noodle"
 version = "0.4.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.97.1"
 description = "A headless, entity-based node graph library for Bevy UI: you style the nodes, it handles the graph."
 license = "MIT"
 readme = "README.md"
@@ -21,7 +21,7 @@ default_style = ["bevy/ui_bevy_render"]
 scene = ["bevy/bevy_world_serialization"]
 
 [dependencies]
-bevy = { version = "0.20.0-rc.2", default-features = false, features = [
+bevy = { version = "0.20", default-features = false, features = [
     "ui_api",
     "bevy_picking",
     "ui_picking",
@@ -33,7 +33,7 @@ bevy = { version = "0.20.0-rc.2", default-features = false, features = [
 opt-level = 3
 
 [dev-dependencies]
-bevy = { version = "0.20.0-rc.2", features = ["bevy_feathers"] }
+bevy = { version = "0.20", features = ["bevy_feathers"] }
 # Reading saved graphs in the save_load example.
 ron = "0.12"
 serde = { version = "1", features = ["derive"] }
