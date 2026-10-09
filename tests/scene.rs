@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{Content, OutgoingEdges, scene};
+use bevy_noodle::{OutgoingEdges, scene};
 
 const NUM: PortType = PortType::named("num");
 
@@ -38,7 +38,7 @@ fn graph(world: &mut World) -> (Entity, Entity, [Entity; 2]) {
 /// The content a canvas spawned for itself.
 fn content_of(world: &mut World, canvas: Entity) -> Entity {
     world.flush();
-    **world.get::<Content>(canvas).unwrap()
+    world.get::<Children>(canvas).unwrap()[0]
 }
 
 /// Snapshots here hold no asset handles.
@@ -241,7 +241,6 @@ fn nested_canvases_restore_with_one_content_each() {
         .filter(|c| w.get::<CanvasContent>(*c).is_some())
         .collect();
     assert_eq!(contents.len(), 1, "the snapshot's content, not a new one");
-    assert_eq!(w.get::<Content>(inner).map(|c| **c), Some(contents[0]));
     let nodes = w.get::<Children>(contents[0]).unwrap();
     assert_eq!(w.get::<Payload>(nodes[0]), Some(&Payload(7.0)));
 }

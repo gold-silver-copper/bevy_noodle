@@ -26,25 +26,19 @@ fn canvas_added(mut world: DeferredWorld, context: HookContext) {
         .queue(move |world: &mut World| _ = ensure_content(world, canvas));
 }
 
+/// The [`CanvasContent`] among a canvas's children.
+pub(crate) fn content(world: &World, canvas: Entity) -> Option<Entity> {
+    let children = world.get::<Children>(canvas)?;
+    children
+        .iter()
+        .find(|c| world.get::<CanvasContent>(*c).is_some())
+}
+
 /// Gives `canvas` a content, unless it has one.
 pub(crate) fn ensure_content(world: &mut World, canvas: Entity) -> Option<Entity> {
     world.get::<NodeCanvas>(canvas)?;
-    if let Some(content) = world.get::<Content>(canvas) {
-        return Some(content.0);
-    }
-    // One spawned unlinked (e.g. while a snapshot was written) wins.
-    let children = world.get::<Children>(canvas).map(|c| c.to_vec());
-    let unlinked = children
-        .into_iter()
-        .flatten()
-        .find(|c| world.get::<CanvasContent>(*c).is_some());
-    let content = match unlinked {
-        Some(content) => world.entity_mut(content).insert(ContentOf(canvas)).id(),
-        None => world
-            .spawn((CanvasContent, ContentOf(canvas), ChildOf(canvas)))
-            .id(),
-    };
-    Some(content)
+    let content = content(world, canvas);
+    Some(content.unwrap_or_else(|| world.spawn((CanvasContent, ChildOf(canvas))).id()))
 }
 
 /// The canvas camera: `pan` is where the graph origin appears (canvas-local
@@ -112,7 +106,8 @@ fn content_added(mut world: DeferredWorld, context: HookContext) {
         .queue(move |world: &mut World| link_content(world, content));
 }
 
-/// Makes `content` its parent canvas's content, replacing an empty one.
+/// A content added beside its canvas's own replaces it while that one is
+/// empty, so a canvas normally has one.
 pub(crate) fn link_content(world: &mut World, content: Entity) {
     let Some(canvas) = world.get::<ChildOf>(content).map(ChildOf::parent) else {
         return;
@@ -120,27 +115,17 @@ pub(crate) fn link_content(world: &mut World, content: Entity) {
     if world.get::<NodeCanvas>(canvas).is_none() {
         return;
     }
-    let old = world.get::<Content>(canvas).map(|c| c.0);
-    match old {
-        Some(old) if old == content => return,
-        Some(old) if world.get::<Children>(old).is_none_or(|c| c.is_empty()) => {
-            world.despawn(old);
-        }
-        Some(_) => return,
-        None => {}
+    let siblings = world.get::<Children>(canvas).map(|c| c.to_vec());
+    let empty = |e: Entity| world.get::<Children>(e).is_none_or(|c| c.is_empty());
+    let replaced: Vec<_> = siblings
+        .into_iter()
+        .flatten()
+        .filter(|c| *c != content && world.get::<CanvasContent>(*c).is_some() && empty(*c))
+        .collect();
+    for old in replaced {
+        world.despawn(old);
     }
-    world.entity_mut(content).insert(ContentOf(canvas));
 }
-
-/// On a [`CanvasContent`]: the canvas it holds the nodes of.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-#[relationship(relationship_target = Content)]
-pub struct ContentOf(pub Entity);
-
-/// On a [`NodeCanvas`]: its [`CanvasContent`], maintained by Bevy.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
-#[relationship_target(relationship = ContentOf, linked_spawn)]
-pub struct Content(Entity);
 
 // Zero-size at the canvas origin, so zoom pivots on the graph origin even when
 // nodes are laid out in flow.

@@ -33,7 +33,7 @@ pub struct GraphQuery<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
     canvases: Query<'w, 's, (), With<NodeCanvas>>,
-    contents: Query<'w, 's, &'static Content>,
+    contents: Query<'w, 's, (), With<CanvasContent>>,
     nodes: Query<'w, 's, (), With<GraphNode>>,
     ports: Query<
         'w,
@@ -71,9 +71,10 @@ impl GraphQuery<'_, '_> {
         self.nearest(entity, |e| self.nodes.contains(e))
     }
 
-    /// The [`CanvasContent`] of a canvas.
+    /// The [`CanvasContent`] of a canvas: the one among its children.
     pub fn content_of(&self, canvas: Entity) -> Option<Entity> {
-        self.contents.get(canvas).ok().map(|c| **c)
+        let children = self.children.get(canvas).ok()?;
+        children.iter().find(|c| self.contents.contains(*c))
     }
 
     /// Selected nodes and edges of a canvas (not of canvases nested inside it).
