@@ -58,7 +58,8 @@ pub trait SnapshotWorldExt {
 
 impl SnapshotWorldExt for World {
     fn snapshot(&self, canvas: Entity) -> Option<DynamicWorld> {
-        snapshot(self, canvas)
+        let roots = self.get::<Children>(content(self, canvas)?);
+        Some(snapshot_nodes(self, roots.map_or(&[], |c| c)))
     }
 
     fn snapshot_nodes(&self, nodes: &[Entity]) -> DynamicWorld {
@@ -80,12 +81,6 @@ impl SnapshotWorldExt for World {
     ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
         restore(self, canvas, snapshot)
     }
-}
-
-fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
-    let content = content(world, canvas)?;
-    let roots = world.get::<Children>(content).map_or(&[][..], |c| c);
-    Some(snapshot_nodes(world, roots))
 }
 
 fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
