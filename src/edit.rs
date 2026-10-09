@@ -51,11 +51,49 @@ impl GraphEdit {
             drag: None,
         }
     }
+}
 
+/// What an applied edit changed: reported by [`EditApplied`] and returned by
+/// [`GraphWorldExt::graph_edit`].
+#[derive(Clone, Debug, PartialEq, Reflect)]
+pub enum GraphChange {
+    /// A new edge connects `ports`.
+    Connected {
+        /// The new edge.
+        edge: Entity,
+        /// Its ports.
+        ports: PortPair,
+    },
+    /// An edge is gone. Its `ports` are kept, so the change can be replayed
+    /// or inverted.
+    Disconnected {
+        /// The removed edge.
+        edge: Entity,
+        /// The ports it connected.
+        ports: PortPair,
+    },
+    /// Nodes moved by `delta` (graph units).
+    Moved {
+        /// The nodes.
+        nodes: Vec<Entity>,
+        /// The movement.
+        delta: Vec2,
+        /// Set while a drag streams its steps; `None` for a complete move.
+        drag: Option<DragProgress>,
+    },
+    /// Nodes (with their ports) and edges were despawned, after their edges
+    /// were reported [`Disconnected`](Self::Disconnected).
+    Deleted {
+        /// The nodes and edges.
+        items: Vec<Entity>,
+    },
+}
+
+impl GraphChange {
     /// Whether this is a step of a drag that has not ended: an undo stack
     /// records the drag's last step instead.
     pub fn is_drag_step(&self) -> bool {
-        matches!(self, Self::MoveNodes { drag: Some(drag), .. } if !drag.is_final)
+        matches!(self, Self::Moved { drag: Some(drag), .. } if !drag.is_final)
     }
 }
 
@@ -158,15 +196,10 @@ pub struct EditApplied {
     /// The canvas edited.
     #[event_target]
     pub canvas: Entity,
-    /// The edit as applied (normalized by validation and observers).
-    pub edit: GraphEdit,
+    /// What changed.
+    pub change: GraphChange,
     /// Where it came from.
     pub origin: EditOrigin,
-    /// The edge a [`GraphEdit::Connect`] created.
-    pub created: Option<Entity>,
-    /// The ports of a connect or disconnect, so the edit can be replayed or
-    /// inverted after the edge is gone.
-    pub ports: Option<PortPair>,
 }
 
 /// Triggered on the canvas, and written as a message, when an edit was refused.
@@ -206,8 +239,8 @@ pub enum RejectReason {
     Rejected,
 }
 
-/// What applying an edit returns: the edge a connect created, or why it was refused.
-pub type EditResult = Result<Option<Entity>, RejectReason>;
+/// What applying an edit returns: what it changed, or why it was refused.
+pub type EditResult = Result<GraphChange, RejectReason>;
 
 /// Queue graph edits from [`Commands`].
 pub trait GraphCommandsExt {
@@ -273,11 +306,11 @@ impl GraphWorldExt for World {
         origin: EditOrigin,
     ) -> EditResult {
         let result = run(self, canvas, edit.clone(), origin);
-        if let (Err(reason), Ok(_)) = (result, self.get_entity(canvas)) {
+        if let (Err(reason), Ok(_)) = (&result, self.get_entity(canvas)) {
             let event = EditRejected {
                 canvas,
                 edit,
-                reason,
+                reason: *reason,
             };
             self.trigger(event.clone());
             self.write_message(event);
@@ -361,32 +394,38 @@ pub(crate) fn ask(
     check.refused
 }
 
-/// A validated edit and its side effects.
-struct Plan {
-    edit: GraphEdit,
-    /// A connect's built-in verdict, which observers may override.
-    connection: Option<Connection>,
-    /// Edges (and their ports) removed first, each reported as a disconnect.
-    disconnect: Vec<(Entity, PortPair)>,
+/// A validated edit: the edges it removes first (each reported as a
+/// disconnect), then what it does.
+struct Plan(Vec<(Entity, PortPair)>, Step);
+
+enum Step {
+    Connect(Connection),
+    Disconnect(Entity, PortPair),
+    Move(Vec<Entity>, Vec2, Option<DragProgress>),
+    Delete(Vec<Entity>),
 }
 
 fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -> EditResult {
+    // The plan, and the edit normalized.
     let plan = |world: &mut World, edit| {
-        world
-            .run_system_cached_with(plan_edit, (canvas, edit))
-            .map_err(|_| RejectReason::InvalidEntity)?
+        let mut input = (canvas, edit);
+        let plan = world
+            .run_system_cached_with(plan_edit, &mut input)
+            .map_err(|_| RejectReason::InvalidEntity)??;
+        Ok((plan, input.1))
     };
     // A plan whose connection observers allow.
-    let checked = |world: &mut World, edit| {
-        let plan: Plan = plan(world, edit)?;
-        match plan.connection.as_ref().and_then(|c| ask(world, canvas, c)) {
-            Some(reason) => Err(reason),
-            None => Ok(plan),
+    let checked = |world: &mut World, edit| match plan(world, edit)? {
+        (Plan(_, Step::Connect(connection)), _)
+            if let Some(reason) = ask(world, canvas, &connection) =>
+        {
+            Err(reason)
         }
+        planned => Ok(planned),
     };
     // Checked before `EditRequested`, so observers see the normalized,
     // allowed edit.
-    let Plan { edit, .. } = checked(world, edit)?;
+    let (_, edit) = checked(world, edit)?;
     let mut request = EditRequested {
         canvas,
         edit: edit.clone(),
@@ -399,59 +438,60 @@ fn run(world: &mut World, canvas: Entity, edit: GraphEdit, origin: EditOrigin) -
     }
     // Planned again, as observers may have changed the world; a changed edit
     // is checked again, an unchanged one keeps its verdict.
-    let Plan {
-        edit, disconnect, ..
-    } = if request.edit == edit {
+    let (Plan(removed, step), _) = if request.edit == edit {
         plan(world, edit)?
     } else {
         checked(world, request.edit)?
     };
-    let applied = |world: &mut World, edit, created, ports| {
+    let applied = |world: &mut World, change: GraphChange| {
         let event = EditApplied {
             canvas,
-            edit,
+            change,
             origin,
-            created,
-            ports,
         };
         world.trigger(event.clone());
-        world.write_message(event);
+        world.write_message(event.clone());
+        event.change
     };
-    for (edge, ports) in disconnect {
+    for (edge, ports) in removed {
         world.despawn(edge);
-        applied(world, GraphEdit::Disconnect { edge }, None, Some(ports));
+        applied(world, GraphChange::Disconnected { edge, ports });
     }
-    let (mut created, mut ports) = (None, None);
-    match &edit {
-        GraphEdit::Connect { from, to } => {
-            let edge = world.spawn((Edge, EdgeSource(*from), EdgeTarget(*to))).id();
-            (created, ports) = (Some(edge), Some(PortPair::new(*from, *to)));
-        }
-        GraphEdit::Disconnect { edge } => {
-            let ends = world
-                .get::<EdgeSource>(*edge)
-                .zip(world.get::<EdgeTarget>(*edge));
-            ports = ends.map(|(s, t)| PortPair::new(s.0, t.0));
-            world.despawn(*edge);
-        }
-        GraphEdit::MoveNodes { nodes, delta, .. } => {
-            for node in nodes {
-                if let Some(mut position) = world.get_mut::<NodePosition>(*node) {
-                    position.0 += *delta;
-                }
+    let change = match step {
+        Step::Connect(connection) => {
+            let ports = connection.ports;
+            let edge = world.spawn((Edge, EdgeSource(ports.output), EdgeTarget(ports.input)));
+            GraphChange::Connected {
+                edge: edge.id(),
+                ports,
             }
         }
-        // Listed edges are already gone.
-        GraphEdit::Delete { items } => items.iter().for_each(|e| _ = world.try_despawn(*e)),
-    }
-    applied(world, edit, created, ports);
-    Ok(created)
+        Step::Disconnect(edge, ports) => {
+            world.despawn(edge);
+            GraphChange::Disconnected { edge, ports }
+        }
+        Step::Move(nodes, delta, drag) => {
+            for node in &nodes {
+                if let Some(mut position) = world.get_mut::<NodePosition>(*node) {
+                    position.0 += delta;
+                }
+            }
+            GraphChange::Moved { nodes, delta, drag }
+        }
+        Step::Delete(items) => {
+            // Listed edges are already gone.
+            items.iter().for_each(|e| _ = world.try_despawn(*e));
+            GraphChange::Deleted { items }
+        }
+    };
+    Ok(applied(world, change))
 }
 
 fn plan_edit(
-    In((canvas, mut edit)): In<(Entity, GraphEdit)>,
+    InMut((canvas, edit)): InMut<(Entity, GraphEdit)>,
     graph: GraphQuery,
 ) -> Result<Plan, RejectReason> {
+    let canvas = *canvas;
     if graph.canvas_of(canvas) != Some(canvas) {
         return Err(RejectReason::InvalidEntity);
     }
@@ -460,47 +500,45 @@ fn plan_edit(
     let here = |e: &Entity| graph.canvas_of(*e) == Some(canvas);
     let mine = |e: &Entity| graph.node_of(*e) == Some(*e) && here(e);
     let edge = |e: &Entity| graph.edge_ports(*e).is_some() && here(e);
-    let (mut disconnect, mut connection) = (Vec::new(), None);
-    match &mut edit {
+    let listed = |items: &Vec<Entity>| match items.is_empty() {
+        true => Err(RejectReason::Empty),
+        false => Ok(items.clone()),
+    };
+    let mut removed = Vec::new();
+    let step = match edit {
         GraphEdit::Connect { from, to } => {
-            let checked = graph.check_connection(canvas, *from, *to)?;
-            (*from, *to) = (checked.ports.output, checked.ports.input);
-            disconnect = checked.replaces.clone();
-            connection = Some(checked);
+            let connection = graph.check_connection(canvas, *from, *to)?;
+            (*from, *to) = (connection.ports.output, connection.ports.input);
+            removed = connection.replaces.clone();
+            Step::Connect(connection)
         }
-        GraphEdit::Disconnect { edge } if graph.edge_ports(*edge).is_none() => {
-            return Err(RejectReason::InvalidEntity);
+        GraphEdit::Disconnect { edge } => match graph.edge_ports(*edge) {
+            None => return Err(RejectReason::InvalidEntity),
+            Some(_) if !here(edge) => return Err(RejectReason::NotInCanvas),
+            Some(ports) => Step::Disconnect(*edge, ports),
+        },
+        GraphEdit::MoveNodes { nodes, delta, drag } => {
+            nodes.retain(mine);
+            Step::Move(listed(nodes)?, *delta, *drag)
         }
-        GraphEdit::Disconnect { edge } if !here(edge) => return Err(RejectReason::NotInCanvas),
-        GraphEdit::Disconnect { .. } => {}
-        GraphEdit::MoveNodes { nodes, .. } => nodes.retain(mine),
         GraphEdit::Delete { items } => {
             // Nodes go with their edges; listed edges go too.
             items.retain(|e| mine(e) || edge(e));
             items.sort();
             items.dedup();
-            disconnect = items
+            removed = items
                 .iter()
                 .flat_map(|n| graph.ports_of(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
-            disconnect.extend(items.iter().filter(|e| edge(e)));
-            disconnect.sort();
-            disconnect.dedup();
+            removed.extend(items.iter().filter(|e| edge(e)));
+            removed.sort();
+            removed.dedup();
+            Step::Delete(listed(items)?)
         }
-    }
-    if let GraphEdit::MoveNodes { nodes: items, .. } | GraphEdit::Delete { items } = &edit
-        && items.is_empty()
-    {
-        return Err(RejectReason::Empty);
-    }
-    let disconnect = disconnect
+    };
+    let removed = removed
         .into_iter()
-        .filter_map(|e| Some((e, graph.edge_ports(e)?)))
-        .collect();
-    Ok(Plan {
-        edit,
-        connection,
-        disconnect,
-    })
+        .filter_map(|e| Some((e, graph.edge_ports(e)?)));
+    Ok(Plan(removed.collect(), step))
 }

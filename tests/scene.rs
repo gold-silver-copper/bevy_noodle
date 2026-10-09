@@ -66,19 +66,23 @@ fn applied_edits_report_their_ports() {
     app.add_message::<EditApplied>();
     let w = app.world_mut();
     let (canvas, _, [out, inp]) = graph(w);
-    let edge = w
-        .graph_edit(canvas, GraphEdit::Connect { from: inp, to: out })
-        .unwrap()
-        .unwrap();
+    let edit = GraphEdit::Connect { from: inp, to: out };
+    let Ok(GraphChange::Connected { edge, ports }) = w.graph_edit(canvas, edit) else {
+        panic!("connected");
+    };
+    assert_eq!(ports, PortPair::new(out, inp));
     w.graph_edit(canvas, GraphEdit::Disconnect { edge })
         .unwrap();
-    let ports: Vec<_> = w
+    let changes: Vec<_> = w
         .resource_mut::<Messages<EditApplied>>()
         .drain()
-        .map(|e| e.ports)
+        .map(|e| e.change)
         .collect();
-    let pair = Some(PortPair::new(out, inp));
-    assert_eq!(ports, [pair, pair]);
+    use GraphChange::*;
+    assert_eq!(
+        changes,
+        [Connected { edge, ports }, Disconnected { edge, ports }]
+    );
 }
 
 #[test]

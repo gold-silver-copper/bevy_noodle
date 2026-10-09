@@ -159,8 +159,8 @@ fn drags_stream_steps_and_end_with_their_total() {
     let moves: Vec<_> = w
         .resource_mut::<Messages<EditApplied>>()
         .drain()
-        .filter_map(|e| match e.edit {
-            GraphEdit::MoveNodes { drag, .. } => Some((e.edit.is_drag_step(), drag)),
+        .filter_map(|e| match e.change {
+            GraphChange::Moved { drag, .. } => Some((e.change.is_drag_step(), drag)),
             _ => None,
         })
         .collect();
@@ -171,7 +171,6 @@ fn drags_stream_steps_and_end_with_their_total() {
         })
     };
     assert_eq!(moves, [(true, progress(false)), (false, progress(true))]);
-    assert!(!GraphEdit::move_nodes(vec![node], Vec2::X).is_drag_step());
 }
 
 #[test]
@@ -219,8 +218,10 @@ fn panning_works_from_an_edge() {
     let w = app.world_mut();
     let (canvas, content) = graph(w);
     let [from, to] = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
-    let edge = w.graph_edit(canvas, GraphEdit::Connect { from, to });
-    let edge = edge.unwrap().unwrap();
+    let edit = GraphEdit::Connect { from, to };
+    let Ok(GraphChange::Connected { edge, .. }) = w.graph_edit(canvas, edit) else {
+        panic!("connected");
+    };
     // Edges have no parent, so their events never bubble to the canvas.
     let button = PointerButton::Middle;
     let by = Vec2::new(30.0, -10.0);

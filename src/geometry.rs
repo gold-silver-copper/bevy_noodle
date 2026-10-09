@@ -161,7 +161,7 @@ pub(crate) fn drop_split_edges(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::edit::GraphWorldExt;
+    use crate::edit::{GraphChange, GraphWorldExt};
 
     #[test]
     fn edges_have_geometry_only_while_laid_out() {
@@ -177,7 +177,9 @@ mod tests {
         });
         w.flush();
         let edit = GraphEdit::Connect { from: out, to: inp };
-        let edge = w.graph_edit(canvas, edit).unwrap().unwrap();
+        let Ok(GraphChange::Connected { edge, .. }) = w.graph_edit(canvas, edit) else {
+            panic!("connected");
+        };
         app.update();
         assert!(app.world().get::<EdgeGeometry>(edge).is_none());
 
