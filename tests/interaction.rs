@@ -18,7 +18,7 @@ use bevy::picking::pointer::{Location, PointerId, PointerLocation, PointerMap};
 use bevy::prelude::*;
 use bevy::ui::{Selected, UiScale};
 use bevy_noodle::prelude::*;
-use bevy_noodle::{Content, DragProgress, WireCandidate, WireTarget};
+use bevy_noodle::{Content, DragProgress, WireCandidates, WireTarget};
 
 const NUM: PortType = PortType::named("num");
 
@@ -47,6 +47,13 @@ fn one_node_each<const N: usize>(w: &mut World, content: Entity, ports: [Port; N
         let node = w.spawn((GraphNode, Node::default(), ChildOf(content))).id();
         w.spawn((port, Node::default(), ChildOf(node))).id()
     })
+}
+
+/// Whether a dragged wire may connect to `port`.
+fn candidate(w: &mut World, port: Entity) -> bool {
+    w.query::<&WireCandidates>()
+        .iter(w)
+        .any(|c| c.contains(&port))
 }
 
 fn hit() -> HitData {
@@ -190,9 +197,8 @@ fn dragging_from_a_port_snaps_to_the_hovered_port_and_connects() {
             delta: Vec2::X,
         },
     );
-    let wire = *w.query::<&PendingWire>().single(w).unwrap();
-    assert_eq!(wire.target, Some(ports[1]));
-    assert!(w.get::<WireTarget>(ports[1]).is_some());
+    let target = *w.query::<&WireTarget>().single(w).unwrap();
+    assert_eq!(target, WireTarget(Some(ports[1])));
 
     pointer(
         w,
@@ -205,7 +211,6 @@ fn dragging_from_a_port_snaps_to_the_hovered_port_and_connects() {
     let edges: Vec<_> = w.query::<&EdgeTarget>().iter(w).map(|t| t.0).collect();
     assert_eq!(edges, [ports[1]]);
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
-    assert!(w.get::<WireTarget>(ports[1]).is_none());
 }
 
 #[test]
@@ -253,10 +258,7 @@ fn dragged_wires_snap_to_ports_observers_allow() {
     let ports = one_node_each(w, content, [Port::output(NUM), Port::input(TEXT)]);
     let button = PointerButton::Primary;
     pointer(w, ports[0], DragStart { button, hit: hit() });
-    assert!(
-        w.get::<WireCandidate>(ports[1]).is_some(),
-        "the observer allows it"
-    );
+    assert!(candidate(w, ports[1]), "the observer allows it");
     let hovered = [(ports[1], hit())].into_iter().collect();
     w.resource_mut::<HoverMap>()
         .insert(PointerId::Mouse, hovered);
@@ -406,51 +408,24 @@ fn controls_inside_nodes_keep_their_presses_and_drags() {
 }
 
 #[test]
-fn wires_mark_candidates_while_they_exist() {
+fn wires_mark_candidates_of_their_canvas_while_they_exist() {
     let mut app = app();
     let w = app.world_mut();
-    let (canvas, content) = graph(w);
-    let [from, fits, other] = one_node_each(
-        w,
-        content,
-        [Port::output(NUM), Port::input(NUM), Port::output(NUM)],
-    );
-    let wire = PendingWire {
-        canvas,
-        from,
-        pointer: Vec2::ZERO,
-        target: Some(fits),
-    };
-    let wire = w.spawn(wire).id();
-    w.entity_mut(fits).insert(WireTarget);
-    w.flush();
-    assert!(w.get::<WireCandidate>(fits).is_some());
-    assert!(w.get::<WireCandidate>(other).is_none());
-    w.despawn(wire);
-    w.flush();
-    assert!(w.get::<WireCandidate>(fits).is_none() && w.get::<WireTarget>(fits).is_none());
-}
-
-#[test]
-fn ending_one_canvas_wire_keeps_another_canvas_marks() {
-    let mut app = app();
-    let w = app.world_mut();
-    let [(first, _), (_, second_fits)] = [(); 2].map(|()| {
+    let [(first, fits, other), (_, second_fits, _)] = [(); 2].map(|()| {
         let (canvas, content) = graph(w);
-        let [from, fits] = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
-        let wire = PendingWire {
-            canvas,
-            from,
-            pointer: Vec2::ZERO,
-            target: None,
-        };
-        (w.spawn(wire).id(), fits)
+        let ports = [Port::output(NUM), Port::input(NUM), Port::output(NUM)];
+        let [from, fits, other] = one_node_each(w, content, ports);
+        let pointer = Vec2::ZERO;
+        let wire = w.spawn((PendingWire { from, pointer }, WireOf(canvas)));
+        (wire.id(), fits, other)
     });
     w.flush();
-    assert!(w.get::<WireCandidate>(second_fits).is_some());
+    assert!(candidate(w, fits));
+    assert!(!candidate(w, other));
     w.despawn(first);
     w.flush();
-    assert!(w.get::<WireCandidate>(second_fits).is_some());
+    assert!(!candidate(w, fits));
+    assert!(candidate(w, second_fits), "another canvas keeps its marks");
 }
 
 #[test]
@@ -472,13 +447,13 @@ fn dragging_off_a_connected_input_picks_up_its_wire() {
     let wire = *w.query::<&PendingWire>().single(w).unwrap();
     assert_eq!(wire.from, output, "the wire hangs off the output now");
     assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
-    assert!(w.get::<WireCandidate>(input).is_some());
+    assert!(candidate(w, input));
 
     let distance = Vec2::X;
     pointer(w, input, DragEnd { button, distance });
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
     assert_eq!(w.query::<&Edge>().iter(w).count(), 0, "dropped on nothing");
-    assert!(w.get::<WireCandidate>(input).is_none());
+    assert!(!candidate(w, input));
 }
 
 #[test]

@@ -115,15 +115,15 @@ fn enter_selects_and_arrows_move() {
 fn space_on_two_ports_connects_them() {
     let (mut app, g) = app();
     press(&mut app, g.ports[0], KeyCode::Space);
-    let mut wires = app.world_mut().query::<&PendingWire>();
-    assert_eq!(wires.iter(app.world()).count(), 1);
     // Focusing a compatible port snaps the wire to it.
     let w = app.world_mut();
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 1);
     w.resource_mut::<InputFocus>()
         .set(g.ports[1], FocusCause::Navigated);
     app.update();
-    let wire = *wires.single(app.world()).unwrap();
-    assert_eq!(wire.target, Some(g.ports[1]));
+    let w = app.world_mut();
+    let target = *w.query::<&WireTarget>().single(w).unwrap();
+    assert_eq!(target, WireTarget(Some(g.ports[1])));
 
     press(&mut app, g.ports[1], KeyCode::Space);
     let w = app.world_mut();

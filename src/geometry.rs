@@ -8,6 +8,7 @@ use bevy::ui::{ComputedNode, ui_transform::UiGlobalTransform};
 
 use crate::components::*;
 use crate::edit::{GraphCommandsExt, GraphEdit};
+use crate::interaction::WireTarget;
 use crate::query::GraphQuery;
 
 pub(crate) fn sync_layout(
@@ -51,7 +52,8 @@ pub(crate) fn endpoint(
 pub(crate) fn update_edge_geometry(
     changed: Query<(), Or<(Changed<NodePosition>, Changed<PortAnchor>, Added<Edge>)>>,
     edges: Query<(Entity, &EdgeSource, &EdgeTarget, Option<&EdgeGeometry>)>,
-    wires: Query<(Entity, &PendingWire, Option<&EdgeGeometry>), Without<EdgeSource>>,
+    wires: Query<(Entity, &PendingWire, Option<&EdgeGeometry>)>,
+    targets: Query<&WireTarget>,
     ports: Query<(&Port, &PortAnchor, Option<&PortTangent>)>,
     nodes: Query<&NodePosition>,
     mut commands: Commands,
@@ -74,15 +76,13 @@ pub(crate) fn update_edge_geometry(
     }
     // The dragged wire runs output → input; the pointer stands in for the free end.
     for (entity, wire, current) in &wires {
+        let target = targets.get(entity).ok().and_then(|t| t.0);
         let geometry = end(wire.from).map(|fixed| {
-            let free = wire
-                .target
-                .and_then(end)
-                .unwrap_or((wire.pointer, -fixed.1));
+            let free = target.and_then(end).unwrap_or((wire.pointer, -fixed.1));
             let from_output = ports
                 .get(wire.from)
                 .is_ok_and(|(p, ..)| p.direction == PortDirection::Output);
-            let (from, to) = (Some(wire.from), wire.target);
+            let (from, to) = (Some(wire.from), target);
             if from_output {
                 EdgeGeometry::between(fixed, free).with_ports(from, to)
             } else {

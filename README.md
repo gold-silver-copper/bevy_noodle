@@ -124,7 +124,7 @@ NodeCanvas              one graph and its viewport
 - **Redirect** edits in `On<EditRequested>` observers: rewrite or `reject()`
   them, and do side effects there.
 - **React** to `EditApplied`.
-- **Style** from `Selected`, `WireCandidate`, `WireTarget` and `SelectionBox`.
+- **Style** from `Selected`, the dragged wire's `WireCandidates` and `WireTarget`, and `SelectionBox`.
 - **Controls inside nodes** (sliders, text fields, menus) keep their own
   presses and drags.
 
