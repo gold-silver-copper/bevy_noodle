@@ -546,8 +546,13 @@ fn wire_added(mut world: DeferredWorld, context: HookContext) {
         .queue(move |world: &mut World| crate::interaction::mark_candidates(world, canvas, from));
 }
 
-fn wire_removed(mut world: DeferredWorld, _: HookContext) {
-    world.commands().queue(crate::interaction::clear_candidates);
+fn wire_removed(mut world: DeferredWorld, context: HookContext) {
+    let Some(&wire) = world.get::<PendingWire>(context.entity) else {
+        return;
+    };
+    world.commands().queue(move |world: &mut World| {
+        crate::interaction::clear_candidates(world, wire.canvas);
+    });
 }
 
 #[cfg(test)]

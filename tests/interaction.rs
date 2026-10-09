@@ -432,6 +432,28 @@ fn wires_mark_candidates_while_they_exist() {
 }
 
 #[test]
+fn ending_one_canvas_wire_keeps_another_canvas_marks() {
+    let mut app = app();
+    let w = app.world_mut();
+    let [(first, _), (_, second_fits)] = [(); 2].map(|()| {
+        let (canvas, content) = graph(w);
+        let [from, fits] = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
+        let wire = PendingWire {
+            canvas,
+            from,
+            pointer: Vec2::ZERO,
+            target: None,
+        };
+        (w.spawn(wire).id(), fits)
+    });
+    w.flush();
+    assert!(w.get::<WireCandidate>(second_fits).is_some());
+    w.despawn(first);
+    w.flush();
+    assert!(w.get::<WireCandidate>(second_fits).is_some());
+}
+
+#[test]
 fn dragging_off_a_connected_input_picks_up_its_wire() {
     let mut app = app();
     let w = app.world_mut();

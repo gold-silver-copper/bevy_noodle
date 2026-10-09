@@ -671,10 +671,19 @@ pub(crate) fn retarget(wire: &mut PendingWire, target: Option<Entity>, commands:
     }
 }
 
-/// Removes every [`WireCandidate`] and [`WireTarget`] marker.
-pub(crate) fn clear_candidates(world: &mut World) {
-    let mut marked = world.query_filtered::<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>();
-    for port in marked.iter(world).collect::<Vec<_>>() {
+/// Removes the [`WireCandidate`] and [`WireTarget`] markers of `canvas`.
+pub(crate) fn clear_candidates(world: &mut World, canvas: Entity) {
+    let marked =
+        |In(canvas),
+         graph: GraphQuery,
+         marked: Query<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>| {
+            let here = marked
+                .iter()
+                .filter(|p| graph.canvas_of(*p) == Some(canvas));
+            here.collect::<Vec<_>>()
+        };
+    let marked = world.run_system_cached_with(marked, canvas);
+    for port in marked.unwrap_or_default() {
         world
             .entity_mut(port)
             .remove::<(WireCandidate, WireTarget)>();
