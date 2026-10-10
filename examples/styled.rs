@@ -81,7 +81,7 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
                     NumberInputValue::F32({value})
                     Node { margin: {margin} }
                 })
-                .insert(ChildOf(node));
+                .try_insert(ChildOf(node));
             commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
             node
         }
@@ -111,7 +111,7 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
                     Node { margin: {margin} }
                     Children [ @FeathersTextInput EditableText::new(template) ]
                 })
-                .insert(ChildOf(node));
+                .try_insert(ChildOf(node));
             commands.spawn((kit::input("number", NUMBER, BLUE), ChildOf(node)));
             commands.spawn((kit::output("text", TEXT, GREEN), ChildOf(node)));
             node

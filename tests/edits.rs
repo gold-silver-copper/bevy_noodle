@@ -2,6 +2,7 @@
 
 // Test helpers may panic: a panic is a failed test.
 #![allow(
+    clippy::disallowed_methods,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
@@ -250,6 +251,21 @@ fn deleting_nodes_or_ports_removes_edges() {
 }
 
 #[test]
+fn deleting_a_node_reports_the_edges_of_nodes_inside_it() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (group, _) = node(w, content, &[]);
+    let (_, inner) = node(w, group, &[Port::output(NUM)]);
+    let (_, d) = node(w, content, &[Port::input(NUM)]);
+    connect(w, c, inner[0], d[0]);
+    log(&mut app);
+    let delete = GraphEdit::Delete { items: vec![group] };
+    app.world_mut().graph_edit(c, delete).unwrap();
+    assert_eq!(log(&mut app), ["applied disconnect", "applied delete"]);
+}
+
+#[test]
 fn selection_modes() {
     let mut app = app();
     let w = app.world_mut();
@@ -339,6 +355,20 @@ fn reparenting_into_another_graph_drops_crossing_edges() {
     app.update();
     assert!(app.world().get_entity(edge).is_err());
     assert!(log(&mut app).contains(&"applied disconnect".to_string()));
+}
+
+#[test]
+fn unparenting_a_node_disconnects_its_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (nb, b) = node(w, content, &[Port::input(NUM)]);
+    let edge = connect(w, c, a[0], b[0]);
+    app.update();
+    app.world_mut().entity_mut(nb).remove::<ChildOf>();
+    app.update();
+    assert!(app.world().get_entity(edge).is_err());
 }
 
 #[test]

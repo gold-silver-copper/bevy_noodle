@@ -115,28 +115,28 @@ fn insert(
         .iter()
         .filter_map(|e| map.get(&e.entity).copied())
     {
+        let Ok(mut entity) = world.get_entity_mut(entity) else {
+            continue;
+        };
         // Writing skips relationship hooks; reinserting links edges to ports.
-        let ends = world
-            .get::<EdgeSource>(entity)
-            .zip(world.get::<EdgeTarget>(entity));
+        let ends = entity.get::<EdgeSource>().zip(entity.get::<EdgeTarget>());
         if let Some((source, target)) = ends.map(|(s, t)| (*s, *t)) {
-            world.entity_mut(entity).insert((source, target));
+            entity.insert((source, target));
             continue;
         }
         // Top-level nodes still point at the snapshot's content: adopt them.
-        let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
-        if parent.is_none_or(|p| world.get_entity(p).is_err()) {
-            world.entity_mut(content).add_child(entity);
+        let parent = entity.get::<ChildOf>().map(ChildOf::parent);
+        if parent.is_none_or(|p| entity.world().get_entity(p).is_err()) {
+            entity.insert(ChildOf(content));
         }
         // Children left out (`Transient`) are still listed: relink the rest.
-        let children = world.get::<Children>(entity).map(|c| c.to_vec());
+        let children = entity.get::<Children>().map(|c| c.to_vec());
         let kept = children.iter().flatten().copied();
-        let kept: Vec<_> = kept.filter(|c| world.get_entity(*c).is_ok()).collect();
+        let kept: Vec<_> = kept
+            .filter(|c| entity.world().get_entity(*c).is_ok())
+            .collect();
         if children.is_some_and(|c| c.len() != kept.len()) {
-            world
-                .entity_mut(entity)
-                .remove::<Children>()
-                .add_children(&kept);
+            entity.remove::<Children>().add_children(&kept);
         }
     }
     // Nested canvases may have spawned a content of their own while the
@@ -159,8 +159,8 @@ fn restore(
     canvas: Entity,
     snapshot: &DynamicWorld,
 ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
-    if let Some(content) = content(world, canvas) {
-        world.entity_mut(content).despawn_related::<Children>();
+    if let Some(mut content) = content(world, canvas).and_then(|c| world.get_entity_mut(c).ok()) {
+        content.despawn_related::<Children>();
     }
     insert(world, canvas, snapshot)
 }
@@ -187,7 +187,10 @@ fn subtrees(world: &World, roots: &[Entity]) -> Vec<Entity> {
 }
 
 fn build(world: &World, entities: Vec<Entity>) -> DynamicWorld {
-    let registry = world.resource::<AppTypeRegistry>().read();
+    // Without a registry nothing is reflected, so the snapshot is empty.
+    let registry = world.get_resource::<AppTypeRegistry>().cloned();
+    let registry = registry.unwrap_or_default();
+    let registry = registry.read();
     DynamicWorldBuilder::from_world(world, &registry)
         .deny_component::<ComputedNode>()
         .deny_component::<ComputedStackIndex>()

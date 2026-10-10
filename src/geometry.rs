@@ -59,13 +59,17 @@ pub(crate) fn update_edge_geometry(
     mut commands: Commands,
 ) {
     let end = |port| endpoint(port, &ports, &nodes);
+    // A wire ends with its port: its drag end goes to an entity that is gone.
+    for (wire, ..) in wires.iter().filter(|(_, w, _)| !ports.contains(w.from)) {
+        commands.entity(wire).try_despawn();
+    }
     // Inserted while both ends are laid out, removed otherwise.
     let mut set = |entity, current: Option<&EdgeGeometry>, wanted: Option<EdgeGeometry>| match (
         current, wanted,
     ) {
         (Some(current), Some(wanted)) if *current == wanted => {}
-        (_, Some(wanted)) => _ = commands.entity(entity).insert(wanted),
-        (Some(_), None) => _ = commands.entity(entity).remove::<EdgeGeometry>(),
+        (_, Some(wanted)) => _ = commands.entity(entity).try_insert(wanted),
+        (Some(_), None) => _ = commands.entity(entity).try_remove::<EdgeGeometry>(),
         (None, None) => {}
     };
     for (edge, source, target, current) in edges.iter().filter(|_| !changed.is_empty()) {
@@ -129,17 +133,19 @@ pub(crate) fn measure_ports(
     }
 }
 
-/// After re-parenting, edges whose ends ended up in different graphs are
-/// disconnected. Checked once per frame, so moving both ends one after the
+/// After re-parenting (or unparenting), edges whose ends ended up in
+/// different graphs are disconnected. Checked once per frame, so moving both ends one after the
 /// other keeps the edge (it belongs to whichever graph its ports are in).
 pub(crate) fn drop_split_edges(
     moved: Query<Entity, Changed<ChildOf>>,
+    mut unparented: RemovedComponents<ChildOf>,
     graph: GraphQuery,
     children: Query<&Children>,
     mut commands: Commands,
 ) {
     let subtrees = moved
         .iter()
+        .chain(unparented.read())
         .flat_map(|e| std::iter::once(e).chain(children.iter_descendants(e)));
     let mut edges: Vec<_> = subtrees.flat_map(|e| graph.edges_of(e)).collect();
     edges.sort();
@@ -152,7 +158,7 @@ pub(crate) fn drop_split_edges(
             (Some(canvas), other) if other != Some(canvas) => {
                 commands.graph_edit(canvas, GraphEdit::Disconnect { edge });
             }
-            (None, _) => commands.entity(edge).despawn(),
+            (None, _) => commands.entity(edge).try_despawn(),
             _ => {}
         }
     }

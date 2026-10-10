@@ -84,7 +84,8 @@ impl CanvasView {
     /// point under the canvas-local `anchor` in place.
     pub fn zoom_around(&mut self, anchor: Vec2, factor: f32) {
         let fixed = self.canvas_to_graph(anchor);
-        self.zoom = (self.zoom * factor).clamp(self.min_zoom, self.max_zoom);
+        // Not `clamp`, which panics on inverted limits.
+        self.zoom = (self.zoom * factor).max(self.min_zoom).min(self.max_zoom);
         self.pan = anchor - fixed * self.zoom;
     }
 }
@@ -163,8 +164,10 @@ pub(crate) fn adopt_nodes(
     if nodes.get(node).is_ok_and(|p| canvases.contains(p.parent())) {
         commands.queue(move |world: &mut World| {
             let canvas = world.get::<ChildOf>(node).map(ChildOf::parent);
-            if let Some(content) = canvas.and_then(|c| ensure_content(world, c)) {
-                world.entity_mut(node).insert(ChildOf(content));
+            if let Some(content) = canvas.and_then(|c| ensure_content(world, c))
+                && let Ok(mut node) = world.get_entity_mut(node)
+            {
+                node.insert(ChildOf(content));
             }
         });
     }
@@ -557,5 +560,16 @@ mod tests {
         assert!((view.canvas_to_graph(anchor) - before).length() < 1e-3);
         view.zoom_around(anchor, 100.0);
         assert_eq!(view.zoom, view.max_zoom);
+    }
+
+    #[test]
+    fn inverted_zoom_limits_do_not_panic() {
+        let mut view = CanvasView {
+            min_zoom: 2.0,
+            max_zoom: 1.0,
+            ..default()
+        };
+        view.zoom_around(Vec2::ZERO, 1.5);
+        assert!(view.zoom.is_finite());
     }
 }

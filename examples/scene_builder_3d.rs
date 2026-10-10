@@ -177,7 +177,7 @@ fn setup(
     let border = BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1));
     let canvas = commands
         .spawn(kit::canvas())
-        .insert((panel, background, border))
+        .try_insert((panel, background, border))
         .id();
     let coral = Hsla::hsl(5.0, 0.9, 0.65);
     let teal = Hsla::hsl(180.0, 0.6, 0.45);
@@ -298,7 +298,7 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
             // A hue and saturation plane over a lightness slider.
             commands
                 .spawn_scene(bsn! { @FeathersColorPlane::HueSaturation Node { margin: {margin}, min_height: px(70) } })
-                .insert(ChildOf(node));
+                .try_insert(ChildOf(node));
             let lightness = color.lightness;
             commands.spawn_scene(bsn! {
                 @FeathersColorSlider { @channel: ColorChannel::HslLightness, @value: lightness }
@@ -317,12 +317,12 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
                     HardLimit::i32(0..=64)
                     Node { margin: {margin} }
                 })
-                .insert(ChildOf(node));
+                .try_insert(ChildOf(node));
             return;
         }
         Kind::Scene => return,
     }
-    .insert(ChildOf(node));
+    .try_insert(ChildOf(node));
 }
 
 /// Whether an edit changed connections or nodes (a run condition).
@@ -346,7 +346,7 @@ fn rebuild(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for entity in &built {
-        commands.entity(entity).despawn();
+        commands.entity(entity).try_despawn();
     }
     let mut items = Vec::new();
     for (node, kind) in &kinds {
@@ -372,7 +372,7 @@ fn rebuild(
                 transform,
             ));
             if let Some(speed) = instance.spin {
-                entity.insert(Spin(speed, transform.rotation));
+                entity.try_insert(Spin(speed, transform.rotation));
             }
         }
     }

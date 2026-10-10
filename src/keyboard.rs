@@ -26,7 +26,8 @@ impl Plugin for NoodleKeyboardPlugin {
         if !app.is_plugin_added::<TabNavigationPlugin>() {
             app.add_plugins(TabNavigationPlugin);
         }
-        app.add_observer(on_key)
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(on_key)
             .add_observer(snap_on_focus)
             .add_systems(PostUpdate, make_focusable);
     }
@@ -110,7 +111,7 @@ fn make_focusable(
             .canvas_of(entity)
             .is_some_and(|c| keyboards.contains(c));
         if items.contains(entity) && keyboard {
-            commands.entity(entity).insert(TabIndex(0));
+            commands.entity(entity).try_insert(TabIndex(0));
         }
     }
 }
@@ -139,6 +140,10 @@ fn on_key(
     let code = key.key_code;
     let is = |keys: &[KeyCode]| keys.contains(&code);
     let node = graph.node_of(target).filter(|n| *n == target);
+    // Keys typed into a control inside a node (a text field) are its own.
+    if target != canvas && node.is_none() && graph.port(target).is_none() {
+        return;
+    }
     let origin = EditOrigin::Interaction;
     let wire = graph.wire_of(canvas);
     let s = settings;
@@ -174,7 +179,7 @@ fn on_key(
                     let edit = GraphEdit::Connect { from, to: target };
                     commands.graph_edit_with_origin(canvas, edit, origin);
                 }
-                commands.entity(entity).despawn();
+                commands.entity(entity).try_despawn();
             }
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
@@ -185,7 +190,7 @@ fn on_key(
             }
         }
     } else if let (Some(wire), true) = (wire, is(&settings.cancel)) {
-        commands.entity(wire).despawn();
+        commands.entity(wire).try_despawn();
     } else if let (Some(node), true) = (node, is(&settings.select)) {
         let additive = keys.any_pressed(settings.additive_keys.iter().copied());
         let mode = if additive {

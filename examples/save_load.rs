@@ -155,7 +155,7 @@ fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Comman
                 NumberInputValue::F32({value})
                 Node { margin: {margin} }
             })
-            .insert(Transient)
+            .try_insert(Transient)
             .id();
         commands.entity(node).insert_child(1, field);
     }
@@ -193,7 +193,7 @@ fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
         .id();
     commands
         .entity(node)
-        .insert(Shows(result))
+        .try_insert(Shows(result))
         .with_children(|node| {
             node.spawn(kit::title("Sum"));
             node.spawn(kit::input_with("values", inputs, BLUE));
@@ -253,7 +253,12 @@ fn keys(
 
 fn save(world: &mut World, canvas: Entity) -> Result<String> {
     let snapshot = world.snapshot(canvas).ok_or("not a canvas")?;
-    let ron = snapshot.serialize(&world.resource::<AppTypeRegistry>().read())?;
+    let ron = snapshot.serialize(
+        &world
+            .get_resource::<AppTypeRegistry>()
+            .ok_or("no registry")?
+            .read(),
+    )?;
     std::fs::write(file(), &ron)?;
     let (entities, bytes) = (snapshot.entities.len(), ron.len());
     Ok(format!(
@@ -263,9 +268,15 @@ fn save(world: &mut World, canvas: Entity) -> Result<String> {
 
 fn load(world: &mut World, canvas: Entity) -> Result<String> {
     let ron = std::fs::read_to_string(file())?;
-    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = world
+        .get_resource::<AppTypeRegistry>()
+        .ok_or("no registry")?
+        .clone();
     // Asset handles in the file (fonts, images) load through the asset server.
-    let mut assets = world.resource::<AssetServer>().clone();
+    let mut assets = world
+        .get_resource::<AssetServer>()
+        .ok_or("no asset server")?
+        .clone();
     let snapshot = WorldDeserializer {
         type_registry: &registry.read(),
         load_from_path: &mut assets,

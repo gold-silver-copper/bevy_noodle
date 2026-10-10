@@ -90,7 +90,7 @@ fn setup(mut commands: Commands) {
     let outer = commands.spawn(kit::canvas()).id();
 
     // The group: ports on its frame, a canvas in its body.
-    let inner = commands.spawn(kit::canvas()).insert(nested()).id();
+    let inner = commands.spawn(kit::canvas()).try_insert(nested()).id();
     let group = commands
         .spawn((
             kit::node(Vec2::new(280.0, 90.0)),
@@ -183,7 +183,7 @@ fn setup(mut commands: Commands) {
             ChildOf(print),
         ))
         .id();
-    commands.entity(print).insert(Op::Print(result));
+    commands.entity(print).try_insert(Op::Print(result));
 
     // Controls under the titles: number fields, and a slider for the scale.
     let margin = UiRect::horizontal(px(kit::PADDING));

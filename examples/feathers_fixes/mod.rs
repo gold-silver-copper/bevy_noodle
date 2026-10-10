@@ -46,7 +46,7 @@ fn focusable_frames(
     mut commands: Commands,
 ) {
     for frame in &frames {
-        commands.entity(frame).insert(TabIndex(-1));
+        commands.entity(frame).try_insert(TabIndex(-1));
     }
 }
 
@@ -76,7 +76,9 @@ fn show_number<T: Copy + Send + Sync + 'static>(
 ) -> impl Fn(On<ValueChange<T>>, Query<(), With<FeathersNumberInput>>, Commands) {
     move |change, fields, mut commands| {
         if fields.contains(change.source) {
-            commands.entity(change.source).insert(value(change.value));
+            commands
+                .entity(change.source)
+                .try_insert(value(change.value));
         }
     }
 }

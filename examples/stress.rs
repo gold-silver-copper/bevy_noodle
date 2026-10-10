@@ -90,7 +90,7 @@ fn setup(mut commands: Commands) {
         flow_speed: 120.0,
         ..default()
     };
-    let canvas = commands.spawn(kit::canvas()).insert(style).id();
+    let canvas = commands.spawn(kit::canvas()).try_insert(style).id();
     commands.insert_resource(Stress {
         canvas,
         target: 400,
@@ -237,10 +237,10 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, kind: usize, at: Vec2, la
     for &(direction, label, port_type, color) in ports {
         let mut row = commands.spawn(ChildOf(node));
         match (direction, labels) {
-            (Input, true) => row.insert(kit::input(label, port_type, color)),
-            (Input, false) => row.insert(kit::input_dot(port_type, color)),
-            (Output, true) => row.insert(kit::output(label, port_type, color)),
-            (Output, false) => row.insert(kit::output_dot(port_type, color)),
+            (Input, true) => row.try_insert(kit::input(label, port_type, color)),
+            (Input, false) => row.try_insert(kit::input_dot(port_type, color)),
+            (Output, true) => row.try_insert(kit::output(label, port_type, color)),
+            (Output, false) => row.try_insert(kit::output_dot(port_type, color)),
         };
     }
 }

@@ -340,9 +340,12 @@ impl GraphWorldExt for World {
     fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
         let changes = self.run_system_cached_with(plan_selection, (canvas, items, mode));
         for (item, on) in changes.unwrap_or_default() {
+            let Ok(mut item) = self.get_entity_mut(item) else {
+                continue;
+            };
             match on {
-                true => _ = self.entity_mut(item).insert(Selected),
-                false => _ = self.entity_mut(item).remove::<Selected>(),
+                true => _ = item.insert(Selected),
+                false => _ = item.remove::<Selected>(),
             }
         }
     }
@@ -522,13 +525,14 @@ fn plan_edit(
             Step::Move(listed(nodes)?, *delta, *drag)
         }
         GraphEdit::Delete { items } => {
-            // Nodes go with their edges; listed edges go too.
+            // Nodes go with their edges (and those of nodes inside them);
+            // listed edges go too.
             items.retain(|e| mine(e) || edge(e));
             items.sort();
             items.dedup();
             removed = items
                 .iter()
-                .flat_map(|n| graph.ports_of(*n))
+                .flat_map(|n| graph.ports_within(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
             removed.extend(items.iter().filter(|e| edge(e)));

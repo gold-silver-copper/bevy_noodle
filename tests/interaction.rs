@@ -3,6 +3,7 @@
 
 // Test helpers may panic: a panic is a failed test.
 #![allow(
+    clippy::disallowed_methods,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
@@ -10,13 +11,14 @@
 )]
 
 use bevy::camera::NormalizedRenderTarget;
+use bevy::ecs::entity::EntityHashSet;
 use bevy::input::gestures::PinchGesture;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::HitData;
 use bevy::picking::hover::HoverMap;
-use bevy::picking::pointer::{Location, PointerId, PointerLocation, PointerMap};
+use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
-use bevy::ui::{Selected, UiScale};
+use bevy::ui::{ComputedNode, InteractionDisabled, Selected, UiGlobalTransform, UiScale};
 use bevy_noodle::prelude::*;
 use bevy_noodle::{DragProgress, WireCandidates, WireTarget};
 
@@ -24,10 +26,7 @@ const NUM: PortType = PortType::named("num");
 
 fn app() -> App {
     let mut app = App::new();
-    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, NoodlePlugins))
-        .init_resource::<UiScale>()
-        .init_resource::<HoverMap>()
-        .init_resource::<PointerMap>();
+    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, NoodlePlugins));
     // Pointer events bubble through `PointerTraversal`, which reads `Window`.
     app.world_mut().register_component::<Window>();
     app
@@ -35,10 +34,17 @@ fn app() -> App {
 
 fn graph(world: &mut World) -> (Entity, Entity) {
     let canvas = world
-        .spawn((NodeCanvas, CanvasInteraction::default(), Node::default()))
+        .spawn((NodeCanvas, CanvasInteraction::default(), laid_out()))
         .id();
     world.flush();
     (canvas, world.get::<Children>(canvas).unwrap()[0])
+}
+
+/// A UI node as layout leaves it: 400 by 300 pixels at the window's origin.
+fn laid_out() -> (Node, ComputedNode) {
+    let size = Vec2::new(400.0, 300.0);
+    let computed = ComputedNode { size, ..default() };
+    (Node::default(), computed)
 }
 
 /// One node per port in `content`; returns the ports.
@@ -80,16 +86,22 @@ fields!(Press => PointerPress { button: PointerButton, hit: HitData, count: u8 }
 fields!(DragStart => PointerDragStart { button: PointerButton, hit: HitData });
 fields!(Drag => PointerDrag { button: PointerButton, distance: Vec2, delta: Vec2 });
 fields!(DragEnd => PointerDragEnd { button: PointerButton, distance: Vec2 });
+fields!(Cancel => PointerCancel { hit: HitData });
 
 /// Triggers a pointer event on `target` (bubbling up), then applies its edits.
 fn pointer(world: &mut World, target: Entity, fields: impl Fields) {
+    pointer_at(world, target, Vec2::ZERO, fields);
+}
+
+/// [`pointer`] with the pointer at window `position`.
+fn pointer_at(world: &mut World, target: Entity, position: Vec2, fields: impl Fields) {
     let target_none = NormalizedRenderTarget::None {
         width: 1,
         height: 1,
     };
     let location = Location {
         target: target_none,
-        position: Vec2::ZERO,
+        position,
     };
     fields.trigger(world, target, Pointer::new(PointerId::Mouse, location));
     world.flush();
@@ -236,7 +248,8 @@ fn panning_works_from_an_edge() {
             delta,
         },
     );
-    assert_eq!(w.get::<CanvasView>(canvas).unwrap().pan, by);
+    let pan = w.get::<CanvasView>(canvas).unwrap().pan;
+    assert!((pan - by).length() < 1e-3, "{pan}");
 }
 
 #[test]
@@ -249,7 +262,7 @@ fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
         .spawn((
             NodeCanvas,
             CanvasInteraction::default(),
-            Node::default(),
+            laid_out(),
             ChildOf(node),
         ))
         .id();
@@ -268,6 +281,14 @@ fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
     app.update();
     let zoom = |app: &App, canvas| app.world().get::<CanvasView>(canvas).unwrap().zoom;
     assert_eq!((zoom(&app, inner), zoom(&app, outer)), (1.5, 1.0));
+
+    // Not while interaction is disabled.
+    app.world_mut()
+        .entity_mut(inner)
+        .insert(InteractionDisabled);
+    app.world_mut().write_message(PinchGesture(0.5));
+    app.update();
+    assert_eq!(zoom(&app, inner), 1.5);
 }
 
 #[test]
@@ -518,4 +539,126 @@ fn wires_dropped_on_empty_canvas_are_reported() {
     assert_eq!(w.resource::<Dropped>().0, [out]);
     let messages: Vec<_> = w.resource_mut::<Messages<WireDropped>>().drain().collect();
     assert_eq!((messages.len(), messages[0].canvas), (1, canvas));
+}
+
+#[test]
+fn drags_follow_the_pointer_through_an_outer_zoom() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    // As inside an outer canvas zoomed in twice.
+    w.entity_mut(canvas)
+        .insert(UiGlobalTransform::from_scale(Vec2::splat(2.0)));
+    let node = w
+        .spawn((
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            ChildOf(content),
+        ))
+        .id();
+    drag(w, node, Vec2::new(10.0, 0.0));
+    assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::new(5.0, 0.0));
+}
+
+#[test]
+fn wires_follow_the_pointer_under_ui_scale() {
+    let mut app = app();
+    let w = app.world_mut();
+    w.insert_resource(UiScale(2.0));
+    let (canvas, content) = graph(w);
+    // Layout under `UiScale` 2: physical sizes, the top left at the origin.
+    let size = Vec2::new(400.0, 300.0);
+    let computed = ComputedNode {
+        size,
+        inverse_scale_factor: 0.5,
+        ..default()
+    };
+    let at_origin = UiGlobalTransform::from_translation(size / 2.0);
+    w.entity_mut(canvas).insert((computed, at_origin));
+    let [port] = one_node_each(w, content, [Port::output(NUM)]);
+    let button = PointerButton::Primary;
+    pointer_at(
+        w,
+        port,
+        Vec2::new(100.0, 50.0),
+        DragStart { button, hit: hit() },
+    );
+    let wire = w.query::<&PendingWire>().single(w).unwrap();
+    assert!((wire.pointer - Vec2::new(50.0, 25.0)).length() < 1e-3);
+}
+
+#[test]
+fn cancelled_pointers_drop_their_wire() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let [port] = one_node_each(w, content, [Port::output(NUM)]);
+    let button = PointerButton::Primary;
+    pointer(w, port, DragStart { button, hit: hit() });
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 1);
+    pointer(w, port, Cancel { hit: hit() });
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+}
+
+#[test]
+fn wires_go_with_their_port() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let [port] = one_node_each(w, content, [Port::output(NUM)]);
+    let button = PointerButton::Primary;
+    pointer(w, port, DragStart { button, hit: hit() });
+    let node = w.get::<ChildOf>(port).unwrap().parent();
+    w.despawn(node);
+    app.update();
+    let w = app.world_mut();
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+}
+
+#[test]
+fn additive_box_selection_shrinks_back_to_what_was_selected() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let size = ComputedNode {
+        size: Vec2::splat(10.0),
+        ..default()
+    };
+    let [a, b] = [0.0, 100.0].map(|x| {
+        let at = NodePosition(Vec2::new(x, 0.0));
+        w.spawn((GraphNode, at, Node::default(), size, ChildOf(content)))
+            .id()
+    });
+    w.select(canvas, vec![a], SelectMode::Replace);
+    w.resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::ShiftLeft);
+    // The canvas is centred on the window's origin: window = local - (200, 150).
+    let window = |local: Vec2| local - Vec2::new(200.0, 150.0);
+    let start = Vec2::new(-10.0, -10.0);
+    let button = PointerButton::Primary;
+    pointer_at(w, canvas, window(start), DragStart { button, hit: hit() });
+    let selected = |w: &mut World, to: Vec2| {
+        let (distance, delta) = (to - start, to - start);
+        pointer_at(
+            w,
+            canvas,
+            window(to),
+            Drag {
+                button,
+                distance,
+                delta,
+            },
+        );
+        let mut selected = w.query_filtered::<Entity, With<Selected>>();
+        selected.iter(w).collect::<EntityHashSet>()
+    };
+    assert_eq!(
+        selected(w, Vec2::new(120.0, 20.0)),
+        EntityHashSet::from_iter([a, b])
+    );
+    assert_eq!(
+        selected(w, Vec2::new(50.0, 20.0)),
+        EntityHashSet::from_iter([a])
+    );
 }

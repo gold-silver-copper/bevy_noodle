@@ -31,10 +31,16 @@ pub struct NoodleInteractionPlugin;
 
 impl Plugin for NoodleInteractionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_press)
+        // Bevy's UI and picking plugins add these; without them, nothing happens.
+        app.init_resource::<UiScale>()
+            .init_resource::<HoverMap>()
+            .init_resource::<PointerMap>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(on_press)
             .add_observer(on_drag_start)
             .add_observer(on_drag)
             .add_observer(on_drag_end)
+            .add_observer(on_cancel)
             .add_observer(on_scroll)
             .add_message::<WireDropped>()
             // Registered here too, so apps without a picking backend still run.
@@ -129,6 +135,10 @@ pub enum ScrollMode {
 #[reflect(Component)]
 pub struct SelectionBox(pub Rect);
 
+/// On a canvas during an additive box selection: what was selected before.
+#[derive(Component)]
+struct KeptSelection(Vec<Entity>);
+
 /// On a [`PendingWire`]: the ports it may connect to, by the built-in rules
 /// and [`ConnectionCheck`](crate::ConnectionCheck) observers. Set by the library.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq, Deref)]
@@ -171,7 +181,7 @@ struct Ctx<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
     z_indices: Query<'w, 's, &'static ZIndex>,
-    keys: Option<Res<'w, ButtonInput<KeyCode>>>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
     ui_scale: Res<'w, UiScale>,
     commands: Commands<'w, 's>,
 }
@@ -218,9 +228,7 @@ impl Ctx<'_, '_> {
     }
 
     fn held(&self, keys: &[KeyCode]) -> bool {
-        self.keys
-            .as_ref()
-            .is_some_and(|k| k.any_pressed(keys.iter().copied()))
+        self.keys.any_pressed(keys.iter().copied())
     }
 
     /// The gesture a drag with `button` makes, from `(target, original)`
@@ -251,10 +259,16 @@ impl Ctx<'_, '_> {
         self.canvases.get(canvas).ok().map(|c| *c.1)
     }
 
-    /// Window position → canvas-local pixels.
+    /// Window position → canvas-local pixels, through every transform above
+    /// the canvas (such as an outer canvas's zoom); `None` before layout.
     fn local(&self, canvas: Entity, position: Vec2) -> Option<Vec2> {
         let (_, _, computed, transform) = self.canvases.get(canvas).ok()?;
-        Some(canvas_local(computed, transform, position))
+        // The node's scale factor is the window's times `UiScale`; window
+        // positions are scaled by the window's only.
+        let scale = computed.inverse_scale_factor();
+        let physical = position / (scale * self.ui_scale.0);
+        let normalized = computed.normalize_point(*transform, physical)?;
+        Some((normalized + 0.5) * computed.size() * scale)
     }
 
     /// Window position → graph space.
@@ -265,21 +279,27 @@ impl Ctx<'_, '_> {
         )
     }
 
-    /// Moves `node` (with the selection) by window-pixel `delta`, `total` so far.
+    /// How far the pointer at window `position` moved in graph space since
+    /// it was `back` window pixels back.
+    fn graph_delta(&self, canvas: Entity, position: Vec2, back: Vec2) -> Option<Vec2> {
+        Some(self.graph_point(canvas, position)? - self.graph_point(canvas, position - back)?)
+    }
+
+    /// Moves `node` (with the selection) with the pointer at window
+    /// `position`, by window-pixel `delta`, `total` so far.
     fn move_nodes(
         &mut self,
         canvas: Entity,
         node: Entity,
-        delta: Vec2,
-        total: Vec2,
+        position: Vec2,
+        [delta, total]: [Vec2; 2],
         is_final: bool,
     ) {
-        let Some(view) = self.view(canvas) else {
+        let delta = self.graph_delta(canvas, position, delta);
+        let (Some(delta), Some(total)) = (delta, self.graph_delta(canvas, position, total)) else {
             return;
         };
-        let scale = self.ui_scale.0 * view.zoom;
         let nodes = self.graph.selection_with(node);
-        let (delta, total) = (delta / scale, total / scale);
         let drag = Some(DragProgress { total, is_final });
         self.edit(canvas, GraphEdit::MoveNodes { nodes, delta, drag });
     }
@@ -309,7 +329,7 @@ impl Ctx<'_, '_> {
         let top = others.map(&z).max();
         if z(node) >= 0 && top.is_some_and(|top| z(node) <= top) {
             let above = top.unwrap_or_default().saturating_add(1);
-            self.commands.entity(node).insert(ZIndex(above));
+            self.commands.entity(node).try_insert(ZIndex(above));
         }
     }
 
@@ -403,6 +423,10 @@ fn on_drag_start(mut drag: On<PointerDragStart>, mut ctx: Ctx) {
         Gesture::Move(node) if !ctx.graph.is_selected(node) => {
             ctx.select(canvas, vec![node], SelectMode::Replace);
         }
+        Gesture::Box if ctx.held(&settings.additive_keys) => {
+            let kept = KeptSelection(ctx.graph.selected_in(canvas).collect());
+            ctx.commands.entity(canvas).try_insert(kept);
+        }
         _ => {}
     }
 }
@@ -412,10 +436,11 @@ fn on_drag(
     mut ctx: Ctx,
     mut wires: Query<(&mut PendingWire, &mut WireTarget, Option<&WireCandidates>)>,
     nodes: Query<(&NodePosition, &ComputedNode)>,
+    kept: Query<&KeptSelection>,
     hovered: Res<HoverMap>,
 ) {
     let target = (drag.event_target(), drag.original_event_target());
-    let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
+    let Some((gesture, canvas, _)) = ctx.gesture(target, drag.button) else {
         return;
     };
     drag.propagate(false);
@@ -438,11 +463,16 @@ fn on_drag(
                 pending.pointer = pointer;
             }
         }
-        Gesture::Move(node) => ctx.move_nodes(canvas, node, drag.delta, drag.distance, false),
+        Gesture::Move(node) => {
+            ctx.move_nodes(canvas, node, position, [drag.delta, drag.distance], false);
+        }
         Gesture::Pan => {
-            let delta = drag.delta / ctx.ui_scale.0;
-            if let Ok((_, mut view, ..)) = ctx.canvases.get_mut(canvas) {
-                view.pan += delta;
+            let now = ctx.local(canvas, position);
+            let delta = now.zip(ctx.local(canvas, position - drag.delta));
+            if let (Some((now, before)), Ok((_, mut view, ..))) =
+                (delta, ctx.canvases.get_mut(canvas))
+            {
+                view.pan += now - before;
             }
         }
         Gesture::Box => {
@@ -466,15 +496,12 @@ fn on_drag(
                         .is_empty()
                 })
             });
-            let hits = hits.collect();
-            let additive = ctx.held(&settings.additive_keys);
-            let mode = if additive {
-                SelectMode::Add
-            } else {
-                SelectMode::Replace
-            };
-            ctx.select(canvas, hits, mode);
-            ctx.commands.entity(canvas).insert(SelectionBox(rect));
+            let kept = kept
+                .get(canvas)
+                .into_iter()
+                .flat_map(|k| k.0.iter().copied());
+            ctx.select(canvas, hits.chain(kept).collect(), SelectMode::Replace);
+            ctx.commands.entity(canvas).try_insert(SelectionBox(rect));
         }
     }
 }
@@ -495,7 +522,7 @@ fn on_drag_end(
             let Some((entity, wire, target)) = wire else {
                 return;
             };
-            ctx.commands.entity(entity).despawn();
+            ctx.commands.entity(entity).try_despawn();
             let (from, position) = (wire.from, wire.pointer);
             match **target {
                 Some(to) => ctx.edit(canvas, GraphEdit::Connect { from, to }),
@@ -510,9 +537,30 @@ fn on_drag_end(
                 }
             }
         }
-        Gesture::Move(node) => ctx.move_nodes(canvas, node, Vec2::ZERO, drag.distance, true),
-        Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).remove::<SelectionBox>(),
+        Gesture::Move(node) => {
+            let position = drag.pointer.position;
+            ctx.move_nodes(canvas, node, position, [Vec2::ZERO, drag.distance], true);
+        }
+        Gesture::Pan | Gesture::Box => {
+            ctx.commands
+                .entity(canvas)
+                .try_remove::<(SelectionBox, KeptSelection)>();
+        }
     }
+}
+
+/// A cancelled pointer (a touch the system took over) gets no drag end: the
+/// wire or selection box on the canvas it was over goes now.
+fn on_cancel(cancel: On<PointerCancel>, mut ctx: Ctx) {
+    let Some((_, canvas, _)) = ctx.hop(cancel.event_target()) else {
+        return;
+    };
+    if let Some(wire) = ctx.graph.wire_of(canvas) {
+        ctx.commands.entity(wire).try_despawn();
+    }
+    ctx.commands
+        .entity(canvas)
+        .try_remove::<(SelectionBox, KeptSelection)>();
 }
 
 fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
@@ -549,7 +597,7 @@ fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
 fn pinch_zoom(
     mut pinches: MessageReader<PinchGesture>,
     hovered: Res<HoverMap>,
-    pointers: Option<Res<PointerMap>>,
+    pointers: Res<PointerMap>,
     locations: Query<&PointerLocation>,
     mut ctx: Ctx,
 ) {
@@ -558,8 +606,9 @@ fn pinch_zoom(
         .get(&PointerId::Mouse)
         .and_then(|h| h.keys().next().copied());
     let canvas = top.and_then(|top| ctx.graph.canvas_of(top));
+    let canvas = canvas.filter(|c| !ctx.disabled.contains(*c));
     let mouse = pointers
-        .and_then(|p| p.get_entity(PointerId::Mouse))
+        .get_entity(PointerId::Mouse)
         .and_then(|e| locations.get(e).ok()?.location());
     let (Some(canvas), Some(location), true) = (canvas, mouse, magnify != 0.0) else {
         return;
@@ -583,7 +632,7 @@ fn pinch_zoom(
 #[allow(clippy::too_many_arguments, reason = "system parameters")]
 fn pick_edges(
     mut messages: ParamSet<(MessageReader<PointerHits>, MessageWriter<PointerHits>)>,
-    pointers: Option<Res<PointerMap>>,
+    pointers: Res<PointerMap>,
     locations: Query<&PointerLocation>,
     cameras: Query<&Camera>,
     pickables: Query<&Pickable>,
@@ -607,8 +656,7 @@ fn pick_edges(
             .canvas_of(*top)
             .filter(|_| graph.edge_ports(*top).is_none());
         let location = pointers
-            .as_ref()
-            .and_then(|p| p.get_entity(ui.pointer))
+            .get_entity(ui.pointer)
             .and_then(|e| locations.get(e).ok()?.location());
         let (Some(canvas), Some(location), Ok(camera), None) =
             (canvas, location, cameras.get(data.camera), graph.port(*top))
@@ -683,11 +731,4 @@ pub(crate) fn mark_candidates(world: &mut World, wire: Entity) {
     if let Ok(mut wire) = world.get_entity_mut(wire) {
         wire.insert(WireCandidates(candidates));
     }
-}
-
-/// Window position → canvas-local pixels.
-fn canvas_local(computed: &ComputedNode, transform: &UiGlobalTransform, position: Vec2) -> Vec2 {
-    let scale = computed.inverse_scale_factor();
-    let normalized = computed.normalize_point(*transform, position / scale);
-    normalized.map_or(Vec2::ZERO, |n| (n + 0.5) * computed.size() * scale)
 }

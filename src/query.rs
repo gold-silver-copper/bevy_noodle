@@ -133,6 +133,12 @@ impl GraphQuery<'_, '_> {
             .filter(|e| self.ports.contains(*e))
     }
 
+    /// Ports of a node and of the nodes inside it on the same canvas.
+    pub(crate) fn ports_within(&self, node: Entity) -> impl Iterator<Item = Entity> + '_ {
+        self.walk(Some(node), |e| self.canvases.contains(e))
+            .filter(|e| self.ports.contains(*e))
+    }
+
     /// Input ports of a node, in hierarchy order.
     pub fn inputs_of(&self, node: Entity) -> impl Iterator<Item = Entity> + '_ {
         self.ports_toward(node, PortDirection::Input)

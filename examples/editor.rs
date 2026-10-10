@@ -166,7 +166,7 @@ fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Comman
                 NumberInputValue::F32({value})
                 Node { margin: {margin} }
             })
-            .insert(Transient)
+            .try_insert(Transient)
             .id();
         commands.entity(node).insert_child(1, field);
     }
@@ -228,10 +228,13 @@ fn record_edits(mut applied: MessageReader<EditApplied>, mut commands: Commands)
 }
 
 fn record(world: &mut World) {
-    let Some(now) = world.snapshot(world.resource::<Graph>().0) else {
+    let Some(now) = world
+        .get_resource::<Graph>()
+        .and_then(|g| world.snapshot(g.0))
+    else {
         return;
     };
-    let mut history = world.resource_mut::<History>();
+    let mut history = world.get_resource_or_init::<History>();
     if let Some(before) = history.current.replace(now) {
         history.undo.push(before);
     }
@@ -262,13 +265,15 @@ fn copy(world: &mut World) {
     let nodes: Vec<_> = selected.iter(world).collect();
     if !nodes.is_empty() {
         let copied = world.snapshot_nodes(&nodes);
-        world.resource_mut::<Clipboard>().0 = Some(copied);
+        world.get_resource_or_init::<Clipboard>().0 = Some(copied);
     }
 }
 
 fn paste(world: &mut World) {
-    let canvas = world.resource::<Graph>().0;
-    let Some(copied) = world.resource_mut::<Clipboard>().0.take() else {
+    let Some(&Graph(canvas)) = world.get_resource() else {
+        return;
+    };
+    let Some(copied) = world.get_resource_or_init::<Clipboard>().0.take() else {
         return;
     };
     let pasted = match world.insert_snapshot(canvas, &copied) {
@@ -295,15 +300,17 @@ fn paste(world: &mut World) {
     }
     // The next paste lands a step further along.
     let next = world.snapshot_nodes(&nodes);
-    world.resource_mut::<Clipboard>().0 = Some(next);
+    world.get_resource_or_init::<Clipboard>().0 = Some(next);
     world.select(canvas, nodes, SelectMode::Replace);
     record(world);
 }
 
 /// Move one snapshot between the stacks and put it on screen.
 fn step(world: &mut World, redo: bool) {
-    let canvas = world.resource::<Graph>().0;
-    world.resource_scope(|world, mut history: Mut<History>| {
+    let Some(&Graph(canvas)) = world.get_resource() else {
+        return;
+    };
+    world.try_resource_scope(|world, mut history: Mut<History>| {
         let History {
             undo,
             redo: redone,

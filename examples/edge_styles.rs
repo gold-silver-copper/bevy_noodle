@@ -147,6 +147,6 @@ fn apply_wire_look(
         return;
     };
     if let Some(look) = graph.node_of(ports.output).and_then(|n| looks.get(n).ok()) {
-        commands.entity(edge).insert(look.0);
+        commands.entity(edge).try_insert(look.0);
     }
 }

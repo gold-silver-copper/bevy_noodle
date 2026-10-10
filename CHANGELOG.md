@@ -102,8 +102,25 @@
 - Ending a dragged wire no longer clears the candidates of a wire dragged
   on another canvas.
 - The library and examples no longer panic: no `unwrap`, `expect`, indexing
-  or `panic!`, enforced by clippy lints. Loading a `save_load` model whose
-  edges name a missing node or port reports an error.
+  or `panic!`, and none of Bevy's methods that panic (or queue a failing
+  command) when an entity or resource is gone, enforced by clippy lints.
+  Loading a `save_load` model whose edges name a missing node or port
+  reports an error.
+- The plugins add the resources their systems read (`UiScale`, `HoverMap`,
+  `PointerMap`, `ButtonInput<KeyCode>`, `InputFocus`, `InputFocusVisible`),
+  so headless apps no longer panic without Bevy's UI and picking plugins.
+- `CanvasView::zoom_around` no longer panics when `min_zoom > max_zoom`.
+- Pointer positions are right under `UiScale`, and drags follow the
+  pointer inside a nested canvas whose outer canvas is zoomed.
+- A cancelled pointer drops its dragged wire and selection box, and a wire
+  goes with the port it started at.
+- Deleting a node reports the edges of nodes inside it as disconnected.
+- Unparenting a node disconnects its edges to the graph it left.
+- Keys typed into a control inside a node (a text field) no longer zoom,
+  pan or cancel.
+- Pinch zoom respects `InteractionDisabled`.
+- Edges that lose their `EdgeStyle` are hidden and no longer pickable.
+- Additive (Shift) box selection shrinks back to what was selected before.
 
 ### Examples
 - styled, editor, save_load, subgraph, scene_builder_3d, type_conversion,

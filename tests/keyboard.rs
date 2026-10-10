@@ -3,6 +3,7 @@
 
 // Test helpers may panic: a panic is a failed test.
 #![allow(
+    clippy::disallowed_methods,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,
@@ -13,9 +14,8 @@ use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex};
 use bevy::input_focus::{FocusCause, InputDispatchPlugin, InputFocus, InputFocusPlugin};
-use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
-use bevy::ui::{Selected, UiScale};
+use bevy::ui::Selected;
 use bevy::window::PrimaryWindow;
 use bevy_noodle::prelude::*;
 
@@ -37,10 +37,7 @@ fn app() -> (App, Graph) {
         InputDispatchPlugin,
         NoodlePlugins,
         NoodleKeyboardPlugin,
-    ))
-    .init_resource::<UiScale>()
-    .init_resource::<HoverMap>()
-    .init_resource::<bevy::picking::pointer::PointerMap>();
+    ));
     let w = app.world_mut();
     w.spawn((Window::default(), PrimaryWindow));
     let canvas = w
@@ -203,4 +200,14 @@ fn keys_are_lists_and_empty_lists_unbind() {
     press(&mut app, g.nodes[0], KeyCode::ArrowRight);
     let position = app.world().get::<NodePosition>(g.nodes[0]).unwrap().0;
     assert_eq!(position, Vec2::new(10.0, 0.0));
+}
+
+#[test]
+fn keys_typed_into_controls_inside_nodes_are_theirs() {
+    let (mut app, g) = app();
+    let field = (Node::default(), TabIndex(0), ChildOf(g.nodes[0]));
+    let field = app.world_mut().spawn(field).id();
+    press(&mut app, field, KeyCode::Minus);
+    let view = app.world().get::<CanvasView>(g.canvas).unwrap();
+    assert_eq!(view.zoom, 1.0);
 }

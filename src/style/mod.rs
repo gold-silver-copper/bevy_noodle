@@ -34,7 +34,9 @@ impl Plugin for NoodleDefaultStylePlugin {
         if !app.is_plugin_added::<CursorIconPlugin>() {
             app.add_plugins(CursorIconPlugin);
         }
-        app.add_plugins(MaterialsPlugin)
+        app.init_resource::<InputFocus>()
+            .init_resource::<InputFocusVisible>()
+            .add_plugins(MaterialsPlugin)
             .add_systems(
                 PostUpdate,
                 (
@@ -259,19 +261,17 @@ fn draw_edges(
 ) {
     for (entity, geometry, own, wire, visual, hitbox, selected, pointer) in &mut edges {
         let visual = visual.and_then(|v| v.0.first().copied());
-        // Not laid out (yet, or any more): hidden and not pickable.
-        let Some(geometry) = geometry else {
+        let canvas = wire.map(|w| w.0).or_else(|| graph.canvas_of(entity));
+        let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
+        let content = canvas.and_then(|c| graph.content_of(c));
+        // Not laid out (yet, or any more) or not styled: hidden and not pickable.
+        let (Some(geometry), Some(style), Some(content)) = (geometry, style, content) else {
             if let Some((mut node, ..)) = visual.and_then(|v| visuals.get_mut(v).ok()) {
                 place(&mut node, None);
             }
             if hitbox.is_some() {
-                commands.entity(entity).remove::<EdgeHitbox>();
+                commands.entity(entity).try_remove::<EdgeHitbox>();
             }
-            continue;
-        };
-        let canvas = wire.map(|w| w.0).or_else(|| graph.canvas_of(entity));
-        let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
-        let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
         };
         let (start, end) = (geometry.output, geometry.input);
@@ -323,7 +323,7 @@ fn draw_edges(
             };
             match hitbox {
                 Some(mut hitbox) => _ = hitbox.set_if_neq(area),
-                None => _ = commands.entity(entity).insert(area),
+                None => _ = commands.entity(entity).try_insert(area),
             }
         }
         // Wires are drawn by their own UI node, so the edge itself can be picked.
@@ -346,7 +346,7 @@ fn draw_edges(
         update(&mut materials, &handle.0, material);
         z_index.set_if_neq(z);
         if parent.parent() != content {
-            commands.entity(visual).insert(ChildOf(content));
+            commands.entity(visual).try_insert(ChildOf(content));
         }
     }
 }
@@ -366,8 +366,8 @@ fn draw_grids(
     for (canvas, view, computed, grid, visual) in &canvases {
         let Some(grid) = grid else {
             if let Some(visual) = visual {
-                commands.entity(visual.0).despawn();
-                commands.entity(canvas).remove::<GridVisual>();
+                commands.entity(visual.0).try_despawn();
+                commands.entity(canvas).try_remove::<GridVisual>();
             }
             continue;
         };
@@ -395,7 +395,7 @@ fn draw_grids(
                 let child = commands
                     .spawn((fill, Pickable::IGNORE, ChildOf(canvas)))
                     .id();
-                commands.entity(canvas).insert(GridVisual(child));
+                commands.entity(canvas).try_insert(GridVisual(child));
             }
         }
     }
@@ -425,7 +425,7 @@ fn draw_selection_boxes(
         let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
         let visual = (node, colors, ZIndex(i32::MAX), Pickable::IGNORE);
         let child = commands.spawn((visual, ChildOf(canvas))).id();
-        commands.entity(canvas).insert(BoxVisual(child));
+        commands.entity(canvas).try_insert(BoxVisual(child));
     }
 }
 
@@ -531,14 +531,47 @@ fn outline_focus(
     let item = graph.node_of(entity) == Some(entity) || graph.port(entity).is_some();
     if let (Some(style), true) = (style, item) {
         let outline = Outline::new(px(style.width), px(2), style.color);
-        commands.entity(entity).insert(outline);
+        commands.entity(entity).try_insert(outline);
         *shown = Some(entity);
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edges_without_a_style_are_not_pickable() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<WireMaterial>()
+            .add_systems(Update, draw_edges);
+        let w = app.world_mut();
+        let canvas = w.spawn((NodeCanvas, Node::default())).id();
+        let port = |w: &mut World, port: Port| {
+            let node = w.spawn((GraphNode, ChildOf(canvas))).id();
+            w.spawn((port, ChildOf(node))).id()
+        };
+        let (from, to) = (
+            port(w, Port::output(PortType::ANY)),
+            port(w, Port::input(PortType::ANY)),
+        );
+        let geometry = EdgeGeometry::between((Vec2::ZERO, Vec2::X), (Vec2::X, Vec2::NEG_X));
+        let edge = (
+            Edge,
+            EdgeSource(from),
+            EdgeTarget(to),
+            geometry,
+            EdgeStyle::default(),
+        );
+        let edge = w.spawn(edge).id();
+        app.update();
+        assert!(app.world().get::<EdgeHitbox>(edge).is_some());
+        app.world_mut().entity_mut(edge).remove::<EdgeStyle>();
+        app.update();
+        assert!(app.world().get::<EdgeHitbox>(edge).is_none());
+    }
 
     #[test]
     fn dragging_a_wire_overrides_the_cursor_until_it_ends() {
