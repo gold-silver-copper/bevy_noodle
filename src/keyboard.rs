@@ -26,7 +26,8 @@ impl Plugin for NoodleKeyboardPlugin {
         if !app.is_plugin_added::<TabNavigationPlugin>() {
             app.add_plugins(TabNavigationPlugin);
         }
-        app.add_observer(on_key)
+        app.init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(on_key)
             .add_observer(snap_on_focus)
             .add_systems(PostUpdate, make_focusable);
     }

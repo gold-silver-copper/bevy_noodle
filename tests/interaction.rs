@@ -14,9 +14,9 @@ use bevy::input::gestures::PinchGesture;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::HitData;
 use bevy::picking::hover::HoverMap;
-use bevy::picking::pointer::{Location, PointerId, PointerLocation, PointerMap};
+use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
-use bevy::ui::{Selected, UiScale};
+use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
 use bevy_noodle::{DragProgress, WireCandidates, WireTarget};
 
@@ -24,10 +24,7 @@ const NUM: PortType = PortType::named("num");
 
 fn app() -> App {
     let mut app = App::new();
-    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, NoodlePlugins))
-        .init_resource::<UiScale>()
-        .init_resource::<HoverMap>()
-        .init_resource::<PointerMap>();
+    app.add_plugins((MinimalPlugins, bevy::input::InputPlugin, NoodlePlugins));
     // Pointer events bubble through `PointerTraversal`, which reads `Window`.
     app.world_mut().register_component::<Window>();
     app

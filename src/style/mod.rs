@@ -34,7 +34,9 @@ impl Plugin for NoodleDefaultStylePlugin {
         if !app.is_plugin_added::<CursorIconPlugin>() {
             app.add_plugins(CursorIconPlugin);
         }
-        app.add_plugins(MaterialsPlugin)
+        app.init_resource::<InputFocus>()
+            .init_resource::<InputFocusVisible>()
+            .add_plugins(MaterialsPlugin)
             .add_systems(
                 PostUpdate,
                 (

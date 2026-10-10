@@ -31,7 +31,12 @@ pub struct NoodleInteractionPlugin;
 
 impl Plugin for NoodleInteractionPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_press)
+        // Bevy's UI and picking plugins add these; without them, nothing happens.
+        app.init_resource::<UiScale>()
+            .init_resource::<HoverMap>()
+            .init_resource::<PointerMap>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            .add_observer(on_press)
             .add_observer(on_drag_start)
             .add_observer(on_drag)
             .add_observer(on_drag_end)
@@ -171,7 +176,7 @@ struct Ctx<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
     children: Query<'w, 's, &'static Children>,
     z_indices: Query<'w, 's, &'static ZIndex>,
-    keys: Option<Res<'w, ButtonInput<KeyCode>>>,
+    keys: Res<'w, ButtonInput<KeyCode>>,
     ui_scale: Res<'w, UiScale>,
     commands: Commands<'w, 's>,
 }
@@ -218,9 +223,7 @@ impl Ctx<'_, '_> {
     }
 
     fn held(&self, keys: &[KeyCode]) -> bool {
-        self.keys
-            .as_ref()
-            .is_some_and(|k| k.any_pressed(keys.iter().copied()))
+        self.keys.any_pressed(keys.iter().copied())
     }
 
     /// The gesture a drag with `button` makes, from `(target, original)`
@@ -549,7 +552,7 @@ fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
 fn pinch_zoom(
     mut pinches: MessageReader<PinchGesture>,
     hovered: Res<HoverMap>,
-    pointers: Option<Res<PointerMap>>,
+    pointers: Res<PointerMap>,
     locations: Query<&PointerLocation>,
     mut ctx: Ctx,
 ) {
@@ -559,7 +562,7 @@ fn pinch_zoom(
         .and_then(|h| h.keys().next().copied());
     let canvas = top.and_then(|top| ctx.graph.canvas_of(top));
     let mouse = pointers
-        .and_then(|p| p.get_entity(PointerId::Mouse))
+        .get_entity(PointerId::Mouse)
         .and_then(|e| locations.get(e).ok()?.location());
     let (Some(canvas), Some(location), true) = (canvas, mouse, magnify != 0.0) else {
         return;
@@ -583,7 +586,7 @@ fn pinch_zoom(
 #[allow(clippy::too_many_arguments, reason = "system parameters")]
 fn pick_edges(
     mut messages: ParamSet<(MessageReader<PointerHits>, MessageWriter<PointerHits>)>,
-    pointers: Option<Res<PointerMap>>,
+    pointers: Res<PointerMap>,
     locations: Query<&PointerLocation>,
     cameras: Query<&Camera>,
     pickables: Query<&Pickable>,
@@ -607,8 +610,7 @@ fn pick_edges(
             .canvas_of(*top)
             .filter(|_| graph.edge_ports(*top).is_none());
         let location = pointers
-            .as_ref()
-            .and_then(|p| p.get_entity(ui.pointer))
+            .get_entity(ui.pointer)
             .and_then(|e| locations.get(e).ok()?.location());
         let (Some(canvas), Some(location), Ok(camera), None) =
             (canvas, location, cameras.get(data.camera), graph.port(*top))

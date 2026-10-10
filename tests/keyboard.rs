@@ -13,9 +13,8 @@ use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input_focus::tab_navigation::{TabGroup, TabIndex};
 use bevy::input_focus::{FocusCause, InputDispatchPlugin, InputFocus, InputFocusPlugin};
-use bevy::picking::hover::HoverMap;
 use bevy::prelude::*;
-use bevy::ui::{Selected, UiScale};
+use bevy::ui::Selected;
 use bevy::window::PrimaryWindow;
 use bevy_noodle::prelude::*;
 
@@ -37,10 +36,7 @@ fn app() -> (App, Graph) {
         InputDispatchPlugin,
         NoodlePlugins,
         NoodleKeyboardPlugin,
-    ))
-    .init_resource::<UiScale>()
-    .init_resource::<HoverMap>()
-    .init_resource::<bevy::picking::pointer::PointerMap>();
+    ));
     let w = app.world_mut();
     w.spawn((Window::default(), PrimaryWindow));
     let canvas = w
