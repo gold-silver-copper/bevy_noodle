@@ -14,7 +14,7 @@ use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
-use bevy_noodle::{Content, EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
+use bevy_noodle::{EditRejected, IncomingEdges, OutgoingEdges, RejectReason};
 
 const NUM: PortType = PortType::named("num");
 const TEXT: PortType = PortType::named("text");
@@ -52,7 +52,7 @@ fn canvas(world: &mut World, parent: Option<Entity>) -> (Entity, Entity) {
         world.entity_mut(canvas).insert(ChildOf(parent));
     }
     world.flush();
-    (canvas, **world.get::<Content>(canvas).unwrap())
+    (canvas, world.get::<Children>(canvas).unwrap()[0])
 }
 
 /// A node in `content` with ports nested one level, like real UI.

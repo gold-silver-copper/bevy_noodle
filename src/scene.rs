@@ -209,12 +209,6 @@ fn build(world: &World, entities: Vec<Entity>) -> DynamicWorld {
         // Rebuilt from the edges on insert.
         .deny_component::<OutgoingEdges>()
         .deny_component::<IncomingEdges>()
-        .deny_component::<ContentOf>()
-        .deny_component::<Content>()
         .extract_entities(entities.into_iter())
         .build()
-}
-
-fn content(world: &World, canvas: Entity) -> Option<Entity> {
-    world.get::<Content>(canvas).map(|c| **c)
 }

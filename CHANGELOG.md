@@ -6,8 +6,8 @@
 - Requires Bevy 0.20 and Rust 1.97.1. Pointer events are Bevy's flat
   `PointerPress`, `PointerDrag`, … events; the default style's shaders are
   WESL.
-- Canvases spawn their own `CanvasContent` (linked by the `ContentOf` /
-  `Content` relationship), and nodes spawned as children of a canvas move
+- Canvases spawn their own `CanvasContent` child (found with
+  `GraphQuery::content_of`), and nodes spawned as children of a canvas move
   into it: `commands.spawn((kit::node(at), ChildOf(canvas)))`.
 - Selection is not a graph edit: `GraphEdit::Select` is gone. Use
   `commands.select(canvas, items, mode)` (or `world.select`), read it with
