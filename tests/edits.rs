@@ -358,6 +358,20 @@ fn reparenting_into_another_graph_drops_crossing_edges() {
 }
 
 #[test]
+fn unparenting_a_node_disconnects_its_edges() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (nb, b) = node(w, content, &[Port::input(NUM)]);
+    let edge = connect(w, c, a[0], b[0]);
+    app.update();
+    app.world_mut().entity_mut(nb).remove::<ChildOf>();
+    app.update();
+    assert!(app.world().get_entity(edge).is_err());
+}
+
+#[test]
 fn edges_follow_their_ports_into_another_graph() {
     let mut app = app();
     let w = app.world_mut();

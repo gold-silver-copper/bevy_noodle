@@ -133,17 +133,19 @@ pub(crate) fn measure_ports(
     }
 }
 
-/// After re-parenting, edges whose ends ended up in different graphs are
-/// disconnected. Checked once per frame, so moving both ends one after the
+/// After re-parenting (or unparenting), edges whose ends ended up in
+/// different graphs are disconnected. Checked once per frame, so moving both ends one after the
 /// other keeps the edge (it belongs to whichever graph its ports are in).
 pub(crate) fn drop_split_edges(
     moved: Query<Entity, Changed<ChildOf>>,
+    mut unparented: RemovedComponents<ChildOf>,
     graph: GraphQuery,
     children: Query<&Children>,
     mut commands: Commands,
 ) {
     let subtrees = moved
         .iter()
+        .chain(unparented.read())
         .flat_map(|e| std::iter::once(e).chain(children.iter_descendants(e)));
     let mut edges: Vec<_> = subtrees.flat_map(|e| graph.edges_of(e)).collect();
     edges.sort();
