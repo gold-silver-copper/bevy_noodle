@@ -135,6 +135,10 @@ pub enum ScrollMode {
 #[reflect(Component)]
 pub struct SelectionBox(pub Rect);
 
+/// On a canvas during an additive box selection: what was selected before.
+#[derive(Component)]
+struct KeptSelection(Vec<Entity>);
+
 /// On a [`PendingWire`]: the ports it may connect to, by the built-in rules
 /// and [`ConnectionCheck`](crate::ConnectionCheck) observers. Set by the library.
 #[derive(Component, Debug, Clone, Default, PartialEq, Eq, Deref)]
@@ -419,6 +423,10 @@ fn on_drag_start(mut drag: On<PointerDragStart>, mut ctx: Ctx) {
         Gesture::Move(node) if !ctx.graph.is_selected(node) => {
             ctx.select(canvas, vec![node], SelectMode::Replace);
         }
+        Gesture::Box if ctx.held(&settings.additive_keys) => {
+            let kept = KeptSelection(ctx.graph.selected_in(canvas).collect());
+            ctx.commands.entity(canvas).try_insert(kept);
+        }
         _ => {}
     }
 }
@@ -428,10 +436,11 @@ fn on_drag(
     mut ctx: Ctx,
     mut wires: Query<(&mut PendingWire, &mut WireTarget, Option<&WireCandidates>)>,
     nodes: Query<(&NodePosition, &ComputedNode)>,
+    kept: Query<&KeptSelection>,
     hovered: Res<HoverMap>,
 ) {
     let target = (drag.event_target(), drag.original_event_target());
-    let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
+    let Some((gesture, canvas, _)) = ctx.gesture(target, drag.button) else {
         return;
     };
     drag.propagate(false);
@@ -487,14 +496,11 @@ fn on_drag(
                         .is_empty()
                 })
             });
-            let hits = hits.collect();
-            let additive = ctx.held(&settings.additive_keys);
-            let mode = if additive {
-                SelectMode::Add
-            } else {
-                SelectMode::Replace
-            };
-            ctx.select(canvas, hits, mode);
+            let kept = kept
+                .get(canvas)
+                .into_iter()
+                .flat_map(|k| k.0.iter().copied());
+            ctx.select(canvas, hits.chain(kept).collect(), SelectMode::Replace);
             ctx.commands.entity(canvas).try_insert(SelectionBox(rect));
         }
     }
@@ -535,7 +541,11 @@ fn on_drag_end(
             let position = drag.pointer.position;
             ctx.move_nodes(canvas, node, position, [Vec2::ZERO, drag.distance], true);
         }
-        Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).try_remove::<SelectionBox>(),
+        Gesture::Pan | Gesture::Box => {
+            ctx.commands
+                .entity(canvas)
+                .try_remove::<(SelectionBox, KeptSelection)>();
+        }
     }
 }
 
@@ -548,7 +558,9 @@ fn on_cancel(cancel: On<PointerCancel>, mut ctx: Ctx) {
     if let Some(wire) = ctx.graph.wire_of(canvas) {
         ctx.commands.entity(wire).try_despawn();
     }
-    ctx.commands.entity(canvas).try_remove::<SelectionBox>();
+    ctx.commands
+        .entity(canvas)
+        .try_remove::<(SelectionBox, KeptSelection)>();
 }
 
 fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {

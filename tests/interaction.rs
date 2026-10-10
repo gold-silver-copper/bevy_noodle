@@ -11,6 +11,7 @@
 )]
 
 use bevy::camera::NormalizedRenderTarget;
+use bevy::ecs::entity::EntityHashSet;
 use bevy::input::gestures::PinchGesture;
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::backend::HitData;
@@ -613,4 +614,51 @@ fn wires_go_with_their_port() {
     app.update();
     let w = app.world_mut();
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+}
+
+#[test]
+fn additive_box_selection_shrinks_back_to_what_was_selected() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    let size = ComputedNode {
+        size: Vec2::splat(10.0),
+        ..default()
+    };
+    let [a, b] = [0.0, 100.0].map(|x| {
+        let at = NodePosition(Vec2::new(x, 0.0));
+        w.spawn((GraphNode, at, Node::default(), size, ChildOf(content)))
+            .id()
+    });
+    w.select(canvas, vec![a], SelectMode::Replace);
+    w.resource_mut::<ButtonInput<KeyCode>>()
+        .press(KeyCode::ShiftLeft);
+    // The canvas is centred on the window's origin: window = local - (200, 150).
+    let window = |local: Vec2| local - Vec2::new(200.0, 150.0);
+    let start = Vec2::new(-10.0, -10.0);
+    let button = PointerButton::Primary;
+    pointer_at(w, canvas, window(start), DragStart { button, hit: hit() });
+    let selected = |w: &mut World, to: Vec2| {
+        let (distance, delta) = (to - start, to - start);
+        pointer_at(
+            w,
+            canvas,
+            window(to),
+            Drag {
+                button,
+                distance,
+                delta,
+            },
+        );
+        let mut selected = w.query_filtered::<Entity, With<Selected>>();
+        selected.iter(w).collect::<EntityHashSet>()
+    };
+    assert_eq!(
+        selected(w, Vec2::new(120.0, 20.0)),
+        EntityHashSet::from_iter([a, b])
+    );
+    assert_eq!(
+        selected(w, Vec2::new(50.0, 20.0)),
+        EntityHashSet::from_iter([a])
+    );
 }
