@@ -254,7 +254,8 @@ impl Ctx<'_, '_> {
         self.canvases.get(canvas).ok().map(|c| *c.1)
     }
 
-    /// Window position → canvas-local pixels; `None` before layout.
+    /// Window position → canvas-local pixels, through every transform above
+    /// the canvas (such as an outer canvas's zoom); `None` before layout.
     fn local(&self, canvas: Entity, position: Vec2) -> Option<Vec2> {
         let (_, _, computed, transform) = self.canvases.get(canvas).ok()?;
         // The node's scale factor is the window's times `UiScale`; window
@@ -273,21 +274,27 @@ impl Ctx<'_, '_> {
         )
     }
 
-    /// Moves `node` (with the selection) by window-pixel `delta`, `total` so far.
+    /// How far the pointer at window `position` moved in graph space since
+    /// it was `back` window pixels back.
+    fn graph_delta(&self, canvas: Entity, position: Vec2, back: Vec2) -> Option<Vec2> {
+        Some(self.graph_point(canvas, position)? - self.graph_point(canvas, position - back)?)
+    }
+
+    /// Moves `node` (with the selection) with the pointer at window
+    /// `position`, by window-pixel `delta`, `total` so far.
     fn move_nodes(
         &mut self,
         canvas: Entity,
         node: Entity,
-        delta: Vec2,
-        total: Vec2,
+        position: Vec2,
+        [delta, total]: [Vec2; 2],
         is_final: bool,
     ) {
-        let Some(view) = self.view(canvas) else {
+        let delta = self.graph_delta(canvas, position, delta);
+        let (Some(delta), Some(total)) = (delta, self.graph_delta(canvas, position, total)) else {
             return;
         };
-        let scale = self.ui_scale.0 * view.zoom;
         let nodes = self.graph.selection_with(node);
-        let (delta, total) = (delta / scale, total / scale);
         let drag = Some(DragProgress { total, is_final });
         self.edit(canvas, GraphEdit::MoveNodes { nodes, delta, drag });
     }
@@ -446,11 +453,16 @@ fn on_drag(
                 pending.pointer = pointer;
             }
         }
-        Gesture::Move(node) => ctx.move_nodes(canvas, node, drag.delta, drag.distance, false),
+        Gesture::Move(node) => {
+            ctx.move_nodes(canvas, node, position, [drag.delta, drag.distance], false);
+        }
         Gesture::Pan => {
-            let delta = drag.delta / ctx.ui_scale.0;
-            if let Ok((_, mut view, ..)) = ctx.canvases.get_mut(canvas) {
-                view.pan += delta;
+            let now = ctx.local(canvas, position);
+            let delta = now.zip(ctx.local(canvas, position - drag.delta));
+            if let (Some((now, before)), Ok((_, mut view, ..))) =
+                (delta, ctx.canvases.get_mut(canvas))
+            {
+                view.pan += now - before;
             }
         }
         Gesture::Box => {
@@ -518,7 +530,10 @@ fn on_drag_end(
                 }
             }
         }
-        Gesture::Move(node) => ctx.move_nodes(canvas, node, Vec2::ZERO, drag.distance, true),
+        Gesture::Move(node) => {
+            let position = drag.pointer.position;
+            ctx.move_nodes(canvas, node, position, [Vec2::ZERO, drag.distance], true);
+        }
         Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).try_remove::<SelectionBox>(),
     }
 }

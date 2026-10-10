@@ -532,6 +532,26 @@ fn wires_dropped_on_empty_canvas_are_reported() {
 }
 
 #[test]
+fn drags_follow_the_pointer_through_an_outer_zoom() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content) = graph(w);
+    // As inside an outer canvas zoomed in twice.
+    w.entity_mut(canvas)
+        .insert(UiGlobalTransform::from_scale(Vec2::splat(2.0)));
+    let node = w
+        .spawn((
+            GraphNode,
+            NodePosition::default(),
+            Node::default(),
+            ChildOf(content),
+        ))
+        .id();
+    drag(w, node, Vec2::new(10.0, 0.0));
+    assert_eq!(w.get::<NodePosition>(node).unwrap().0, Vec2::new(5.0, 0.0));
+}
+
+#[test]
 fn wires_follow_the_pointer_under_ui_scale() {
     let mut app = app();
     let w = app.world_mut();
