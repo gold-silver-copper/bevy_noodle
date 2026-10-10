@@ -17,7 +17,7 @@ use bevy::picking::backend::HitData;
 use bevy::picking::hover::HoverMap;
 use bevy::picking::pointer::{Location, PointerId, PointerLocation};
 use bevy::prelude::*;
-use bevy::ui::{ComputedNode, Selected, UiGlobalTransform, UiScale};
+use bevy::ui::{ComputedNode, InteractionDisabled, Selected, UiGlobalTransform, UiScale};
 use bevy_noodle::prelude::*;
 use bevy_noodle::{DragProgress, WireCandidates, WireTarget};
 
@@ -280,6 +280,14 @@ fn pinching_zooms_the_innermost_canvas_under_the_mouse() {
     app.update();
     let zoom = |app: &App, canvas| app.world().get::<CanvasView>(canvas).unwrap().zoom;
     assert_eq!((zoom(&app, inner), zoom(&app, outer)), (1.5, 1.0));
+
+    // Not while interaction is disabled.
+    app.world_mut()
+        .entity_mut(inner)
+        .insert(InteractionDisabled);
+    app.world_mut().write_message(PinchGesture(0.5));
+    app.update();
+    assert_eq!(zoom(&app, inner), 1.5);
 }
 
 #[test]

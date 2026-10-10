@@ -594,6 +594,7 @@ fn pinch_zoom(
         .get(&PointerId::Mouse)
         .and_then(|h| h.keys().next().copied());
     let canvas = top.and_then(|top| ctx.graph.canvas_of(top));
+    let canvas = canvas.filter(|c| !ctx.disabled.contains(*c));
     let mouse = pointers
         .get_entity(PointerId::Mouse)
         .and_then(|e| locations.get(e).ok()?.location());
