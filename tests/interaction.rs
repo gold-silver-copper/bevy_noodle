@@ -3,6 +3,7 @@
 
 // Test helpers may panic: a panic is a failed test.
 #![allow(
+    clippy::disallowed_methods,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::indexing_slicing,

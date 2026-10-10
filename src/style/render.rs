@@ -14,6 +14,8 @@ use bevy::shader::ShaderRef;
 pub(crate) struct MaterialsPlugin;
 
 impl Plugin for MaterialsPlugin {
+    // `embedded_asset!` needs the `AssetPlugin`, as the material plugins do.
+    #[expect(clippy::disallowed_methods)]
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "wire.wesl");
         embedded_asset!(app, "grid.wesl");

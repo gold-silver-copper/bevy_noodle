@@ -312,7 +312,7 @@ impl Ctx<'_, '_> {
         let top = others.map(&z).max();
         if z(node) >= 0 && top.is_some_and(|top| z(node) <= top) {
             let above = top.unwrap_or_default().saturating_add(1);
-            self.commands.entity(node).insert(ZIndex(above));
+            self.commands.entity(node).try_insert(ZIndex(above));
         }
     }
 
@@ -477,7 +477,7 @@ fn on_drag(
                 SelectMode::Replace
             };
             ctx.select(canvas, hits, mode);
-            ctx.commands.entity(canvas).insert(SelectionBox(rect));
+            ctx.commands.entity(canvas).try_insert(SelectionBox(rect));
         }
     }
 }
@@ -498,7 +498,7 @@ fn on_drag_end(
             let Some((entity, wire, target)) = wire else {
                 return;
             };
-            ctx.commands.entity(entity).despawn();
+            ctx.commands.entity(entity).try_despawn();
             let (from, position) = (wire.from, wire.pointer);
             match **target {
                 Some(to) => ctx.edit(canvas, GraphEdit::Connect { from, to }),
@@ -514,7 +514,7 @@ fn on_drag_end(
             }
         }
         Gesture::Move(node) => ctx.move_nodes(canvas, node, Vec2::ZERO, drag.distance, true),
-        Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).remove::<SelectionBox>(),
+        Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).try_remove::<SelectionBox>(),
     }
 }
 

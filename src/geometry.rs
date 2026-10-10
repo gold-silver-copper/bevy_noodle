@@ -64,8 +64,8 @@ pub(crate) fn update_edge_geometry(
         current, wanted,
     ) {
         (Some(current), Some(wanted)) if *current == wanted => {}
-        (_, Some(wanted)) => _ = commands.entity(entity).insert(wanted),
-        (Some(_), None) => _ = commands.entity(entity).remove::<EdgeGeometry>(),
+        (_, Some(wanted)) => _ = commands.entity(entity).try_insert(wanted),
+        (Some(_), None) => _ = commands.entity(entity).try_remove::<EdgeGeometry>(),
         (None, None) => {}
     };
     for (edge, source, target, current) in edges.iter().filter(|_| !changed.is_empty()) {
@@ -152,7 +152,7 @@ pub(crate) fn drop_split_edges(
             (Some(canvas), other) if other != Some(canvas) => {
                 commands.graph_edit(canvas, GraphEdit::Disconnect { edge });
             }
-            (None, _) => commands.entity(edge).despawn(),
+            (None, _) => commands.entity(edge).try_despawn(),
             _ => {}
         }
     }

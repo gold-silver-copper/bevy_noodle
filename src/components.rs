@@ -164,8 +164,10 @@ pub(crate) fn adopt_nodes(
     if nodes.get(node).is_ok_and(|p| canvases.contains(p.parent())) {
         commands.queue(move |world: &mut World| {
             let canvas = world.get::<ChildOf>(node).map(ChildOf::parent);
-            if let Some(content) = canvas.and_then(|c| ensure_content(world, c)) {
-                world.entity_mut(node).insert(ChildOf(content));
+            if let Some(content) = canvas.and_then(|c| ensure_content(world, c))
+                && let Ok(mut node) = world.get_entity_mut(node)
+            {
+                node.insert(ChildOf(content));
             }
         });
     }

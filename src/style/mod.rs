@@ -267,7 +267,7 @@ fn draw_edges(
                 place(&mut node, None);
             }
             if hitbox.is_some() {
-                commands.entity(entity).remove::<EdgeHitbox>();
+                commands.entity(entity).try_remove::<EdgeHitbox>();
             }
             continue;
         };
@@ -325,7 +325,7 @@ fn draw_edges(
             };
             match hitbox {
                 Some(mut hitbox) => _ = hitbox.set_if_neq(area),
-                None => _ = commands.entity(entity).insert(area),
+                None => _ = commands.entity(entity).try_insert(area),
             }
         }
         // Wires are drawn by their own UI node, so the edge itself can be picked.
@@ -348,7 +348,7 @@ fn draw_edges(
         update(&mut materials, &handle.0, material);
         z_index.set_if_neq(z);
         if parent.parent() != content {
-            commands.entity(visual).insert(ChildOf(content));
+            commands.entity(visual).try_insert(ChildOf(content));
         }
     }
 }
@@ -368,8 +368,8 @@ fn draw_grids(
     for (canvas, view, computed, grid, visual) in &canvases {
         let Some(grid) = grid else {
             if let Some(visual) = visual {
-                commands.entity(visual.0).despawn();
-                commands.entity(canvas).remove::<GridVisual>();
+                commands.entity(visual.0).try_despawn();
+                commands.entity(canvas).try_remove::<GridVisual>();
             }
             continue;
         };
@@ -397,7 +397,7 @@ fn draw_grids(
                 let child = commands
                     .spawn((fill, Pickable::IGNORE, ChildOf(canvas)))
                     .id();
-                commands.entity(canvas).insert(GridVisual(child));
+                commands.entity(canvas).try_insert(GridVisual(child));
             }
         }
     }
@@ -427,7 +427,7 @@ fn draw_selection_boxes(
         let colors = (BackgroundColor(style.fill), BorderColor::all(style.border));
         let visual = (node, colors, ZIndex(i32::MAX), Pickable::IGNORE);
         let child = commands.spawn((visual, ChildOf(canvas))).id();
-        commands.entity(canvas).insert(BoxVisual(child));
+        commands.entity(canvas).try_insert(BoxVisual(child));
     }
 }
 
@@ -533,12 +533,13 @@ fn outline_focus(
     let item = graph.node_of(entity) == Some(entity) || graph.port(entity).is_some();
     if let (Some(style), true) = (style, item) {
         let outline = Outline::new(px(style.width), px(2), style.color);
-        commands.entity(entity).insert(outline);
+        commands.entity(entity).try_insert(outline);
         *shown = Some(entity);
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

@@ -83,10 +83,10 @@ fn setup(mut commands: Commands) {
                 NumberInputValue::F32({value})
                 Node { margin: {margin} }
             })
-            .insert(ChildOf(node));
+            .try_insert(ChildOf(node));
         commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
         if y < 200.0 {
-            commands.entity(node).insert(AutoFocus);
+            commands.entity(node).try_insert(AutoFocus);
         }
     }
     commands.spawn((

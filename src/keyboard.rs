@@ -111,7 +111,7 @@ fn make_focusable(
             .canvas_of(entity)
             .is_some_and(|c| keyboards.contains(c));
         if items.contains(entity) && keyboard {
-            commands.entity(entity).insert(TabIndex(0));
+            commands.entity(entity).try_insert(TabIndex(0));
         }
     }
 }
@@ -175,7 +175,7 @@ fn on_key(
                     let edit = GraphEdit::Connect { from, to: target };
                     commands.graph_edit_with_origin(canvas, edit, origin);
                 }
-                commands.entity(entity).despawn();
+                commands.entity(entity).try_despawn();
             }
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
@@ -186,7 +186,7 @@ fn on_key(
             }
         }
     } else if let (Some(wire), true) = (wire, is(&settings.cancel)) {
-        commands.entity(wire).despawn();
+        commands.entity(wire).try_despawn();
     } else if let (Some(node), true) = (node, is(&settings.select)) {
         let additive = keys.any_pressed(settings.additive_keys.iter().copied());
         let mode = if additive {

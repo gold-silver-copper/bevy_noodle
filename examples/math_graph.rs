@@ -88,7 +88,7 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
     commands.spawn((kit::title(format!("{op:?}")), ChildOf(node)));
     let row = match op {
         MathOp::Number => {
-            commands.entity(node).insert(NumberValue(value));
+            commands.entity(node).try_insert(NumberValue(value));
             let mut text = EditableText::new(format!("{value}"));
             text.visible_width = Some(8.0);
             commands.spawn((

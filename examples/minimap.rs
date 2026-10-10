@@ -166,7 +166,7 @@ fn draw_minimap(
     for (entity, mini, mut node) in &mut minis {
         match nodes.get(mini.0) {
             Ok((_, p, c)) => place(&mut node, node_rect(p, c)),
-            Err(_) => commands.entity(entity).despawn(),
+            Err(_) => commands.entity(entity).try_despawn(),
         }
     }
     for (node, ..) in nodes

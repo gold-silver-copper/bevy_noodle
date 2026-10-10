@@ -340,9 +340,12 @@ impl GraphWorldExt for World {
     fn select(&mut self, canvas: Entity, items: Vec<Entity>, mode: SelectMode) {
         let changes = self.run_system_cached_with(plan_selection, (canvas, items, mode));
         for (item, on) in changes.unwrap_or_default() {
+            let Ok(mut item) = self.get_entity_mut(item) else {
+                continue;
+            };
             match on {
-                true => _ = self.entity_mut(item).insert(Selected),
-                false => _ = self.entity_mut(item).remove::<Selected>(),
+                true => _ = item.insert(Selected),
+                false => _ = item.remove::<Selected>(),
             }
         }
     }
