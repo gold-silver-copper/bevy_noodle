@@ -26,8 +26,11 @@
 - `GraphEdit::MoveNodes { nodes, delta, drag }`: build complete moves with
   `GraphEdit::move_nodes`; pointer drags add a `DragProgress { total,
   is_final }`, and `GraphEdit::is_drag_step` tells undo stacks what to skip.
-- Ports say what a full port does: `Port::when_full` is `WhenFull::Replace`
-  (the oldest edges make room; the default for inputs) or `WhenFull::Refuse`.
+- A port's limit and what a full port does are one `Port::capacity`:
+  `Capacity::Unlimited` (the default for outputs), `Capacity::Replace(n)`
+  (the oldest edges make room; inputs default to one) or
+  `Capacity::Refuse(n)`, with `n` a `NonZeroU32`. `Port::with_capacity`
+  replaces `with_max_connections` and `when_full`, and `WhenFull` is gone.
 - Zoom limits are `CanvasView::min_zoom`/`max_zoom`; `zoom_around` keeps to
   them.
 - `GraphQuery` methods listing entities return iterators. `nodes_in` and

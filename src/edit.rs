@@ -198,7 +198,7 @@ pub enum RejectReason {
     IncompatibleTypes,
     /// The ports are connected already.
     AlreadyConnected,
-    /// The port holds its maximum (above 1) number of edges.
+    /// The port is full and its [`Capacity`](crate::Capacity) refuses more.
     PortFull,
     /// Nothing to do (e.g. no nodes of this canvas listed).
     Empty,

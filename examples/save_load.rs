@@ -178,7 +178,7 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
 
 fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
     let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
-    let inputs = Port::input(NUMBER).with_max_connections(None);
+    let inputs = Port::input(NUMBER).with_capacity(Capacity::Unlimited);
     let margin = UiRect::horizontal(px(kit::PADDING));
     let result = commands
         .spawn((

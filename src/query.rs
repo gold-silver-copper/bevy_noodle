@@ -253,16 +253,16 @@ impl GraphQuery<'_, '_> {
             let Some(port_info) = self.port(port) else {
                 continue;
             };
-            let edges: Vec<Entity> = self.edges_of(port).collect();
-            let Some(max) = port_info.max_connections.map(|m| m as usize) else {
-                continue;
+            let (max, replace) = match port_info.capacity {
+                Capacity::Unlimited => continue,
+                Capacity::Refuse(max) => (max.get() as usize, false),
+                Capacity::Replace(max) => (max.get() as usize, true),
             };
-            match port_info.when_full {
-                _ if edges.len() < max => {}
-                WhenFull::Replace if max > 0 => {
-                    replaces.extend(edges.iter().take(edges.len() + 1 - max))
-                }
-                _ => refused = refused.or(Some(RejectReason::PortFull)),
+            let edges: Vec<Entity> = self.edges_of(port).collect();
+            match edges.len().checked_sub(max) {
+                None => {}
+                Some(over) if replace => replaces.extend(edges.iter().take(over + 1)),
+                Some(_) => refused = refused.or(Some(RejectReason::PortFull)),
             }
         }
         replaces.sort();

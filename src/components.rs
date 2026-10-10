@@ -1,6 +1,8 @@
 //! The components that make up a graph. You insert [`NodeCanvas`],
 //! [`CanvasContent`], [`GraphNode`] and [`Port`]; the library manages edges.
 
+use std::num::NonZeroU32;
+
 use bevy::curve::cubic_splines::CubicSegment;
 use bevy::ecs::lifecycle::HookContext;
 use bevy::ecs::world::DeferredWorld;
@@ -281,21 +283,21 @@ pub struct Port {
     pub direction: PortDirection,
     /// What the port carries.
     pub port_type: PortType,
-    /// How many edges it holds. `None` is unlimited.
-    pub max_connections: Option<u32>,
-    /// What a new connection does when the port is full.
-    pub when_full: WhenFull,
+    /// How many edges it holds, and what a new one does when it is full.
+    pub capacity: Capacity,
 }
 
-/// What connecting to a full [`Port`] does.
-#[derive(Reflect, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WhenFull {
-    /// The connection is refused ([`RejectReason::PortFull`](crate::RejectReason::PortFull)).
-    /// If an observer allows it anyway, the port keeps all its edges.
-    #[default]
-    Refuse,
-    /// The port's oldest edges make room for it.
-    Replace,
+/// How many edges a [`Port`] holds, and what connecting to it when full does.
+#[derive(Reflect, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Capacity {
+    /// Any number of edges.
+    Unlimited,
+    /// At most this many; more connections are refused
+    /// ([`RejectReason::PortFull`](crate::RejectReason::PortFull)). If an
+    /// observer allows one anyway, the port keeps all its edges.
+    Refuse(NonZeroU32),
+    /// At most this many; the oldest edges make room for a new one.
+    Replace(NonZeroU32),
 }
 
 impl Port {
@@ -304,8 +306,7 @@ impl Port {
         Self {
             direction: PortDirection::Input,
             port_type,
-            max_connections: Some(1),
-            when_full: WhenFull::Replace,
+            capacity: Capacity::Replace(NonZeroU32::MIN),
         }
     }
 
@@ -314,20 +315,13 @@ impl Port {
         Self {
             direction: PortDirection::Output,
             port_type,
-            max_connections: None,
-            when_full: WhenFull::Refuse,
+            capacity: Capacity::Unlimited,
         }
     }
 
-    /// The same port with another connection limit (`None` is unlimited).
-    pub const fn with_max_connections(mut self, max: Option<u32>) -> Self {
-        self.max_connections = max;
-        self
-    }
-
-    /// The same port, doing `when_full` when full.
-    pub const fn when_full(mut self, when_full: WhenFull) -> Self {
-        self.when_full = when_full;
+    /// The same port with another [`Capacity`].
+    pub const fn with_capacity(mut self, capacity: Capacity) -> Self {
+        self.capacity = capacity;
         self
     }
 

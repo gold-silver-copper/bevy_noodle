@@ -106,7 +106,7 @@ fn setup(mut commands: Commands) {
             ))
             .id();
         let sink_at = Vec2::new(if i % 2 == 0 { 760.0 } else { 960.0 }, y + 26.0);
-        let any = Port::input(PortType::ANY).with_max_connections(None);
+        let any = Port::input(PortType::ANY).with_capacity(Capacity::Unlimited);
         let sink = commands
             .spawn((
                 kit::node(sink_at),
