@@ -59,6 +59,10 @@ pub(crate) fn update_edge_geometry(
     mut commands: Commands,
 ) {
     let end = |port| endpoint(port, &ports, &nodes);
+    // A wire ends with its port: its drag end goes to an entity that is gone.
+    for (wire, ..) in wires.iter().filter(|(_, w, _)| !ports.contains(w.from)) {
+        commands.entity(wire).try_despawn();
+    }
     // Inserted while both ends are laid out, removed otherwise.
     let mut set = |entity, current: Option<&EdgeGeometry>, wanted: Option<EdgeGeometry>| match (
         current, wanted,

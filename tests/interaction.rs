@@ -591,3 +591,18 @@ fn cancelled_pointers_drop_their_wire() {
     pointer(w, port, Cancel { hit: hit() });
     assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
 }
+
+#[test]
+fn wires_go_with_their_port() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let [port] = one_node_each(w, content, [Port::output(NUM)]);
+    let button = PointerButton::Primary;
+    pointer(w, port, DragStart { button, hit: hit() });
+    let node = w.get::<ChildOf>(port).unwrap().parent();
+    w.despawn(node);
+    app.update();
+    let w = app.world_mut();
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
+}
