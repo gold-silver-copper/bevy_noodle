@@ -140,6 +140,10 @@ fn on_key(
     let code = key.key_code;
     let is = |keys: &[KeyCode]| keys.contains(&code);
     let node = graph.node_of(target).filter(|n| *n == target);
+    // Keys typed into a control inside a node (a text field) are its own.
+    if target != canvas && node.is_none() && graph.port(target).is_none() {
+        return;
+    }
     let origin = EditOrigin::Interaction;
     let wire = graph.wire_of(canvas);
     let s = settings;

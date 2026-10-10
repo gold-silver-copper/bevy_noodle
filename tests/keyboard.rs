@@ -201,3 +201,13 @@ fn keys_are_lists_and_empty_lists_unbind() {
     let position = app.world().get::<NodePosition>(g.nodes[0]).unwrap().0;
     assert_eq!(position, Vec2::new(10.0, 0.0));
 }
+
+#[test]
+fn keys_typed_into_controls_inside_nodes_are_theirs() {
+    let (mut app, g) = app();
+    let field = (Node::default(), TabIndex(0), ChildOf(g.nodes[0]));
+    let field = app.world_mut().spawn(field).id();
+    press(&mut app, field, KeyCode::Minus);
+    let view = app.world().get::<CanvasView>(g.canvas).unwrap();
+    assert_eq!(view.zoom, 1.0);
+}
