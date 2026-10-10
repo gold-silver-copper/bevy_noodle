@@ -114,6 +114,6 @@ pub mod prelude {
         GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition, NoodleCorePlugin,
         NoodleInteractionPlugin, NoodleKeyboardPlugin, NoodlePlugins, NoodleSystems, PendingWire,
         Port, PortDirection, PortPair, PortTangent, PortType, RejectReason, ScrollMode, SelectMode,
-        SelectionBox, WhenFull, WireCandidate, WireDropped, WireTarget,
+        SelectionBox, WhenFull, WireCandidates, WireDropped, WireOf, WireTarget,
     };
 }

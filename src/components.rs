@@ -514,41 +514,46 @@ impl EdgeGeometry {
     }
 }
 
-/// The wire being dragged: its own entity with an [`EdgeGeometry`], so edge
-/// renderers draw it like any edge. Spawning one marks the ports it may
-/// connect to ([`WireCandidate`](crate::WireCandidate), asking
-/// [`ConnectionCheck`](crate::ConnectionCheck) observers); despawning it clears
-/// the marks.
+/// The wire being dragged, spawned with its canvas as `(PendingWire { from,
+/// pointer }, WireOf(canvas))`: its own entity with an [`EdgeGeometry`], so
+/// edge renderers draw it like any edge. Spawning one gives it the ports it
+/// may connect to ([`WireCandidates`](crate::WireCandidates), asking
+/// [`ConnectionCheck`](crate::ConnectionCheck) observers) and the one it
+/// snaps to ([`WireTarget`](crate::WireTarget)).
 #[derive(Component, Reflect, Debug, Clone, Copy, PartialEq)]
 #[reflect(Component)]
-#[component(on_add = wire_added, on_remove = wire_removed)]
+#[require(crate::WireTarget)]
+#[component(on_add = wire_added)]
 pub struct PendingWire {
-    /// The canvas it is dragged in.
-    #[entities]
-    pub canvas: Entity,
     /// The port the drag started at.
     #[entities]
     pub from: Entity,
     /// Pointer position in graph space.
     pub pointer: Vec2,
-    /// The compatible port under the pointer, if any.
-    #[entities]
-    pub target: Option<Entity>,
 }
 
 fn wire_added(mut world: DeferredWorld, context: HookContext) {
-    let Some(&wire) = world.get::<PendingWire>(context.entity) else {
-        return;
-    };
-    let (canvas, from) = (wire.canvas, wire.from);
+    let wire = context.entity;
     world
         .commands()
-        .queue(move |world: &mut World| crate::interaction::mark_candidates(world, canvas, from));
+        .queue(move |world: &mut World| crate::interaction::mark_candidates(world, wire));
 }
 
-fn wire_removed(mut world: DeferredWorld, _: HookContext) {
-    world.commands().queue(crate::interaction::clear_candidates);
+/// On a [`PendingWire`]: the canvas it is dragged in. A wire taken out of its
+/// canvas, or replaced by another one there, is despawned.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
+#[relationship(relationship_target = DraggedWire)]
+#[component(on_remove = wire_removed)]
+pub struct WireOf(pub Entity);
+
+fn wire_removed(mut world: DeferredWorld, context: HookContext) {
+    world.commands().entity(context.entity).try_despawn();
 }
+
+/// On a [`NodeCanvas`]: its [`PendingWire`], maintained by Bevy.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Deref)]
+#[relationship_target(relationship = WireOf, linked_spawn)]
+pub struct DraggedWire(Entity);
 
 #[cfg(test)]
 mod tests {

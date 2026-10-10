@@ -21,7 +21,7 @@ use bevy::prelude::*;
 use bevy::ui::{ComputedNode, Selected};
 use bevy::window::SystemCursorIcon;
 
-use crate::interaction::{SelectionBox, WireCandidate, WireTarget};
+use crate::interaction::{SelectionBox, WireCandidates, WireTarget};
 use crate::{NoodleSystems, components::*, query::GraphQuery};
 use render::{Grid, GridMaterial, MaterialsPlugin, WireMaterial, wire_material};
 
@@ -240,7 +240,7 @@ fn draw_edges(
             Entity,
             Option<&EdgeGeometry>,
             Option<&EdgeStyle>,
-            Option<&PendingWire>,
+            Option<&WireOf>,
             Option<&EdgeVisual>,
             Option<&mut EdgeHitbox>,
             Has<Selected>,
@@ -269,7 +269,7 @@ fn draw_edges(
             }
             continue;
         };
-        let canvas = wire.map(|w| w.canvas).or_else(|| graph.canvas_of(entity));
+        let canvas = wire.map(|w| w.0).or_else(|| graph.canvas_of(entity));
         let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
         let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
@@ -436,20 +436,20 @@ fn highlight_ports(
             &PortColor,
             Option<&OutgoingEdges>,
             Option<&IncomingEdges>,
-            Has<WireCandidate>,
-            Has<WireTarget>,
             &mut BackgroundColor,
             &mut BorderColor,
             &mut UiTransform,
         ),
         With<PortHighlight>,
     >,
-    wires: Query<&PendingWire>,
+    wires: Query<(&PendingWire, &WireTarget, Option<&WireCandidates>)>,
 ) {
-    let sources: Vec<Entity> = wires.iter().map(|w| w.from).collect();
-    for (port, color, outgoing, incoming, candidate, target, mut fill, mut border, mut transform) in
-        &mut ports
-    {
+    let sources: Vec<Entity> = wires.iter().map(|(w, ..)| w.from).collect();
+    for (port, color, outgoing, incoming, mut fill, mut border, mut transform) in &mut ports {
+        let target = wires.iter().any(|(_, t, _)| t.0 == Some(port));
+        let candidate = wires
+            .iter()
+            .any(|(.., c)| c.is_some_and(|c| c.contains(&port)));
         let connected =
             outgoing.is_some_and(|e| !e.is_empty()) || incoming.is_some_and(|e| !e.is_empty());
         let (alpha, scale) = match (
@@ -550,12 +550,8 @@ mod tests {
         let canvas = w.spawn((NodeCanvas, Node::default())).id();
         let node = w.spawn((GraphNode, ChildOf(canvas))).id();
         let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
-        let wire = PendingWire {
-            canvas,
-            from,
-            pointer: Vec2::ZERO,
-            target: None,
-        };
+        let pointer = Vec2::ZERO;
+        let wire = (PendingWire { from, pointer }, WireOf(canvas));
         let wire = w.spawn(wire).id();
         app.update();
         let crosshair = Some(EntityCursor::System(SystemCursorIcon::Crosshair));

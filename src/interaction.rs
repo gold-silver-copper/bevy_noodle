@@ -10,6 +10,7 @@
 //! Edges with an [`EdgeHitbox`] are picked by a small backend running after
 //! Bevy's UI backend, so they get `Pointer` events like any UI entity.
 
+use bevy::ecs::entity::EntityHashSet;
 use bevy::input::gestures::PinchGesture;
 use bevy::input::mouse::MouseScrollUnit;
 use bevy::input_focus::tab_navigation::TabIndex;
@@ -128,15 +129,14 @@ pub enum ScrollMode {
 #[reflect(Component)]
 pub struct SelectionBox(pub Rect);
 
-/// On ports the dragged wire may connect to.
-#[derive(Component, Reflect, Clone, Copy, Debug, Default)]
-#[reflect(Component, Default)]
-pub struct WireCandidate;
+/// On a [`PendingWire`]: the ports it may connect to, by the built-in rules
+/// and [`ConnectionCheck`](crate::ConnectionCheck) observers. Set by the library.
+#[derive(Component, Debug, Clone, Default, PartialEq, Eq, Deref)]
+pub struct WireCandidates(EntityHashSet);
 
-/// On the port the dragged wire would connect to if dropped now.
-#[derive(Component, Reflect, Clone, Copy, Debug, Default)]
-#[reflect(Component, Default)]
-pub struct WireTarget;
+/// On a [`PendingWire`]: the candidate port it would connect to if dropped now.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Deref)]
+pub struct WireTarget(pub Option<Entity>);
 
 /// Triggered on a canvas, and written as a message, when a wire is dropped
 /// away from any port; `position` is in graph space.
@@ -371,11 +371,7 @@ fn on_press(mut press: On<PointerPress>, mut ctx: Ctx) {
     }
 }
 
-fn on_drag_start(
-    mut drag: On<PointerDragStart>,
-    mut ctx: Ctx,
-    wires: Query<(Entity, &PendingWire)>,
-) {
+fn on_drag_start(mut drag: On<PointerDragStart>, mut ctx: Ctx) {
     let target = (drag.event_target(), drag.original_event_target());
     let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
         return;
@@ -383,9 +379,6 @@ fn on_drag_start(
     drag.propagate(false);
     match gesture {
         Gesture::Wire(port) => {
-            for (entity, _) in wires.iter().filter(|(_, w)| w.canvas == canvas) {
-                ctx.commands.entity(entity).despawn();
-            }
             // Dragging off a connected input picks up its most recent wire.
             let g = &ctx.graph;
             let is_input = g
@@ -403,12 +396,8 @@ fn on_drag_start(
                 ctx.edit(canvas, GraphEdit::Disconnect { edge });
                 from = ends.output;
             }
-            ctx.commands.spawn(PendingWire {
-                canvas,
-                from,
-                pointer,
-                target: None,
-            });
+            ctx.commands
+                .spawn((PendingWire { from, pointer }, WireOf(canvas)));
         }
         Gesture::Move(node) if !ctx.graph.is_selected(node) => {
             ctx.select(canvas, vec![node], SelectMode::Replace);
@@ -420,10 +409,9 @@ fn on_drag_start(
 fn on_drag(
     mut drag: On<PointerDrag>,
     mut ctx: Ctx,
-    mut wires: Query<&mut PendingWire>,
+    mut wires: Query<(&mut PendingWire, &mut WireTarget, Option<&WireCandidates>)>,
     nodes: Query<(&NodePosition, &ComputedNode)>,
     hovered: Res<HoverMap>,
-    candidates: Query<(), With<WireCandidate>>,
 ) {
     let target = (drag.event_target(), drag.original_event_target());
     let Some((gesture, canvas, settings)) = ctx.gesture(target, drag.button) else {
@@ -441,10 +429,12 @@ fn on_drag(
                 .get(&drag.pointer.id)
                 .into_iter()
                 .flat_map(|h| h.keys());
-            let target = under.copied().find(|p| candidates.contains(*p));
-            for mut wire in wires.iter_mut().filter(|w| w.canvas == canvas) {
-                retarget(&mut wire, target, &mut ctx.commands);
-                wire.pointer = pointer;
+            if let Some(wire) = ctx.graph.wire_of(canvas)
+                && let Ok((mut pending, mut target, candidates)) = wires.get_mut(wire)
+            {
+                let fits = |p: &&Entity| candidates.is_some_and(|c| c.contains(*p));
+                target.set_if_neq(WireTarget(under.copied().find(|p| fits(&p))));
+                pending.pointer = pointer;
             }
         }
         Gesture::Move(node) => ctx.move_nodes(canvas, node, drag.delta, drag.distance, false),
@@ -488,7 +478,11 @@ fn on_drag(
     }
 }
 
-fn on_drag_end(mut drag: On<PointerDragEnd>, mut ctx: Ctx, wires: Query<(Entity, &PendingWire)>) {
+fn on_drag_end(
+    mut drag: On<PointerDragEnd>,
+    mut ctx: Ctx,
+    wires: Query<(Entity, &PendingWire, &WireTarget)>,
+) {
     let target = (drag.event_target(), drag.original_event_target());
     let Some((gesture, canvas, _)) = ctx.gesture(target, drag.button) else {
         return;
@@ -496,20 +490,22 @@ fn on_drag_end(mut drag: On<PointerDragEnd>, mut ctx: Ctx, wires: Query<(Entity,
     drag.propagate(false);
     match gesture {
         Gesture::Wire(_) => {
-            for (entity, wire) in wires.iter().filter(|(_, w)| w.canvas == canvas) {
-                ctx.commands.entity(entity).despawn();
-                let (from, position) = (wire.from, wire.pointer);
-                match wire.target {
-                    Some(to) => ctx.edit(canvas, GraphEdit::Connect { from, to }),
-                    None => {
-                        let dropped = WireDropped {
-                            canvas,
-                            from,
-                            position,
-                        };
-                        ctx.commands.trigger(dropped);
-                        ctx.commands.write_message(dropped);
-                    }
+            let wire = ctx.graph.wire_of(canvas).and_then(|w| wires.get(w).ok());
+            let Some((entity, wire, target)) = wire else {
+                return;
+            };
+            ctx.commands.entity(entity).despawn();
+            let (from, position) = (wire.from, wire.pointer);
+            match **target {
+                Some(to) => ctx.edit(canvas, GraphEdit::Connect { from, to }),
+                None => {
+                    let dropped = WireDropped {
+                        canvas,
+                        from,
+                        position,
+                    };
+                    ctx.commands.trigger(dropped);
+                    ctx.commands.write_message(dropped);
                 }
             }
         }
@@ -658,34 +654,15 @@ fn pick_edges(
     messages.p1().write_batch(hits);
 }
 
-/// Points `wire` at `target`, moving the [`WireTarget`] marker.
-pub(crate) fn retarget(wire: &mut PendingWire, target: Option<Entity>, commands: &mut Commands) {
-    if wire.target != target {
-        if let Some(old) = wire.target {
-            commands.entity(old).remove::<WireTarget>();
-        }
-        if let Some(new) = target {
-            commands.entity(new).insert(WireTarget);
-        }
-        wire.target = target;
-    }
-}
-
-/// Removes every [`WireCandidate`] and [`WireTarget`] marker.
-pub(crate) fn clear_candidates(world: &mut World) {
-    let mut marked = world.query_filtered::<Entity, Or<(With<WireCandidate>, With<WireTarget>)>>();
-    for port in marked.iter(world).collect::<Vec<_>>() {
-        world
-            .entity_mut(port)
-            .remove::<(WireCandidate, WireTarget)>();
-    }
-}
-
-/// Marks the ports a wire from `from` may connect to with [`WireCandidate`]:
-/// one pass over the graph for the built-in rules, then
+/// Gives `wire` its [`WireCandidates`]: one pass over the graph for the
+/// built-in rules, then
 /// [`ConnectionCheck`](crate::ConnectionCheck) observers for the connections
 /// that can exist.
-pub(crate) fn mark_candidates(world: &mut World, canvas: Entity, from: Entity) {
+pub(crate) fn mark_candidates(world: &mut World, wire: Entity) {
+    let canvas = world.get::<WireOf>(wire).map(|c| c.0);
+    let Some((canvas, from)) = canvas.zip(world.get::<PendingWire>(wire).map(|w| w.from)) else {
+        return;
+    };
     let possible = |In((canvas, from)), graph: GraphQuery| {
         let nodes = graph.nodes_in(canvas);
         let ports = nodes.flat_map(|n| graph.ports_of(n));
@@ -695,11 +672,14 @@ pub(crate) fn mark_candidates(world: &mut World, canvas: Entity, from: Entity) {
     let Ok(connections) = world.run_system_cached_with(possible, (canvas, from)) else {
         return;
     };
+    let mut candidates = EntityHashSet::default();
     for connection in connections {
         if ask(world, canvas, &connection).is_none() {
-            let to = connection.ports.other(from);
-            world.entity_mut(to).insert(WireCandidate);
+            candidates.insert(connection.ports.other(from));
         }
+    }
+    if let Ok(mut wire) = world.get_entity_mut(wire) {
+        wire.insert(WireCandidates(candidates));
     }
 }
 

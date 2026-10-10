@@ -14,7 +14,7 @@ use bevy::ui::ComputedNode;
 
 use crate::components::*;
 use crate::edit::{EditOrigin, GraphCommandsExt, GraphEdit, SelectMode};
-use crate::interaction::{WireCandidate, additive_keys, retarget};
+use crate::interaction::{WireCandidates, WireTarget, additive_keys};
 use crate::query::GraphQuery;
 
 /// Keyboard handling for canvases with [`CanvasKeyboard`]. Adds Bevy's
@@ -121,7 +121,7 @@ fn on_key(
     graph: GraphQuery,
     keyboards: Query<&CanvasKeyboard>,
     keys: Res<ButtonInput<KeyCode>>,
-    wires: Query<(Entity, &PendingWire)>,
+    wires: Query<&PendingWire>,
     anchors: Query<&PortAnchor>,
     mut views: Query<(&mut CanvasView, &ComputedNode)>,
     mut commands: Commands,
@@ -140,7 +140,7 @@ fn on_key(
     let is = |keys: &[KeyCode]| keys.contains(&code);
     let node = graph.node_of(target).filter(|n| *n == target);
     let origin = EditOrigin::Interaction;
-    let wire = wires.iter().find(|(_, w)| w.canvas == canvas);
+    let wire = graph.wire_of(canvas);
     let s = settings;
     let moves = [&s.move_left, &s.move_right, &s.move_up, &s.move_down];
     let directions = [Vec2::NEG_X, Vec2::X, Vec2::NEG_Y, Vec2::Y];
@@ -168,27 +168,23 @@ fn on_key(
         }
     } else if is(&settings.connect) && graph.port(target).is_some() {
         match wire {
-            Some((entity, wire)) => {
-                if wire.from != target {
-                    let (from, to) = (wire.from, target);
-                    let edit = GraphEdit::Connect { from, to };
+            Some(entity) => {
+                let from = wires.get(entity).ok().map(|w| w.from);
+                if let Some(from) = from.filter(|from| *from != target) {
+                    let edit = GraphEdit::Connect { from, to: target };
                     commands.graph_edit_with_origin(canvas, edit, origin);
                 }
                 commands.entity(entity).despawn();
             }
             None => {
                 let pointer = anchors.get(target).ok().and_then(|a| a.position);
-                commands.spawn(PendingWire {
-                    canvas,
-                    from: target,
-                    pointer: pointer.unwrap_or_default(),
-                    target: None,
-                });
+                let (from, pointer) = (target, pointer.unwrap_or_default());
+                commands.spawn((PendingWire { from, pointer }, WireOf(canvas)));
                 input.propagate(false);
                 return;
             }
         }
-    } else if let (Some((wire, _)), true) = (wire, is(&settings.cancel)) {
+    } else if let (Some(wire), true) = (wire, is(&settings.cancel)) {
         commands.entity(wire).despawn();
     } else if let (Some(node), true) = (node, is(&settings.select)) {
         let additive = keys.any_pressed(settings.additive_keys.iter().copied());
@@ -211,17 +207,17 @@ fn on_key(
 /// While a connection is being made, focusing a compatible port snaps to it.
 fn snap_on_focus(
     gained: On<FocusGained>,
-    mut wires: Query<&mut PendingWire>,
-    candidates: Query<(), With<WireCandidate>>,
-    mut commands: Commands,
+    graph: GraphQuery,
+    mut wires: Query<(&mut WireTarget, Option<&WireCandidates>)>,
 ) {
     // Act once, on the focused entity (the event then bubbles up).
     let port = gained.original_event_target();
     if gained.event_target() != port {
         return;
     }
-    let target = candidates.contains(port).then_some(port);
-    for mut wire in &mut wires {
-        retarget(&mut wire, target, &mut commands);
+    let wire = graph.canvas_of(port).and_then(|c| graph.wire_of(c));
+    if let Some((mut target, candidates)) = wire.and_then(|w| wires.get_mut(w).ok()) {
+        let fits = candidates.is_some_and(|c| c.contains(&port));
+        target.set_if_neq(WireTarget(fits.then_some(port)));
     }
 }

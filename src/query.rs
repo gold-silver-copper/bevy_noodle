@@ -47,6 +47,7 @@ pub struct GraphQuery<'w, 's> {
     >,
     edges: Query<'w, 's, (Entity, &'static EdgeSource, &'static EdgeTarget)>,
     selected: Query<'w, 's, Entity, With<Selected>>,
+    wires: Query<'w, 's, &'static DraggedWire>,
 }
 
 impl GraphQuery<'_, '_> {
@@ -94,6 +95,11 @@ impl GraphQuery<'_, '_> {
                 .collect(),
             _ => vec![node],
         }
+    }
+
+    /// The [`PendingWire`] dragged in a canvas, if any.
+    pub fn wire_of(&self, canvas: Entity) -> Option<Entity> {
+        self.wires.get(canvas).ok().map(|w| **w)
     }
 
     /// Whether `entity` is [`Selected`].

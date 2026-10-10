@@ -49,9 +49,13 @@
 - `EdgeStyle::layer: EdgeLayer` is now `below_nodes: bool`. `FrameAll` and
   `NoodleSystems::Measure` are gone: ports are measured in Bevy's
   `UiSystems::PostLayout`.
-- Spawning a `PendingWire` marks the ports it may connect to with
-  `WireCandidate`, and despawning it clears them, so custom bindings that
-  make wires get candidates for free.
+- A dragged wire is `(PendingWire { from, pointer }, WireOf(canvas))`: a
+  canvas has at most one (`DraggedWire`, or `GraphQuery::wire_of`), and
+  spawning another replaces it. Its state lives on it: the ports it may
+  connect to are its `WireCandidates` (set by the library, so custom
+  bindings that make wires get them for free), and the one it snaps to is
+  its `WireTarget(Option<Entity>)`. Ports no longer carry `WireCandidate`
+  or `WireTarget` markers; `PendingWire::canvas` and `target` are gone.
 
 ### Added
 - Hover cursors from Bevy's `EntityCursor` in the default style: `kit`
@@ -83,6 +87,8 @@
 - Restoring or inserting a snapshot no longer leaves children it left out
   listed in their parent's `Children`.
 - The `FocusOutline` also appears when focus becomes visible later.
+- Ending a dragged wire no longer clears the candidates of a wire dragged
+  on another canvas.
 - The library and examples no longer panic: no `unwrap`, `expect`, indexing
   or `panic!`, enforced by clippy lints. Loading a `save_load` model whose
   edges name a missing node or port reports an error.
