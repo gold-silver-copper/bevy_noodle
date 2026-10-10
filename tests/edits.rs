@@ -251,6 +251,21 @@ fn deleting_nodes_or_ports_removes_edges() {
 }
 
 #[test]
+fn deleting_a_node_reports_the_edges_of_nodes_inside_it() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (group, _) = node(w, content, &[]);
+    let (_, inner) = node(w, group, &[Port::output(NUM)]);
+    let (_, d) = node(w, content, &[Port::input(NUM)]);
+    connect(w, c, inner[0], d[0]);
+    log(&mut app);
+    let delete = GraphEdit::Delete { items: vec![group] };
+    app.world_mut().graph_edit(c, delete).unwrap();
+    assert_eq!(log(&mut app), ["applied disconnect", "applied delete"]);
+}
+
+#[test]
 fn selection_modes() {
     let mut app = app();
     let w = app.world_mut();

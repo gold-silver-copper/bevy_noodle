@@ -525,13 +525,14 @@ fn plan_edit(
             Step::Move(listed(nodes)?, *delta, *drag)
         }
         GraphEdit::Delete { items } => {
-            // Nodes go with their edges; listed edges go too.
+            // Nodes go with their edges (and those of nodes inside them);
+            // listed edges go too.
             items.retain(|e| mine(e) || edge(e));
             items.sort();
             items.dedup();
             removed = items
                 .iter()
-                .flat_map(|n| graph.ports_of(*n))
+                .flat_map(|n| graph.ports_within(*n))
                 .flat_map(|p| graph.edges_of(p))
                 .collect();
             removed.extend(items.iter().filter(|e| edge(e)));
