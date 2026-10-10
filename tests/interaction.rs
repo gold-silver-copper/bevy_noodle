@@ -85,6 +85,7 @@ fields!(Press => PointerPress { button: PointerButton, hit: HitData, count: u8 }
 fields!(DragStart => PointerDragStart { button: PointerButton, hit: HitData });
 fields!(Drag => PointerDrag { button: PointerButton, distance: Vec2, delta: Vec2 });
 fields!(DragEnd => PointerDragEnd { button: PointerButton, distance: Vec2 });
+fields!(Cancel => PointerCancel { hit: HitData });
 
 /// Triggers a pointer event on `target` (bubbling up), then applies its edits.
 fn pointer(world: &mut World, target: Entity, fields: impl Fields) {
@@ -576,4 +577,17 @@ fn wires_follow_the_pointer_under_ui_scale() {
     );
     let wire = w.query::<&PendingWire>().single(w).unwrap();
     assert!((wire.pointer - Vec2::new(50.0, 25.0)).length() < 1e-3);
+}
+
+#[test]
+fn cancelled_pointers_drop_their_wire() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (_, content) = graph(w);
+    let [port] = one_node_each(w, content, [Port::output(NUM)]);
+    let button = PointerButton::Primary;
+    pointer(w, port, DragStart { button, hit: hit() });
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 1);
+    pointer(w, port, Cancel { hit: hit() });
+    assert_eq!(w.query::<&PendingWire>().iter(w).count(), 0);
 }

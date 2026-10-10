@@ -40,6 +40,7 @@ impl Plugin for NoodleInteractionPlugin {
             .add_observer(on_drag_start)
             .add_observer(on_drag)
             .add_observer(on_drag_end)
+            .add_observer(on_cancel)
             .add_observer(on_scroll)
             .add_message::<WireDropped>()
             // Registered here too, so apps without a picking backend still run.
@@ -536,6 +537,18 @@ fn on_drag_end(
         }
         Gesture::Pan | Gesture::Box => _ = ctx.commands.entity(canvas).try_remove::<SelectionBox>(),
     }
+}
+
+/// A cancelled pointer (a touch the system took over) gets no drag end: the
+/// wire or selection box on the canvas it was over goes now.
+fn on_cancel(cancel: On<PointerCancel>, mut ctx: Ctx) {
+    let Some((_, canvas, _)) = ctx.hop(cancel.event_target()) else {
+        return;
+    };
+    if let Some(wire) = ctx.graph.wire_of(canvas) {
+        ctx.commands.entity(wire).try_despawn();
+    }
+    ctx.commands.entity(canvas).try_remove::<SelectionBox>();
 }
 
 fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
