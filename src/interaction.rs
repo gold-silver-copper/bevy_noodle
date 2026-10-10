@@ -254,10 +254,15 @@ impl Ctx<'_, '_> {
         self.canvases.get(canvas).ok().map(|c| *c.1)
     }
 
-    /// Window position → canvas-local pixels.
+    /// Window position → canvas-local pixels; `None` before layout.
     fn local(&self, canvas: Entity, position: Vec2) -> Option<Vec2> {
         let (_, _, computed, transform) = self.canvases.get(canvas).ok()?;
-        Some(canvas_local(computed, transform, position))
+        // The node's scale factor is the window's times `UiScale`; window
+        // positions are scaled by the window's only.
+        let scale = computed.inverse_scale_factor();
+        let physical = position / (scale * self.ui_scale.0);
+        let normalized = computed.normalize_point(*transform, physical)?;
+        Some((normalized + 0.5) * computed.size() * scale)
     }
 
     /// Window position → graph space.
@@ -685,11 +690,4 @@ pub(crate) fn mark_candidates(world: &mut World, wire: Entity) {
     if let Ok(mut wire) = world.get_entity_mut(wire) {
         wire.insert(WireCandidates(candidates));
     }
-}
-
-/// Window position → canvas-local pixels.
-fn canvas_local(computed: &ComputedNode, transform: &UiGlobalTransform, position: Vec2) -> Vec2 {
-    let scale = computed.inverse_scale_factor();
-    let normalized = computed.normalize_point(*transform, position / scale);
-    normalized.map_or(Vec2::ZERO, |n| (n + 0.5) * computed.size() * scale)
 }
