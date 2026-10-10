@@ -261,19 +261,17 @@ fn draw_edges(
 ) {
     for (entity, geometry, own, wire, visual, hitbox, selected, pointer) in &mut edges {
         let visual = visual.and_then(|v| v.0.first().copied());
-        // Not laid out (yet, or any more): hidden and not pickable.
-        let Some(geometry) = geometry else {
+        let canvas = wire.map(|w| w.0).or_else(|| graph.canvas_of(entity));
+        let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
+        let content = canvas.and_then(|c| graph.content_of(c));
+        // Not laid out (yet, or any more) or not styled: hidden and not pickable.
+        let (Some(geometry), Some(style), Some(content)) = (geometry, style, content) else {
             if let Some((mut node, ..)) = visual.and_then(|v| visuals.get_mut(v).ok()) {
                 place(&mut node, None);
             }
             if hitbox.is_some() {
                 commands.entity(entity).try_remove::<EdgeHitbox>();
             }
-            continue;
-        };
-        let canvas = wire.map(|w| w.0).or_else(|| graph.canvas_of(entity));
-        let style = own.or(canvas.and_then(|c| canvases.get(c).ok().flatten()));
-        let (Some(style), Some(content)) = (style, canvas.and_then(|c| graph.content_of(c))) else {
             continue;
         };
         let (start, end) = (geometry.output, geometry.input);
@@ -542,6 +540,38 @@ fn outline_focus(
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edges_without_a_style_are_not_pickable() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<WireMaterial>()
+            .add_systems(Update, draw_edges);
+        let w = app.world_mut();
+        let canvas = w.spawn((NodeCanvas, Node::default())).id();
+        let port = |w: &mut World, port: Port| {
+            let node = w.spawn((GraphNode, ChildOf(canvas))).id();
+            w.spawn((port, ChildOf(node))).id()
+        };
+        let (from, to) = (
+            port(w, Port::output(PortType::ANY)),
+            port(w, Port::input(PortType::ANY)),
+        );
+        let geometry = EdgeGeometry::between((Vec2::ZERO, Vec2::X), (Vec2::X, Vec2::NEG_X));
+        let edge = (
+            Edge,
+            EdgeSource(from),
+            EdgeTarget(to),
+            geometry,
+            EdgeStyle::default(),
+        );
+        let edge = w.spawn(edge).id();
+        app.update();
+        assert!(app.world().get::<EdgeHitbox>(edge).is_some());
+        app.world_mut().entity_mut(edge).remove::<EdgeStyle>();
+        app.update();
+        assert!(app.world().get::<EdgeHitbox>(edge).is_none());
+    }
 
     #[test]
     fn dragging_a_wire_overrides_the_cursor_until_it_ends() {
