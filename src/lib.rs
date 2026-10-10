@@ -112,8 +112,8 @@ pub mod prelude {
     pub use crate::{
         CanvasContent, CanvasInteraction, CanvasKeyboard, CanvasView, Capacity, Connection,
         ConnectionCheck, DragProgress, Edge, EdgeGeometry, EdgeHitbox, EdgeSource, EdgeTarget,
-        EditApplied, EditOrigin, EditRejected, EditRequested, GraphCommandsExt, GraphEdit,
-        GraphNode, GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition,
+        EditApplied, EditOrigin, EditRejected, EditRequested, GraphChange, GraphCommandsExt,
+        GraphEdit, GraphNode, GraphQuery, GraphWorldExt, NodeCanvas, NodeDragHandle, NodePosition,
         NoodleCorePlugin, NoodleInteractionPlugin, NoodleKeyboardPlugin, NoodlePlugins,
         NoodleSystems, PendingWire, Port, PortDirection, PortPair, PortTangent, PortType,
         RejectReason, ScrollMode, SelectMode, SelectionBox, WireCandidates, WireDropped, WireOf,

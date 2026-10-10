@@ -28,7 +28,7 @@ fn app() -> App {
     app.add_plugins((MinimalPlugins, NoodleCorePlugin))
         .init_resource::<Log>();
     app.add_observer(|e: On<EditApplied>, mut log: ResMut<Log>| {
-        log.0.push(format!("applied {}", kind(&e.edit)))
+        log.0.push(format!("applied {}", kind(&e.change)))
     });
     app.add_observer(|e: On<EditRejected>, mut log: ResMut<Log>| {
         log.0.push(format!("rejected {:?}", e.reason))
@@ -36,12 +36,20 @@ fn app() -> App {
     app
 }
 
-fn kind(edit: &GraphEdit) -> &'static str {
-    match edit {
-        GraphEdit::Connect { .. } => "connect",
-        GraphEdit::Disconnect { .. } => "disconnect",
-        GraphEdit::MoveNodes { .. } => "move",
-        GraphEdit::Delete { .. } => "delete",
+fn kind(change: &GraphChange) -> &'static str {
+    match change {
+        GraphChange::Connected { .. } => "connect",
+        GraphChange::Disconnected { .. } => "disconnect",
+        GraphChange::Moved { .. } => "move",
+        GraphChange::Deleted { .. } => "delete",
+    }
+}
+
+/// Connects two ports of canvas `c`, returning the new edge.
+fn connect(w: &mut World, c: Entity, from: Entity, to: Entity) -> Entity {
+    match w.graph_edit(c, GraphEdit::Connect { from, to }) {
+        Ok(GraphChange::Connected { edge, .. }) => edge,
+        other => panic!("not connected: {other:?}"),
     }
 }
 
@@ -91,16 +99,7 @@ fn connect_normalizes_and_relates_ports() {
     let (c, content) = canvas(w, None);
     let (_, a) = node(w, content, &[Port::output(NUM)]);
     let (_, b) = node(w, content, &[Port::input(NUM)]);
-    let edge = w
-        .graph_edit(
-            c,
-            GraphEdit::Connect {
-                from: b[0],
-                to: a[0],
-            },
-        )
-        .unwrap()
-        .unwrap();
+    let edge = connect(w, c, b[0], a[0]);
     assert_eq!(w.get::<EdgeSource>(edge).unwrap().0, a[0]);
     assert_eq!(**w.get::<OutgoingEdges>(a[0]).unwrap(), vec![edge]);
     assert_eq!(
@@ -239,16 +238,7 @@ fn deleting_nodes_or_ports_removes_edges() {
         },
     )
     .unwrap();
-    let e2 = w
-        .graph_edit(
-            c,
-            GraphEdit::Connect {
-                from: b[1],
-                to: d[0],
-            },
-        )
-        .unwrap()
-        .unwrap();
+    let e2 = connect(w, c, b[1], d[0]);
     log(&mut app);
     let w = app.world_mut();
     w.graph_edit(c, GraphEdit::Delete { items: vec![na] })
@@ -344,16 +334,7 @@ fn reparenting_into_another_graph_drops_crossing_edges() {
     let (_, content2) = canvas(w, None);
     let (_, a) = node(w, content1, &[Port::output(NUM)]);
     let (nb, b) = node(w, content1, &[Port::input(NUM)]);
-    let edge = w
-        .graph_edit(
-            c1,
-            GraphEdit::Connect {
-                from: a[0],
-                to: b[0],
-            },
-        )
-        .unwrap()
-        .unwrap();
+    let edge = connect(w, c1, a[0], b[0]);
     w.entity_mut(nb).insert(ChildOf(content2));
     app.update();
     assert!(app.world().get_entity(edge).is_err());
@@ -368,16 +349,7 @@ fn edges_follow_their_ports_into_another_graph() {
     let (c2, content2) = canvas(w, None);
     let (na, a) = node(w, content1, &[Port::output(NUM)]);
     let (nb, b) = node(w, content1, &[Port::input(NUM)]);
-    let edge = w
-        .graph_edit(
-            c1,
-            GraphEdit::Connect {
-                from: a[0],
-                to: b[0],
-            },
-        )
-        .unwrap()
-        .unwrap();
+    let edge = connect(w, c1, a[0], b[0]);
     let edges = |w: &mut World, c| query(w, |g| g.edges_in(c).collect::<Vec<_>>());
     assert_eq!(edges(w, c1), [edge]);
     w.entity_mut(na).insert(ChildOf(content2));
@@ -415,13 +387,8 @@ fn edges_can_be_selected_and_deleted_with_nodes() {
     let (_, a) = node(w, content, &[Port::output(NUM)]);
     let (nb, b) = node(w, content, &[Port::input(NUM)]);
     let (nc, cc) = node(w, content, &[Port::input(NUM), Port::output(NUM)]);
-    let connect = |w: &mut World, from, to| {
-        w.graph_edit(c, GraphEdit::Connect { from, to })
-            .unwrap()
-            .unwrap()
-    };
-    let e1 = connect(w, a[0], b[0]);
-    let e2 = connect(w, a[0], cc[0]);
+    let e1 = connect(w, c, a[0], b[0]);
+    let e2 = connect(w, c, a[0], cc[0]);
     let select = |w: &mut World, items, mode| w.select(c, items, mode);
     select(w, vec![e1, nb], SelectMode::Replace);
     assert!(w.get::<Selected>(e1).is_some() && w.get::<Selected>(nb).is_some());
@@ -472,11 +439,7 @@ fn observers_may_allow_or_refuse_what_the_rules_decide() {
     assert_eq!(check.ports, PortPair::new(from, to));
     assert_eq!(check.refused, Some(RejectReason::IncompatibleTypes));
     assert!(check.replaces.is_empty() && !check.allowed());
-    assert!(
-        w.graph_edit(canvas, GraphEdit::Connect { from, to })
-            .unwrap()
-            .is_some()
-    );
+    connect(w, canvas, from, to);
 
     app.add_observer(|mut request: On<EditRequested>| request.reject());
     let w = app.world_mut();
@@ -629,10 +592,7 @@ fn full_replacing_ports_drop_their_oldest_edges() {
     let to = p[3];
     let edges: Vec<Entity> = p[..3]
         .iter()
-        .map(|from| {
-            let edit = GraphEdit::Connect { from: *from, to };
-            w.graph_edit(canvas, edit).unwrap().unwrap()
-        })
+        .map(|from| connect(w, canvas, *from, to))
         .collect();
     assert!(w.get_entity(edges[0]).is_err(), "the oldest made room");
     assert_eq!(

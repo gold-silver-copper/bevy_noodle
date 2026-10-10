@@ -124,11 +124,11 @@ fn carry_contents(
     graph: GraphQuery,
     mut commands: Commands,
 ) {
-    let GraphEdit::MoveNodes {
+    let GraphChange::Moved {
         nodes: moved,
         delta,
         drag,
-    } = &applied.edit
+    } = &applied.change
     else {
         return;
     };

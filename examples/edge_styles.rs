@@ -143,7 +143,7 @@ fn apply_wire_look(
     looks: Query<&WireLook>,
     mut commands: Commands,
 ) {
-    let (Some(edge), Some(ports)) = (applied.created, applied.ports) else {
+    let GraphChange::Connected { edge, ports } = applied.change else {
         return;
     };
     if let Some(look) = graph.node_of(ports.output).and_then(|n| looks.get(n).ok()) {

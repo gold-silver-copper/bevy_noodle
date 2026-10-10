@@ -221,9 +221,8 @@ fn sum_of(node: Entity, graph: &GraphQuery, values: &Query<&Value>, depth: u8) -
 
 /// Edits worth undoing record a snapshot once they have applied.
 fn record_edits(mut applied: MessageReader<EditApplied>, mut commands: Commands) {
-    let worth_undoing = |edit: &GraphEdit| !edit.is_drag_step();
     // Read every message (`any` would stop early and leave some for next frame).
-    if applied.read().filter(|e| worth_undoing(&e.edit)).count() > 0 {
+    if applied.read().filter(|e| !e.change.is_drag_step()).count() > 0 {
         commands.queue(record);
     }
 }
