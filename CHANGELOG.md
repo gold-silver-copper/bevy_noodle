@@ -9,6 +9,11 @@
 - Canvases spawn their own `CanvasContent` child (found with
   `GraphQuery::content_of`), and nodes spawned as children of a canvas move
   into it: `commands.spawn((kit::node(at), ChildOf(canvas)))`.
+- Edges have no parent: their ports alone decide which graph they are in,
+  so nothing re-parents them when nodes move between graphs. `edges_in`
+  lists the edges leaving a canvas's outputs. Pointer events on an edge
+  bubble to the window, not the canvas: observe them on the edge or
+  app-wide (panning and scrolling from an edge still work).
 - Selection is not a graph edit: `GraphEdit::Select` is gone. Use
   `commands.select(canvas, items, mode)` (or `world.select`), read it with
   `GraphQuery::selected_in` and `selection_with`, and react to Bevy's

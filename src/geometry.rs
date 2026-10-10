@@ -129,14 +129,13 @@ pub(crate) fn measure_ports(
     }
 }
 
-/// After re-parenting, the edges of the ports inside what moved follow it into
-/// another graph (both ends moved) or are disconnected. Checked once per frame,
-/// so moving both ends one after the other keeps the edge.
-pub(crate) fn follow_reparented(
+/// After re-parenting, edges whose ends ended up in different graphs are
+/// disconnected. Checked once per frame, so moving both ends one after the
+/// other keeps the edge (it belongs to whichever graph its ports are in).
+pub(crate) fn drop_split_edges(
     moved: Query<Entity, Changed<ChildOf>>,
     graph: GraphQuery,
     children: Query<&Children>,
-    parents: Query<&ChildOf>,
     mut commands: Commands,
 ) {
     let subtrees = moved
@@ -154,13 +153,7 @@ pub(crate) fn follow_reparented(
                 commands.graph_edit(canvas, GraphEdit::Disconnect { edge });
             }
             (None, _) => commands.entity(edge).despawn(),
-            (Some(canvas), _) => {
-                if let Some(content) = graph.content_of(canvas)
-                    && parents.get(edge).is_ok_and(|p| p.parent() != content)
-                {
-                    commands.entity(edge).insert(ChildOf(content));
-                }
-            }
+            _ => {}
         }
     }
 }

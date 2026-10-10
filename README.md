@@ -107,9 +107,11 @@ fn setup(mut commands: Commands) {
 ```text
 NodeCanvas              one graph and its viewport
 └── CanvasContent       spawned by the canvas; pans and zooms (CanvasView), holds the nodes
-    ├── GraphNode       your UI node
-    │   └── … Port      your UI node marking a connection point
-    └── Edge            relates an output port to an input port; has EdgeGeometry
+    └── GraphNode       your UI node
+        └── … Port      your UI node marking a connection point
+
+Edge                    relates an output port to an input port; has EdgeGeometry.
+                        No parent: its ports decide which graph it is in.
 ```
 
 - **Read** with the `GraphQuery` system param (`nodes_in`, `edges_of`,

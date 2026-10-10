@@ -237,7 +237,8 @@ impl Ctx<'_, '_> {
             Hop::Node(node) if is(settings.drag_button) && self.grabs(node, original) => {
                 Gesture::Move(node)
             }
-            Hop::Canvas if is(settings.pan_button) => Gesture::Pan,
+            // Edges have no parent: their events don't reach the canvas.
+            Hop::Canvas | Hop::Edge(_) if is(settings.pan_button) => Gesture::Pan,
             Hop::Canvas if is(settings.select_button) && self.on_background(canvas, original) => {
                 Gesture::Box
             }
@@ -515,7 +516,8 @@ fn on_drag_end(
 }
 
 fn on_scroll(mut scroll: On<PointerScroll>, mut ctx: Ctx) {
-    let Some((Hop::Canvas, canvas, settings)) = ctx.hop(scroll.event_target()) else {
+    let Some((Hop::Canvas | Hop::Edge(_), canvas, settings)) = ctx.hop(scroll.event_target())
+    else {
         return;
     };
     if settings.scroll == ScrollMode::None {

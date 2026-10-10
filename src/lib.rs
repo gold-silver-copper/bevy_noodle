@@ -4,9 +4,11 @@
 //! ```text
 //! NodeCanvas              your UI node: one graph and its viewport (no background)
 //! └── CanvasContent       spawned by the canvas; pans and zooms, holds the nodes
-//!     ├── GraphNode       your UI node, styled however you like
-//!     │   └── … Port      your UI node marking a connection point
-//!     └── Edge            spawned on connect; EdgeSource/EdgeTarget relate it to ports
+//!     └── GraphNode       your UI node, styled however you like
+//!         └── … Port      your UI node marking a connection point
+//!
+//! Edge                    spawned on connect, outside the hierarchy: its
+//!                         EdgeSource/EdgeTarget ports decide its graph
 //! ```
 //!
 //! Spawn nodes as children of a canvas; they move into its content. Any
@@ -89,7 +91,7 @@ impl Plugin for NoodleCorePlugin {
             )
             .add_systems(
                 PostUpdate,
-                (follow_reparented, sync_layout, update_edge_geometry)
+                (drop_split_edges, sync_layout, update_edge_geometry)
                     .chain()
                     .in_set(NoodleSystems::Sync),
             )

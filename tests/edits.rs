@@ -365,7 +365,7 @@ fn edges_follow_their_ports_into_another_graph() {
     let mut app = app();
     let w = app.world_mut();
     let (c1, content1) = canvas(w, None);
-    let (_, content2) = canvas(w, None);
+    let (c2, content2) = canvas(w, None);
     let (na, a) = node(w, content1, &[Port::output(NUM)]);
     let (nb, b) = node(w, content1, &[Port::input(NUM)]);
     let edge = w
@@ -378,11 +378,13 @@ fn edges_follow_their_ports_into_another_graph() {
         )
         .unwrap()
         .unwrap();
-    assert_eq!(w.get::<ChildOf>(edge).unwrap().parent(), content1);
+    let edges = |w: &mut World, c| query(w, |g| g.edges_in(c).collect::<Vec<_>>());
+    assert_eq!(edges(w, c1), [edge]);
     w.entity_mut(na).insert(ChildOf(content2));
     w.entity_mut(nb).insert(ChildOf(content2));
     app.update();
-    assert_eq!(app.world().get::<ChildOf>(edge).unwrap().parent(), content2);
+    let w = app.world_mut();
+    assert_eq!((edges(w, c1), edges(w, c2)), (vec![], vec![edge]));
 }
 
 #[test]

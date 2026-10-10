@@ -58,7 +58,8 @@ pub trait SnapshotWorldExt {
 
 impl SnapshotWorldExt for World {
     fn snapshot(&self, canvas: Entity) -> Option<DynamicWorld> {
-        snapshot(self, canvas)
+        let roots = self.get::<Children>(content(self, canvas)?);
+        Some(snapshot_nodes(self, roots.map_or(&[], |c| c)))
     }
 
     fn snapshot_nodes(&self, nodes: &[Entity]) -> DynamicWorld {
@@ -80,12 +81,6 @@ impl SnapshotWorldExt for World {
     ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
         restore(self, canvas, snapshot)
     }
-}
-
-fn snapshot(world: &World, canvas: Entity) -> Option<DynamicWorld> {
-    let content = content(world, canvas)?;
-    let roots = world.get::<Children>(content).map_or(&[][..], |c| c);
-    Some(build(world, subtrees(world, roots)))
 }
 
 fn snapshot_nodes(world: &World, nodes: &[Entity]) -> DynamicWorld {
@@ -120,7 +115,15 @@ fn insert(
         .iter()
         .filter_map(|e| map.get(&e.entity).copied())
     {
-        // Top-level entities still point at the snapshot's content: adopt them.
+        // Writing skips relationship hooks; reinserting links edges to ports.
+        let ends = world
+            .get::<EdgeSource>(entity)
+            .zip(world.get::<EdgeTarget>(entity));
+        if let Some((source, target)) = ends.map(|(s, t)| (*s, *t)) {
+            world.entity_mut(entity).insert((source, target));
+            continue;
+        }
+        // Top-level nodes still point at the snapshot's content: adopt them.
         let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
         if parent.is_none_or(|p| world.get_entity(p).is_err()) {
             world.entity_mut(content).add_child(entity);
@@ -134,13 +137,6 @@ fn insert(
                 .entity_mut(entity)
                 .remove::<Children>()
                 .add_children(&kept);
-        }
-        // Writing skips relationship hooks; reinserting links edges to ports.
-        let ends = world
-            .get::<EdgeSource>(entity)
-            .zip(world.get::<EdgeTarget>(entity));
-        if let Some((source, target)) = ends.map(|(s, t)| (*s, *t)) {
-            world.entity_mut(entity).insert((source, target));
         }
     }
     // Nested canvases may have spawned a content of their own while the

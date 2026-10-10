@@ -336,18 +336,20 @@ fn add_on_right_click(
     views: Query<&CanvasView>,
     mut commands: Commands,
 ) {
-    let canvas = click.event_target();
-    let Ok(view) = views.get(canvas) else {
-        return;
-    };
-    let clicked = click.original_event_target();
+    let (target, clicked) = (click.event_target(), click.original_event_target());
     if click.button != PointerButton::Secondary {
         return;
     }
-    if graph.edge_ports(clicked).is_some() {
-        // Edges get pointer events like any UI entity.
-        commands.graph_edit(canvas, GraphEdit::Disconnect { edge: clicked });
-    } else if graph.node_of(clicked).is_none() {
+    // Edges get pointer events like any UI entity, but have no parent canvas.
+    if let (Some(canvas), true) = (graph.canvas_of(target), graph.edge_ports(target).is_some()) {
+        commands.graph_edit(canvas, GraphEdit::Disconnect { edge: target });
+        return;
+    }
+    let canvas = target;
+    let Ok(view) = views.get(canvas) else {
+        return;
+    };
+    if graph.node_of(clicked).is_none() {
         let at = view.canvas_to_graph(click.pointer.position);
         spawn_number(&mut commands, canvas, at, 0.0);
         // Spawning is not a graph edit, so record it here.
