@@ -38,6 +38,10 @@ mod geometry;
 mod interaction;
 mod keyboard;
 mod query;
+// Compile the README's quick start alongside the API examples.
+#[cfg(all(doctest, feature = "default_style"))]
+#[doc = include_str!("../README.md")]
+pub struct Readme;
 #[cfg(feature = "scene")]
 pub mod scene;
 #[cfg(feature = "default_style")]

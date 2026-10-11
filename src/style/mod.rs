@@ -56,9 +56,17 @@ impl Plugin for NoodleDefaultStylePlugin {
 /// How edges are drawn. On a canvas it applies to all its edges; on an edge
 /// it overrides the canvas. Lengths are in graph units.
 ///
-/// ```ignore
+/// ```
+/// use bevy::prelude::*;
+/// use bevy_noodle::style::EdgeStyle;
 /// // Marching ants flowing from output to input, fading blue to pink.
-/// EdgeStyle { dash: Some(Vec2::new(10.0, 6.0)), flow_speed: 40.0, end_color: Some(PINK.into()), ..default() }
+/// let style = EdgeStyle {
+///     color: Some(Color::srgb(0.3, 0.6, 1.0)),
+///     end_color: Some(Color::srgb(1.0, 0.4, 0.7)),
+///     dash: Some(Vec2::new(10.0, 6.0)),
+///     flow_speed: 40.0,
+///     ..default()
+/// };
 /// ```
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
 #[reflect(Component, Default)]

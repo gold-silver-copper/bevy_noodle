@@ -17,7 +17,7 @@ A headless node graph library for [Bevy](https://bevyengine.org) UI.
 - **One edit pipeline** for UI and code, with observers that can veto or
   rewrite any edit.
 
-Requires Bevy **0.20**.
+Requires Bevy **0.20** and Rust **1.97.1** or newer.
 
 ## Examples
 
@@ -62,45 +62,57 @@ cargo run --example <name> --all-features
 
 ## Quick start
 
-```rust
+Add these dependencies to your application's `Cargo.toml`:
+
+```toml
+[dependencies]
+bevy = "0.20"
+bevy_noodle = { version = "0.4", features = ["default_style"] }
+```
+
+Put this in `src/main.rs` and run `cargo run`:
+
+```no_run
 use bevy::prelude::*;
-use bevy_noodle::prelude::*;
+use bevy_noodle::{prelude::*, style::kit};
 
 const NUMBER: PortType = PortType::named("number");
+const BLUE: Color = Color::srgb(0.3, 0.6, 1.0);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins))
+        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
         .add_systems(Startup, setup)
         .run();
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands
-        .spawn((
-            NodeCanvas,
-            CanvasInteraction::default(),
-            Node { width: percent(100), height: percent(100), ..default() },
-        ))
-        .id();
+    let canvas = commands.spawn(kit::canvas()).id();
     commands.spawn((
-        GraphNode,
-        NodePosition(Vec2::new(80.0, 120.0)),
+        kit::node(Vec2::new(80.0, 120.0)),
         ChildOf(canvas),
-        Node { padding: UiRect::all(px(10)), column_gap: px(8), ..default() },
-        BackgroundColor(Color::srgb(0.16, 0.18, 0.22)),
-        children![
-            (Text::new("Source"), Pickable::IGNORE),
-            (
-                Port::output(NUMBER),
-                Node { width: px(14), height: px(14), ..default() },
-                BackgroundColor(Color::WHITE),
-            ),
-        ],
+        children![kit::title("Source"), kit::output("number", NUMBER, BLUE)],
+    ));
+    commands.spawn((
+        kit::node(Vec2::new(420.0, 120.0)),
+        ChildOf(canvas),
+        children![kit::title("Sink"), kit::input("number", NUMBER, BLUE)],
     ));
 }
 ```
+
+Drag from the Source's blue port to the Sink's blue port to connect them.
+Drag a node to move it. The grid and wires come from `default_style` and
+`NoodleDefaultStylePlugin`; `kit::canvas()` enables them on this canvas.
+
+From this repository, run the same example with:
+
+```sh
+cargo run --example quick_start --features default_style
+```
+
+For custom rendering, omit `default_style` and follow `examples/minimal.rs`.
 
 ## How it works
 
@@ -138,6 +150,24 @@ Edge                    relates an output port to an input port; has EdgeGeometr
 | `scene` | `DynamicWorld` snapshots for undo, copy/paste and save/load |
 
 Keyboard use is a plugin: add `NoodleKeyboardPlugin` and `CanvasKeyboard`.
+
+## Release checks
+
+CI checks each feature combination both as a library (without the examples'
+extra Bevy features) and with Clippy across all targets. It runs tests,
+compiles documentation and verifies the release package. Library build jobs
+cover Linux, Windows and macOS, plus Rust 1.97.1 on Linux.
+
+Before releasing, run `tools/audit_inputs/run.sh` on a Linux desktop to
+exercise the examples' text fields at several zoom levels. It saves results,
+screenshots of failures, and process logs under `target/audit_inputs/out`.
+Also check dragging, connecting, keyboard navigation, nested canvases and
+save/load in the graphical examples on the platforms you intend to support;
+library build checks do not exercise windows or GPU rendering.
+
+Set the changelog's release date and commit the final changes. After CI
+passes, run `cargo publish --dry-run --locked --all-features` on that clean
+commit, then publish and tag that same reviewed revision.
 
 ## License
 

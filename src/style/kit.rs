@@ -1,7 +1,14 @@
 //! Ready-made node bundles: plain functions you can use, copy or ignore.
 //!
-//! ```ignore
-//! commands.spawn((kit::node(Vec2::new(40.0, 40.0)), ChildOf(content), children![
+//! ```
+//! use bevy::prelude::*;
+//! use bevy_noodle::{prelude::*, style::kit};
+//! const NUMBER: PortType = PortType::named("number");
+//! const BLUE: Color = Color::srgb(0.3, 0.6, 1.0);
+//! # let mut world = World::new();
+//! # let mut commands = world.commands();
+//! let canvas = commands.spawn(kit::canvas()).id();
+//! commands.spawn((kit::node(Vec2::new(40.0, 40.0)), ChildOf(canvas), children![
 //!     kit::title("Add"),
 //!     kit::input("a", NUMBER, BLUE),
 //!     kit::output("sum", NUMBER, BLUE),

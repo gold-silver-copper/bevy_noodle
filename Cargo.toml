@@ -10,7 +10,7 @@ repository = "https://github.com/gold-silver-copper/bevy_noodle"
 documentation = "https://docs.rs/bevy_noodle"
 keywords = ["bevy", "node-graph", "node-editor", "visual-scripting", "ui"]
 categories = ["game-development", "gui", "visualization"]
-include = ["Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE", "src/**", "examples/**", "tests/**"]
+include = ["Cargo.toml", "README.md", "CHANGELOG.md", "LICENSE", "clippy.toml", "src/**", "examples/**", "tests/**"]
 
 [features]
 default = []
@@ -41,6 +41,10 @@ serde = { version = "1", features = ["derive"] }
 [[test]]
 name = "scene"
 required-features = ["scene"]
+
+[[example]]
+name = "quick_start"
+required-features = ["default_style"]
 
 [[example]]
 name = "styled"
