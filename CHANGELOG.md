@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - Unreleased
+## 0.4.0 - 2026-10-11
 
 ### Changed (breaking)
 - Requires Bevy 0.20 and Rust 1.97.1. Pointer events are Bevy's flat
