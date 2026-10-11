@@ -41,6 +41,8 @@ pub trait SnapshotWorldExt {
 
     /// Add a snapshot's entities to the graph of `canvas` (e.g. to paste),
     /// and return the map from snapshot entities to the new ones.
+    /// On a write error, partial snapshot entities are removed.
+    /// Resource changes and side effects of application hooks are not undone.
     fn insert_snapshot(
         &mut self,
         canvas: Entity,
@@ -49,6 +51,9 @@ pub trait SnapshotWorldExt {
 
     /// Replace the graph of `canvas` with `snapshot` (e.g. to load or undo),
     /// and return the map from snapshot entities to the new ones.
+    /// The old graph is removed only after insertion succeeds. On a write
+    /// error, it is kept and partial snapshot entities are removed, with the
+    /// same limits as [`insert_snapshot`](Self::insert_snapshot).
     fn restore_snapshot(
         &mut self,
         canvas: Entity,
@@ -109,7 +114,29 @@ fn insert(
     let Some(content) = content(world, canvas) else {
         return Ok(map);
     };
-    snapshot.write_to_world(world, &mut map)?;
+    let registry = world
+        .get_resource::<AppTypeRegistry>()
+        .cloned()
+        .unwrap_or_default();
+    let result = snapshot.write_to_world_with(world, &mut map, &registry.read());
+    if let Err(error) = result {
+        // A partial snapshot can overwrite a canvas's Children before its
+        // generated content is linked. Find that content by ChildOf so it
+        // cannot survive cleanup behind an incomplete Children list.
+        world.flush();
+        let mut partial: EntityHashSet = map.values().copied().collect();
+        let generated: Vec<_> = world
+            .query_filtered::<(Entity, &ChildOf), With<CanvasContent>>()
+            .iter(world)
+            .filter(|(_, parent)| partial.contains(&parent.parent()))
+            .map(|(entity, _)| entity)
+            .collect();
+        partial.extend(generated);
+        for entity in partial {
+            let _ = world.try_despawn(entity);
+        }
+        return Err(error);
+    }
     for entity in snapshot
         .entities
         .iter()
@@ -159,10 +186,15 @@ fn restore(
     canvas: Entity,
     snapshot: &DynamicWorld,
 ) -> Result<EntityHashMap<Entity>, WorldInstanceSpawnError> {
-    if let Some(mut content) = content(world, canvas).and_then(|c| world.get_entity_mut(c).ok()) {
-        content.despawn_related::<Children>();
+    let old_nodes = content(world, canvas)
+        .and_then(|c| world.get::<Children>(c))
+        .map(|children| children.to_vec())
+        .unwrap_or_default();
+    let map = insert(world, canvas, snapshot)?;
+    for node in old_nodes {
+        let _ = world.try_despawn(node);
     }
-    insert(world, canvas, snapshot)
+    Ok(map)
 }
 
 /// `roots` and their descendants, minus visuals, wires being dragged and

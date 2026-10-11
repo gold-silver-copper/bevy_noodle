@@ -238,3 +238,93 @@ fn nested_canvases_restore_with_one_content_each() {
     let nodes = w.get::<Children>(contents[0]).unwrap();
     assert_eq!(w.get::<Payload>(nodes[0]), Some(&Payload(7.0)));
 }
+
+#[test]
+fn failed_snapshot_writes_keep_the_graph_and_remove_partial_entities() {
+    use bevy::ecs::entity::EntityHashSet;
+    use bevy::reflect::structs::DynamicStruct;
+    use bevy::world_serialization::WorldInstanceSpawnError;
+
+    for restore in [false, true] {
+        let mut app = app();
+        let w = app.world_mut();
+        let (canvas, content, [out, inp]) = graph(w);
+        w.graph_edit(canvas, GraphEdit::Connect { from: out, to: inp })
+            .unwrap();
+        let node = w.get::<ChildOf>(out).unwrap().parent();
+        let control = w.spawn((scene::Transient, ChildOf(node))).id();
+        let inner = w.spawn((NodeCanvas, ChildOf(node))).id();
+        content_of(w, inner);
+        let mut saved = w.snapshot(canvas).unwrap();
+        // Fail after valid entities (including a canvas with queued hooks)
+        // have been written, rather than during RON deserialization.
+        saved
+            .entities
+            .last_mut()
+            .unwrap()
+            .components
+            .push(Box::new(DynamicStruct::default()));
+        let before: EntityHashSet = w.query::<Entity>().iter(w).collect();
+        let children = w.get::<Children>(content).unwrap().to_vec();
+
+        let result = if restore {
+            w.restore_snapshot(canvas, &saved)
+        } else {
+            w.insert_snapshot(canvas, &saved)
+        };
+        assert!(matches!(
+            result,
+            Err(WorldInstanceSpawnError::NoRepresentedType { .. })
+        ));
+        w.flush();
+        let after: EntityHashSet = w.query::<Entity>().iter(w).collect();
+        assert_eq!(
+            after, before,
+            "restore={restore}: no leaked or lost entities"
+        );
+        assert_eq!(w.get::<Children>(content).unwrap().to_vec(), children);
+        assert!(w.get_entity(control).is_ok());
+        assert_eq!(w.get::<OutgoingEdges>(out).unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn restore_replaces_existing_nodes_edges_and_transient_children() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (canvas, content, [out, inp]) = graph(w);
+    let GraphChange::Connected { edge, .. } = w
+        .graph_edit(canvas, GraphEdit::Connect { from: out, to: inp })
+        .unwrap()
+    else {
+        panic!("connected");
+    };
+    let node = w.get::<ChildOf>(out).unwrap().parent();
+    let control = w.spawn((scene::Transient, ChildOf(node))).id();
+    let saved = w.snapshot(canvas).unwrap();
+    let map = w.restore_snapshot(canvas, &saved).unwrap();
+    for old in [node, out, inp, edge, control] {
+        assert!(w.get_entity(old).is_err());
+    }
+    assert_eq!(w.get::<Children>(content).unwrap().len(), 2);
+    assert_eq!(w.get::<EdgeSource>(map[&edge]).unwrap().0, map[&out]);
+    w.restore_snapshot(canvas, &default()).unwrap();
+    assert!(w.get::<Children>(content).is_none_or(|c| c.is_empty()));
+    assert_eq!(w.query::<&Edge>().iter(w).count(), 0);
+}
+
+#[test]
+fn inserting_without_a_type_registry_returns_an_error_without_leaking() {
+    let mut source = app();
+    let (canvas, _, _) = graph(source.world_mut());
+    let saved = source.world().snapshot(canvas).unwrap();
+    let mut destination = World::new();
+    let (canvas, content, _) = graph(&mut destination);
+    let before = destination.query::<Entity>().iter(&destination).count();
+    assert!(destination.insert_snapshot(canvas, &saved).is_err());
+    assert_eq!(
+        destination.query::<Entity>().iter(&destination).count(),
+        before
+    );
+    assert_eq!(destination.get::<Children>(content).unwrap().len(), 2);
+}

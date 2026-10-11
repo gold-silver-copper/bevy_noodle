@@ -21,13 +21,44 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Bevy's Linux dependencies
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
-      - run: cargo fmt --check
+      - run: cargo fmt --all -- --check
       - name: Clippy, for each feature combination
         run: |
           for features in "" default_style scene default_style,scene; do
-            cargo clippy --all-targets --features "$features" -- -D warnings
+            cargo clippy --locked --all-targets --no-default-features --features "$features" -- -D warnings
           done
-      - run: cargo test --all-features
-      - run: cargo doc --all-features --no-deps
+      - run: cargo test --locked --all-features
+      - run: cargo doc --locked --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: Verify the release package
+        run: cargo publish --dry-run --locked --all-features
+
+  library:
+    name: Library (${{ matrix.toolchain }}, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: stable
+          - os: ubuntu-latest
+            toolchain: '1.97.1'
+          - os: windows-latest
+            toolchain: stable
+          - os: macos-latest
+            toolchain: stable
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      # Building only the library keeps Bevy's dev-dependency features out.
+      - name: Check each feature combination without dev dependencies
+        shell: bash
+        run: |
+          for features in "" default_style scene default_style,scene; do
+            cargo check --locked --lib --no-default-features --features "$features"
+          done

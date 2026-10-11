@@ -627,8 +627,8 @@ fn pinch_zoom(
 /// A picking backend for edges with an [`EdgeHitbox`], running after Bevy's
 /// UI backend: the nearest edge under the pointer is hit where its canvas is
 /// the topmost UI (or, for edges above nodes, one of its nodes, but not a
-/// port), so overlays, clipping and ports keep working. The hit shares the
-/// UI's layer, on top.
+/// port or a focusable control), so overlays, clipping and controls keep
+/// working. The hit shares the UI's layer, on top.
 #[allow(clippy::too_many_arguments, reason = "system parameters")]
 fn pick_edges(
     mut messages: ParamSet<(MessageReader<PointerHits>, MessageWriter<PointerHits>)>,
@@ -638,6 +638,8 @@ fn pick_edges(
     pickables: Query<&Pickable>,
     contents: Query<(&ComputedNode, &UiGlobalTransform), With<CanvasContent>>,
     hitboxes: Query<(Entity, &EdgeHitbox)>,
+    controls: Query<(), With<TabIndex>>,
+    parents: Query<&ChildOf>,
     graph: GraphQuery,
 ) {
     /// Minimum pick radius, in logical pixels.
@@ -663,6 +665,17 @@ fn pick_edges(
         else {
             continue;
         };
+        // Controls keep their UI hits even when a wire is drawn over them.
+        // Stop at the graph node: keyboard navigation makes nodes tabbable
+        // too, but their bodies must still allow edge picking.
+        let node = graph.node_of(*top);
+        let over_control = std::iter::once(*top)
+            .chain(parents.iter_ancestors(*top))
+            .take_while(|e| Some(*e) != node && *e != canvas)
+            .any(|e| controls.contains(e));
+        if over_control {
+            continue;
+        }
         let mut point = location.position * camera.target_scaling_factor().unwrap_or(1.0);
         point -= camera
             .physical_viewport_rect()

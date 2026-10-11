@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - 2026-10-05
+## 0.4.0 - Unreleased
 
 ### Changed (breaking)
 - Requires Bevy 0.20 and Rust 1.97.1. Pointer events are Bevy's flat
@@ -70,6 +70,11 @@
   or `WireTarget` markers; `PendingWire::canvas` and `target` are gone.
 
 ### Added
+- A runnable `quick_start` with two styled, connectable nodes, mirrored in
+  the README and checked by rustdoc. The style documentation examples now
+  run as doctests.
+- CI checks library-only builds for every feature combination on Linux,
+  Windows and macOS, the Rust 1.97.1 minimum on Linux, and release packaging.
 - Hover cursors from Bevy's `EntityCursor` in the default style: `kit`
   nodes show a grab hand and ports a crosshair, which stays while a wire is
   dragged (`OverrideCursor`). `NoodleDefaultStylePlugin` adds Bevy's
@@ -94,6 +99,13 @@
   focus and cursor.
 
 ### Fixed
+- Wires drawn above nodes no longer intercept presses on focusable controls
+  or their children. Graph node backgrounds remain pickable for edges.
+- Failed snapshot writes remove partial entities, including generated
+  content of nested canvases. Restore keeps the old graph until the
+  replacement has been inserted successfully.
+- The input audit fails on crashes, timeouts and missing results, and keeps
+  stdout and stderr logs for diagnosis.
 - Edges of an outer graph are pickable where they pass over a nested canvas.
 - New wires and selection boxes show in the frame they appear, not the next.
 - Restoring or inserting a snapshot no longer leaves children it left out

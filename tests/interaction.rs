@@ -403,6 +403,42 @@ fn outer_edges_are_pickable_over_nested_canvases() {
 }
 
 #[test]
+fn edges_above_nodes_do_not_intercept_controls_or_their_children() {
+    for target_index in 0..3 {
+        let mut app = app();
+        let w = app.world_mut();
+        let (_, content) = graph(w);
+        let ports = one_node_each(w, content, [Port::output(NUM), Port::input(NUM)]);
+        let node = w.get::<ChildOf>(ports[0]).unwrap().parent();
+        // Keyboard-enabled graph nodes are tabbable; that must not stop
+        // edges from being picked over their ordinary backgrounds.
+        w.entity_mut(node).insert(TabIndex(0));
+        let control = w.spawn((TabIndex(0), Node::default(), ChildOf(node))).id();
+        let child = w.spawn((Node::default(), ChildOf(control))).id();
+        let edge = w
+            .spawn((
+                Edge,
+                EdgeSource(ports[0]),
+                EdgeTarget(ports[1]),
+                EdgeHitbox {
+                    points: [
+                        Vec2::ZERO,
+                        Vec2::new(30.0, 0.0),
+                        Vec2::new(70.0, 0.0),
+                        Vec2::new(100.0, 0.0),
+                    ],
+                    radius: 4.0,
+                    below_nodes: false,
+                },
+            ))
+            .id();
+        let target = [node, control, child][target_index];
+        let expected = (target == node).then_some(edge);
+        assert_eq!(pick(&mut app, target, Vec2::new(50.0, 1.0)), expected);
+    }
+}
+
+#[test]
 fn controls_inside_nodes_keep_their_presses_and_drags() {
     let mut app = app();
     let w = app.world_mut();
