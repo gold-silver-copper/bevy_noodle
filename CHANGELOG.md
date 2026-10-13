@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed (breaking)
+- `NoodleDefaultStylePlugin` no longer adds Bevy's `CursorIconPlugin`, so it
+  can be added before or after `FeathersPlugins`. Apps without Feathers add
+  `CursorIconPlugin` themselves for hover and wire-drag cursors; without it
+  the graph still works, with the default cursor.
+
 ## 0.4.0 - 2026-10-11
 
 ### Changed (breaking)

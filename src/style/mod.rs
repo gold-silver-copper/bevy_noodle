@@ -14,7 +14,7 @@ pub mod kit;
 mod render;
 
 use bevy::input_focus::{InputFocus, InputFocusVisible};
-use bevy::picking::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor};
+use bevy::picking::cursor::{EntityCursor, OverrideCursor};
 use bevy::picking::hover::PickingInteraction;
 use bevy::picking::{Pickable, PickingSystems};
 use bevy::prelude::*;
@@ -26,14 +26,15 @@ use crate::{NoodleSystems, components::*, query::GraphQuery};
 use render::{Grid, GridMaterial, MaterialsPlugin, WireMaterial, wire_material};
 
 /// The optional default look: wires, grids, selection boxes, port and selection highlights. Each piece is opted into per entity.
+///
+/// The cursors it puts on nodes, ports and dragged wires need Bevy's
+/// [`CursorIconPlugin`](bevy::picking::cursor::CursorIconPlugin), which the
+/// app adds (Feathers adds it too). Without it the graph works, with the
+/// default cursor.
 pub struct NoodleDefaultStylePlugin;
 
 impl Plugin for NoodleDefaultStylePlugin {
     fn build(&self, app: &mut App) {
-        // Bevy's hover cursors, for the cursors `kit` puts on nodes and ports.
-        if !app.is_plugin_added::<CursorIconPlugin>() {
-            app.add_plugins(CursorIconPlugin);
-        }
         app.init_resource::<InputFocus>()
             .init_resource::<InputFocusVisible>()
             .add_plugins(MaterialsPlugin)
@@ -495,12 +496,16 @@ fn selected_borders(mut nodes: Query<(&SelectedBorderColor, Has<Selected>, &mut 
 }
 
 /// A crosshair while a wire is dragged, wherever the pointer is: Bevy's
-/// [`OverrideCursor`], set and cleared only by this system.
+/// [`OverrideCursor`], set and cleared only by this system. Without Bevy's
+/// cursor plugin there is no override to set.
 fn wire_cursor(
     wires: Query<(), With<PendingWire>>,
-    mut cursor: ResMut<OverrideCursor>,
+    cursor: Option<ResMut<OverrideCursor>>,
     mut ours: Local<bool>,
 ) {
+    let Some(mut cursor) = cursor else {
+        return;
+    };
     let crosshair = EntityCursor::System(SystemCursorIcon::Crosshair);
     match (wires.is_empty(), *ours) {
         (false, false) if cursor.0.is_none() => {
@@ -548,6 +553,7 @@ fn outline_focus(
 #[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
+    use bevy::picking::cursor::CursorIconPlugin;
 
     #[test]
     fn edges_without_a_style_are_not_pickable() {
@@ -581,19 +587,75 @@ mod tests {
         assert!(app.world().get::<EdgeHitbox>(edge).is_none());
     }
 
+    fn app() -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            AssetPlugin::default(),
+            crate::NoodleCorePlugin,
+        ))
+        .init_asset::<bevy::shader::Shader>();
+        app
+    }
+
+    fn styled_app() -> App {
+        let mut app = app();
+        app.add_plugins(NoodleDefaultStylePlugin);
+        app
+    }
+
+    /// Feathers adds `CursorIconPlugin` unconditionally, before or after us.
+    #[test]
+    fn cursor_plugin_order_does_not_matter() {
+        let mut after = styled_app();
+        after.add_plugins(CursorIconPlugin);
+        let mut before = app();
+        before.add_plugins((CursorIconPlugin, NoodleDefaultStylePlugin));
+        for mut app in [after, before] {
+            app.update();
+            assert!(app.world().contains_resource::<OverrideCursor>());
+        }
+    }
+
+    #[test]
+    fn dragging_a_wire_works_without_cursor_support() {
+        let mut app = styled_app();
+        spawn_wire(app.world_mut());
+        app.update();
+        assert!(!app.world().contains_resource::<OverrideCursor>());
+    }
+
+    fn spawn_wire(w: &mut World) -> Entity {
+        let canvas = w.spawn((NodeCanvas, Node::default())).id();
+        let node = w.spawn((GraphNode, ChildOf(canvas))).id();
+        let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
+        let pointer = Vec2::ZERO;
+        w.spawn((PendingWire { from, pointer }, WireOf(canvas)))
+            .id()
+    }
+
+    #[test]
+    fn dragging_a_wire_keeps_another_systems_override() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin))
+            .add_systems(Update, wire_cursor);
+        let wait = Some(EntityCursor::System(SystemCursorIcon::Wait));
+        app.insert_resource(OverrideCursor(wait.clone()));
+        let wire = spawn_wire(app.world_mut());
+        app.update();
+        assert_eq!(app.world().resource::<OverrideCursor>().0, wait);
+        app.world_mut().despawn(wire);
+        app.update();
+        assert_eq!(app.world().resource::<OverrideCursor>().0, wait);
+    }
+
     #[test]
     fn dragging_a_wire_overrides_the_cursor_until_it_ends() {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin))
             .init_resource::<OverrideCursor>()
             .add_systems(Update, wire_cursor);
-        let w = app.world_mut();
-        let canvas = w.spawn((NodeCanvas, Node::default())).id();
-        let node = w.spawn((GraphNode, ChildOf(canvas))).id();
-        let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
-        let pointer = Vec2::ZERO;
-        let wire = (PendingWire { from, pointer }, WireOf(canvas));
-        let wire = w.spawn(wire).id();
+        let wire = spawn_wire(app.world_mut());
         app.update();
         let crosshair = Some(EntityCursor::System(SystemCursorIcon::Crosshair));
         assert_eq!(app.world().resource::<OverrideCursor>().0, crosshair);

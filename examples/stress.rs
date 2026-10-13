@@ -16,6 +16,7 @@
 use bevy::diagnostic::{
     DiagnosticPath, DiagnosticsStore, EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin,
 };
+use bevy::picking::cursor::CursorIconPlugin;
 use bevy::prelude::*;
 use bevy::ui::Selected;
 use bevy_noodle::prelude::*;
@@ -32,6 +33,7 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins,
+            CursorIconPlugin,
             FrameTimeDiagnosticsPlugin::default(),
             EntityCountDiagnosticsPlugin::default(),
             NoodlePlugins,

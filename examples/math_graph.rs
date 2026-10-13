@@ -7,6 +7,7 @@
 //! ```
 
 use bevy::input_focus::tab_navigation::TabIndex;
+use bevy::picking::cursor::CursorIconPlugin;
 use bevy::prelude::*;
 use bevy::text::{EditableText, EditableTextFilter, LineBreak, TextCursorStyle};
 use bevy::ui_widgets::TextInput;
@@ -37,7 +38,8 @@ struct ResultText(Entity);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, CursorIconPlugin))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
         .add_systems(Update, (read_number_fields, evaluate).chain())

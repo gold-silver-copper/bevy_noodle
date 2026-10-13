@@ -73,6 +73,7 @@ bevy_noodle = { version = "0.4", features = ["default_style"] }
 Put this in `src/main.rs` and run `cargo run`:
 
 ```no_run
+use bevy::picking::cursor::CursorIconPlugin;
 use bevy::prelude::*;
 use bevy_noodle::{prelude::*, style::kit};
 
@@ -81,7 +82,9 @@ const BLUE: Color = Color::srgb(0.3, 0.6, 1.0);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        // Hover and drag cursors. Apps using Feathers get it from Feathers.
+        .add_plugins((DefaultPlugins, CursorIconPlugin))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .add_systems(Startup, setup)
         .run();
 }

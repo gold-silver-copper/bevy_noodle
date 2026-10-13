@@ -6,6 +6,7 @@
 //! cargo run --example reroute --features default_style
 //! ```
 
+use bevy::picking::cursor::CursorIconPlugin;
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
@@ -15,7 +16,8 @@ const BLUE: Color = Color::srgb(0.25, 0.52, 0.9);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, CursorIconPlugin))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
         .add_observer(reroute_on_right_click)
