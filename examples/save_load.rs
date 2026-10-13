@@ -57,7 +57,7 @@ fn main() {
 }
 
 /// A number node's value. Reflected, so it is saved.
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component)]
 struct Value(f32);
 
@@ -97,7 +97,7 @@ fn file() -> PathBuf {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     let numbers = [(2.0, 100.0), (3.5, 230.0), (4.0, 360.0)]
         .map(|(value, y)| spawn_number(&mut commands, canvas, value, Vec2::new(80.0, y)));
@@ -133,14 +133,11 @@ fn setup(mut commands: Commands) {
 }
 
 fn spawn_number(commands: &mut Commands, canvas: Entity, value: f32, at: Vec2) -> Entity {
-    commands
-        .spawn((
-            kit::node(at),
-            Value(value),
-            ChildOf(canvas),
-            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
-        ))
-        .id()
+    let scene = bsn! {
+        @kit::node(at) Value(value)
+        Children [ @kit::title("Number") -- @kit::output("value", NUMBER, BLUE) ]
+    };
+    commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id()
 }
 
 /// Every node that gets a `Value` (spawned or loaded) gets a field under its
@@ -177,8 +174,12 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
 }
 
 fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
-    let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
     let inputs = Port::input(NUMBER).with_capacity(Capacity::Unlimited);
+    let scene = bsn! {
+        @kit::node(at)
+        Children [ @kit::title("Sum") -- @kit::input_with("values", inputs, BLUE) ]
+    };
+    let node = commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id();
     let margin = UiRect::horizontal(px(kit::PADDING));
     let result = commands
         .spawn((
@@ -189,16 +190,10 @@ fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
                 margin,
                 ..default()
             },
+            ChildOf(node),
         ))
         .id();
-    commands
-        .entity(node)
-        .try_insert(Shows(result))
-        .with_children(|node| {
-            node.spawn(kit::title("Sum"));
-            node.spawn(kit::input_with("values", inputs, BLUE));
-        });
-    commands.entity(node).add_child(result);
+    commands.entity(node).try_insert(Shows(result));
     node
 }
 

@@ -33,7 +33,7 @@ struct Graph(Entity);
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     // (title, inputs), deliberately out of order.
     let specs = [
@@ -48,13 +48,20 @@ fn setup(mut commands: Commands) {
     ];
     let nodes = specs.map(|(title, inputs)| {
         let at = scrambled(title);
-        let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
-        commands.spawn((kit::title(title), ChildOf(node)));
-        for name in ["a", "b"].into_iter().take(inputs) {
-            commands.spawn((kit::input(name, NUMBER, BLUE), ChildOf(node)));
-        }
-        commands.spawn((kit::output("out", NUMBER, BLUE), ChildOf(node)));
-        node
+        let inputs: Vec<_> = ["a", "b"]
+            .into_iter()
+            .take(inputs)
+            .map(|name| kit::input(name, NUMBER, BLUE))
+            .collect();
+        commands
+            .spawn_scene(bsn! {
+                @kit::node(at)
+                Children [
+                    @kit::title(title) -- {inputs} -- @kit::output("out", NUMBER, BLUE)
+                ]
+            })
+            .try_insert(ChildOf(canvas))
+            .id()
     });
     let [sum, a, scale, display, b, offset, c, clamp] = nodes;
     // (from, to, input).

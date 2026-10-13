@@ -92,7 +92,7 @@ fn setup(mut commands: Commands) {
         flow_speed: 120.0,
         ..default()
     };
-    let canvas = commands.spawn(kit::canvas()).try_insert(style).id();
+    let canvas = commands.spawn_scene(kit::canvas()).try_insert(style).id();
     commands.insert_resource(Stress {
         canvas,
         target: 400,
@@ -234,17 +234,20 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, kind: usize, at: Vec2, la
             ],
         ),
     };
-    let node = commands.spawn((kit::node(at), ChildOf(canvas))).id();
-    commands.spawn((kit::title(title), ChildOf(node)));
-    for &(direction, label, port_type, color) in ports {
-        let mut row = commands.spawn(ChildOf(node));
-        match (direction, labels) {
-            (Input, true) => row.try_insert(kit::input(label, port_type, color)),
-            (Input, false) => row.try_insert(kit::input_dot(port_type, color)),
-            (Output, true) => row.try_insert(kit::output(label, port_type, color)),
-            (Output, false) => row.try_insert(kit::output_dot(port_type, color)),
-        };
-    }
+    let rows: Vec<Box<dyn Scene>> = ports
+        .iter()
+        .map(|&(direction, label, port_type, color)| -> Box<dyn Scene> {
+            match (direction, labels) {
+                (Input, true) => Box::new(kit::input(label, port_type, color)),
+                (Input, false) => Box::new(kit::input_dot(port_type, color)),
+                (Output, true) => Box::new(kit::output(label, port_type, color)),
+                (Output, false) => Box::new(kit::output_dot(port_type, color)),
+            }
+        })
+        .collect();
+    commands
+        .spawn_scene(bsn! { @kit::node(at) Children [ @kit::title(title) -- {rows} ] })
+        .try_insert(ChildOf(canvas));
 }
 
 /// Slowly drifts and breathes over the whole area.

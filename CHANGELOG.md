@@ -7,6 +7,13 @@
   can be added before or after `FeathersPlugins`. Apps without Feathers add
   `CursorIconPlugin` themselves for hover and wire-drag cursors; without it
   the graph still works, with the default cursor.
+- `style::kit` returns BSN scenes instead of bundles, composed with Bevy's
+  `bsn!` macro: `commands.spawn_scene(bsn! { @kit::node(at) Children [
+  @kit::title("Add") -- @kit::input("a", NUMBER, BLUE) ] })`. Patch single
+  fields over the defaults (`@kit::node(at) Node { min_width: px(240) }`) and
+  put any content, such as feathers controls, between the rows.
+  `default_style` now enables Bevy's `bevy_scene`. `SelectedBorderColor` and
+  `PortColor` have defaults, so scenes can patch them.
 
 ## 0.4.0 - 2026-10-11
 

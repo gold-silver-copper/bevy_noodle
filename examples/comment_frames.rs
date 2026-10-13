@@ -39,7 +39,7 @@ struct Frame;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     for (title, at, size, color) in [
         (
             "Inputs",
@@ -95,27 +95,30 @@ fn setup(mut commands: Commands) {
         ));
     }
     for (name, y) in [("First", 110.0), ("Second", 250.0)] {
-        commands.spawn((
-            kit::node(Vec2::new(80.0, y)),
-            ChildOf(canvas),
-            children![kit::title(name), kit::output("value", NUMBER, BLUE)],
-        ));
+        commands.spawn_scene(bsn! {
+            @kit::node(Vec2::new(80.0, y))
+            ChildOf(canvas)
+            Children [ @kit::title(name) -- @kit::output("value", NUMBER, BLUE) ]
+        });
     }
-    commands.spawn((
-        kit::node(Vec2::new(410.0, 170.0)),
-        ChildOf(canvas),
-        children![
-            kit::title("Add"),
-            kit::input("a", NUMBER, BLUE),
-            kit::input("b", NUMBER, BLUE),
-            kit::output("sum", NUMBER, BLUE),
-        ],
-    ));
-    commands.spawn((
-        kit::node(Vec2::new(720.0, 200.0)),
-        ChildOf(canvas),
-        children![kit::title("Outside"), kit::input("value", NUMBER, BLUE)],
-    ));
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(410.0, 170.0))
+        ChildOf(canvas)
+        Children [
+            @kit::title("Add")
+            --
+            @kit::input("a", NUMBER, BLUE)
+            --
+            @kit::input("b", NUMBER, BLUE)
+            --
+            @kit::output("sum", NUMBER, BLUE)
+        ]
+    });
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(720.0, 200.0))
+        ChildOf(canvas)
+        Children [ @kit::title("Outside") -- @kit::input("value", NUMBER, BLUE) ]
+    });
 }
 
 /// When a frame moves, the nodes that were inside it move too.

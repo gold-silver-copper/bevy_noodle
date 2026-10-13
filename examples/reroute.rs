@@ -25,52 +25,50 @@ fn main() {
 }
 
 /// A pill with an input on its left and an output on its right.
-fn reroute(at: Vec2) -> impl Bundle {
-    let node = Node {
-        width: px(26),
-        height: px(14),
-        border_radius: BorderRadius::MAX,
-        ..default()
-    };
+fn reroute(at: Vec2, canvas: Entity) -> impl Scene {
+    let at = at - Vec2::new(13.0, 7.0);
     let (input, output) = (Port::input(PortType::ANY), Port::output(PortType::ANY));
-    (
-        GraphNode,
-        NodePosition(at - Vec2::new(13.0, 7.0)),
-        node,
-        BackgroundColor(Color::srgb_u8(60, 63, 71)),
-        children![kit::port(input, BLUE), kit::port(output, BLUE)],
-    )
+    bsn! {
+        GraphNode
+        NodePosition(at)
+        Node { width: px(26), height: px(14), border_radius: BorderRadius::MAX }
+        BackgroundColor(Color::srgb_u8(60, 63, 71))
+        ChildOf(canvas)
+        Children [ @kit::port(input, BLUE) -- @kit::port(output, BLUE) ]
+    }
 }
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     let number = commands
-        .spawn((
-            kit::node(Vec2::new(60.0, 300.0)),
-            ChildOf(canvas),
-            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
-        ))
+        .spawn_scene(bsn! {
+            @kit::node(Vec2::new(60.0, 300.0))
+            ChildOf(canvas)
+            Children [ @kit::title("Number") -- @kit::output("value", NUMBER, BLUE) ]
+        })
         .id();
     // An obstacle the edge is routed around.
-    commands.spawn((
-        kit::node(Vec2::new(420.0, 230.0)),
-        ChildOf(canvas),
-        children![
-            kit::title("Obstacle"),
-            kit::input("x", NUMBER, BLUE),
-            kit::output("y", NUMBER, BLUE),
-        ],
-    ));
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(420.0, 230.0))
+        ChildOf(canvas)
+        Children [
+            @kit::title("Obstacle")
+            --
+            @kit::input("x", NUMBER, BLUE)
+            --
+            @kit::output("y", NUMBER, BLUE)
+        ]
+    });
     let display = commands
-        .spawn((
-            kit::node(Vec2::new(900.0, 300.0)),
-            ChildOf(canvas),
-            children![kit::title("Display"), kit::input("value", NUMBER, BLUE)],
-        ))
+        .spawn_scene(bsn! {
+            @kit::node(Vec2::new(900.0, 300.0))
+            ChildOf(canvas)
+            Children [ @kit::title("Display") -- @kit::input("value", NUMBER, BLUE) ]
+        })
         .id();
     let [first, second] = [Vec2::new(330.0, 150.0), Vec2::new(720.0, 150.0)]
-        .map(|at| commands.spawn((reroute(at), ChildOf(canvas))).id());
+        .map(|at| commands.spawn_scene(reroute(at, canvas)).id());
     let chain = [number, first, second, display];
     commands.queue(move |world: &mut World| {
         for (from, to) in chain.into_iter().zip(chain.into_iter().skip(1)) {
@@ -112,7 +110,7 @@ fn reroute_on_right_click(
     };
     // The canvas fills the window here, so window and canvas coordinates match.
     let at = view.canvas_to_graph(click.pointer.position);
-    let dot = commands.spawn((reroute(at), ChildOf(canvas))).id();
+    let dot = commands.spawn_scene(reroute(at, canvas)).id();
     commands.queue(move |world: &mut World| {
         let ports = |In(dot), graph: GraphQuery| {
             Some((graph.inputs_of(dot).next()?, graph.outputs_of(dot).next()?))

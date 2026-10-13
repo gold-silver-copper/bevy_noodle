@@ -91,23 +91,30 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
-    commands.spawn((
-        kit::node(Vec2::new(80.0, 120.0)),
-        ChildOf(canvas),
-        children![kit::title("Source"), kit::output("number", NUMBER, BLUE)],
-    ));
-    commands.spawn((
-        kit::node(Vec2::new(420.0, 120.0)),
-        ChildOf(canvas),
-        children![kit::title("Sink"), kit::input("number", NUMBER, BLUE)],
-    ));
+    let canvas = commands.spawn_scene(kit::canvas()).id();
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(80.0, 120.0))
+        ChildOf(canvas)
+        Children [ @kit::title("Source") -- @kit::output("number", NUMBER, BLUE) ]
+    });
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(420.0, 120.0))
+        ChildOf(canvas)
+        Children [ @kit::title("Sink") -- @kit::input("number", NUMBER, BLUE) ]
+    });
 }
 ```
 
 Drag from the Source's blue port to the Sink's blue port to connect them.
 Drag a node to move it. The grid and wires come from `default_style` and
 `NoodleDefaultStylePlugin`; `kit::canvas()` enables them on this canvas.
+
+The `kit` functions return scenes for Bevy's `bsn!` macro. Patch single
+fields over their defaults, such as `@kit::node(at) Node { min_width: px(240) }`,
+and put your own content, such as feathers controls, among a node's
+`Children`. They are optional: nodes are plain Bevy UI entities with
+`GraphNode` and `Port` components, built any way you like
+(`examples/minimal.rs` uses no styling at all).
 
 From this repository, run the same example with:
 
@@ -149,7 +156,7 @@ Edge                    relates an output port to an input port; has EdgeGeometr
 
 | Feature | Adds |
 |---|---|
-| `default_style` | Wire shader (`EdgeStyle`), `CanvasGrid`, selection box, port highlights, and `style::kit` node builders |
+| `default_style` | Wire shader (`EdgeStyle`), `CanvasGrid`, selection box, port highlights, and `style::kit` node scenes (enables Bevy's `bevy_scene`) |
 | `scene` | `DynamicWorld` snapshots for undo, copy/paste and save/load |
 
 Keyboard use is a plugin: add `NoodleKeyboardPlugin` and `CanvasKeyboard`.

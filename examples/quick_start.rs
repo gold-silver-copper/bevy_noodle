@@ -18,15 +18,15 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
-    commands.spawn((
-        kit::node(Vec2::new(80.0, 120.0)),
-        ChildOf(canvas),
-        children![kit::title("Source"), kit::output("number", NUMBER, BLUE)],
-    ));
-    commands.spawn((
-        kit::node(Vec2::new(420.0, 120.0)),
-        ChildOf(canvas),
-        children![kit::title("Sink"), kit::input("number", NUMBER, BLUE)],
-    ));
+    let canvas = commands.spawn_scene(kit::canvas()).id();
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(80.0, 120.0))
+        ChildOf(canvas)
+        Children [ @kit::title("Source") -- @kit::output("number", NUMBER, BLUE) ]
+    });
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(420.0, 120.0))
+        ChildOf(canvas)
+        Children [ @kit::title("Sink") -- @kit::input("number", NUMBER, BLUE) ]
+    });
 }

@@ -43,22 +43,25 @@ struct MiniView;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     // A long chain, wider than the window.
     let nodes: Vec<Entity> = (0..12)
         .map(|i| {
             let at = Vec2::new(60.0 + 260.0 * i as f32, 120.0 + 180.0 * ((i % 3) as f32));
+            let title = format!("Step {}", i + 1);
             commands
-                .spawn((
-                    kit::node(at),
-                    ChildOf(canvas),
-                    children![
-                        kit::title(format!("Step {}", i + 1)),
-                        kit::input("in", NUMBER, BLUE),
-                        kit::output("out", NUMBER, BLUE),
-                    ],
-                ))
+                .spawn_scene(bsn! {
+                    @kit::node(at)
+                    ChildOf(canvas)
+                    Children [
+                        @kit::title(title)
+                        --
+                        @kit::input("in", NUMBER, BLUE)
+                        --
+                        @kit::output("out", NUMBER, BLUE)
+                    ]
+                })
                 .id()
         })
         .collect();

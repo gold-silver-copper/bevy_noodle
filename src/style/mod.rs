@@ -8,7 +8,7 @@
 //! | [`PortHighlight`] + [`PortColor`] | ports reflecting connection and drag state      |
 //! | [`SelectedBorderColor`] on a node | a border following `Selected`                   |
 //!
-//! [`kit`] has functions returning ready-made canvas and node bundles.
+//! [`kit`] has ready-made canvas and node scenes to compose with Bevy's `bsn!`.
 
 pub mod kit;
 mod render;
@@ -115,8 +115,14 @@ impl Default for EdgeStyle {
 
 /// A port's color, used by [`PortHighlight`] and as the default wire color.
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq, Deref)]
-#[reflect(Component)]
+#[reflect(Component, Default)]
 pub struct PortColor(pub Color);
+
+impl Default for PortColor {
+    fn default() -> Self {
+        Self(Color::srgb_u8(160, 164, 172))
+    }
+}
 
 /// Makes a port's background, border and scale follow its state.
 #[derive(Component, Reflect, Clone, Copy, Debug, Default)]
@@ -195,12 +201,21 @@ impl Default for FocusOutline {
 
 /// Sets `BorderColor` from whether the entity is [`Selected`].
 #[derive(Component, Reflect, Clone, Copy, Debug, PartialEq)]
-#[reflect(Component)]
+#[reflect(Component, Default)]
 pub struct SelectedBorderColor {
     /// Border color when not selected.
     pub normal: Color,
     /// Border color when selected.
     pub selected: Color,
+}
+
+impl Default for SelectedBorderColor {
+    fn default() -> Self {
+        Self {
+            normal: Color::srgb_u8(66, 69, 77),
+            selected: Color::srgb_u8(250, 204, 92),
+        }
+    }
 }
 
 /// Library-owned visuals, linked from what they draw.
