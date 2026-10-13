@@ -165,19 +165,15 @@ fn setup(
         Transform::from_xyz(0.0, -0.5, 0.0),
     ));
 
-    // The graph panel: a canvas like any other, with a translucent background.
-    let panel = Node {
-        width: px(640),
-        height: percent(100),
-        border: UiRect::right(px(1)),
-        overflow: Overflow::clip(),
-        ..default()
-    };
-    let background = BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82));
-    let border = BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1));
+    // The graph panel: a canvas like any other, with a translucent
+    // background. Each patch changes only the fields it names.
     let canvas = commands
-        .spawn(kit::canvas())
-        .try_insert((panel, background, border))
+        .spawn_scene(bsn! {
+            @kit::canvas()
+            Node { width: px(640), border: UiRect::right(px(1)) }
+            BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82))
+            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1))
+        })
         .id();
     let coral = Hsla::hsl(5.0, 0.9, 0.65);
     let teal = Hsla::hsl(180.0, 0.6, 0.45);
@@ -244,33 +240,34 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
         ),
         Kind::Scene => ("Scene", &[("objects", OBJECT, ORANGE)], &[]),
     };
-    let node = commands.spawn((kit::node(at), kind, ChildOf(canvas))).id();
-    commands.spawn((kit::title(title), ChildOf(node)));
-    controls(commands, node, kind);
-    for (label, port_type, color) in inputs {
+    let inputs = inputs.iter().map(|&(label, port_type, color)| {
         let port = match kind {
-            Kind::Scene => Port::input(*port_type).with_capacity(Capacity::Unlimited),
-            _ => Port::input(*port_type),
+            Kind::Scene => Port::input(port_type).with_capacity(Capacity::Unlimited),
+            _ => Port::input(port_type),
         };
-        commands.spawn((kit::input_with(*label, port, *color), ChildOf(node)));
-    }
-    for (label, port_type, color) in outputs {
-        commands.spawn((kit::output(*label, *port_type, *color), ChildOf(node)));
-    }
-    node
+        kit::row(label, port, color)
+    });
+    let outputs = outputs
+        .iter()
+        .map(|&(label, port_type, color)| kit::row(label, Port::output(port_type), color));
+    let rows: Vec<_> = inputs.chain(outputs).collect();
+    let controls = controls(kind);
+    let scene = bsn! {
+        @kit::node(at) kind ChildOf(canvas)
+        Children [ @kit::title(title) -- {controls} -- {rows} ]
+    };
+    commands.spawn_scene(scene).id()
 }
 
 /// The controls editing a node's value, under its title.
-fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
-    let margin = UiRect::horizontal(px(kit::PADDING));
+fn controls(kind: Kind) -> Box<dyn SceneList> {
     let slider = |min: f32, max: f32, value: f32| {
-        bsn! {
+        Box::new(bsn_list! {
             @FeathersSlider { @min: min, @max: max }
             SliderValue({value})
             SliderPrecision(2)
-            Node { margin: {margin} }
             on(slider_self_update)
-        }
+        })
     };
     match kind {
         Kind::Shape(shape) => {
@@ -283,10 +280,9 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
             });
             let name = shape.name();
             let [cube, sphere, torus] = items;
-            commands.spawn_scene(bsn! {
+            Box::new(bsn_list! {
                 @FeathersMenu
-                Node { margin: {margin} }
-                Children [
+                    Children [
                     @FeathersMenuButton { @caption: bsn! { Text(name) ThemedText Caption } }
                     --
                     @FeathersMenuPopup
@@ -295,34 +291,26 @@ fn controls(commands: &mut Commands, node: Entity, kind: Kind) {
             })
         }
         Kind::Paint(color) => {
-            // A hue and saturation plane over a lightness slider.
-            commands
-                .spawn_scene(bsn! { @FeathersColorPlane::HueSaturation Node { margin: {margin}, min_height: px(70) } })
-                .try_insert(ChildOf(node));
             let lightness = color.lightness;
-            commands.spawn_scene(bsn! {
+            // A hue and saturation plane over a lightness slider.
+            Box::new(bsn_list! {
+                @FeathersColorPlane::HueSaturation
+                Node { min_height: px(70) }
+                --
                 @FeathersColorSlider { @channel: ColorChannel::HslLightness, @value: lightness }
-                Node { margin: {margin} }
-                on(slider_self_update)
+                    on(slider_self_update)
             })
         }
-        Kind::Spin(speed) => commands.spawn_scene(slider(-4.0, 4.0, speed)),
-        Kind::Object(size) => commands.spawn_scene(slider(0.25, 2.0, size)),
-        Kind::Ring(count) => {
-            // Typed or dragged, the count stays within 0 to 64.
-            commands
-                .spawn_scene(bsn! {
-                    @FeathersNumberInput
-                    NumberInputValue::I32({count})
-                    HardLimit::i32(0..=64)
-                    Node { margin: {margin} }
-                })
-                .try_insert(ChildOf(node));
-            return;
-        }
-        Kind::Scene => return,
+        Kind::Spin(speed) => slider(-4.0, 4.0, speed),
+        Kind::Object(size) => slider(0.25, 2.0, size),
+        // Typed or dragged, the count stays within 0 to 64.
+        Kind::Ring(count) => Box::new(bsn_list! {
+            @FeathersNumberInput
+            NumberInputValue::I32({count})
+            HardLimit::i32(0..=64)
+        }),
+        Kind::Scene => Box::new(bsn_list! {}),
     }
-    .try_insert(ChildOf(node));
 }
 
 /// Whether an edit changed connections or nodes (a run condition).

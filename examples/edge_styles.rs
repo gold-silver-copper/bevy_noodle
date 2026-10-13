@@ -95,26 +95,24 @@ fn looks() -> [(&'static str, Color, EdgeStyle); 7] {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     let mut pairs = Vec::new();
     for (i, (name, color, style)) in looks().into_iter().enumerate() {
         let y = 30.0 + 108.0 * i as f32;
+        let (look, out) = (WireLook(style), Port::output(PortType::ANY));
         let source = commands
-            .spawn((
-                kit::node(Vec2::new(60.0, y)),
-                WireLook(style),
-                ChildOf(canvas),
-                children![kit::title(name), kit::output("out", PortType::ANY, color),],
-            ))
+            .spawn_scene(bsn! {
+                @kit::node(Vec2::new(60.0, y)) look ChildOf(canvas)
+                Children [ @kit::title(name) -- @kit::row("out", out, color) ]
+            })
             .id();
         let sink_at = Vec2::new(if i % 2 == 0 { 760.0 } else { 960.0 }, y + 26.0);
         let any = Port::input(PortType::ANY).with_capacity(Capacity::Unlimited);
         let sink = commands
-            .spawn((
-                kit::node(sink_at),
-                ChildOf(canvas),
-                children![kit::title("Sink"), kit::input_with("in", any, color),],
-            ))
+            .spawn_scene(bsn! {
+                @kit::node(sink_at) ChildOf(canvas)
+                Children [ @kit::title("Sink") -- @kit::row("in", any, color) ]
+            })
             .id();
         pairs.push((source, sink));
     }

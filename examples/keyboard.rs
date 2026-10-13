@@ -53,61 +53,46 @@ fn main() {
 struct Graph(Entity);
 
 /// A Number node's value, edited by its field.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Value(f32);
 
 /// The text where Add shows its sum.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Sum;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     // `kit::canvas()` includes a `FocusOutline`, shown on keyboard focus.
     let canvas = commands
-        .spawn((kit::canvas(), CanvasKeyboard::default()))
+        .spawn_scene(bsn! { @kit::canvas() CanvasKeyboard })
         .id();
     commands.insert_resource(Graph(canvas));
-    for (title, value, y) in [("First number", 2.0, 120.0), ("Second number", 3.0, 300.0)] {
-        let node = commands
-            .spawn((
-                kit::node(Vec2::new(80.0, y)),
-                Value(value),
-                ChildOf(canvas),
-                children![kit::title(title)],
-            ))
-            .id();
-        let margin = UiRect::horizontal(px(kit::PADDING));
-        commands
-            .spawn_scene(bsn! {
-                @FeathersNumberInput
-                NumberInputValue::F32({value})
-                Node { margin: {margin} }
-            })
-            .try_insert(ChildOf(node));
-        commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
+    for (title, value, y) in [
+        ("First number", 2.0_f32, 120.0),
+        ("Second number", 3.0, 300.0),
+    ] {
+        let mut node = commands.spawn_scene(bsn! {
+            @kit::node(Vec2::new(80.0, y)) Value(value) ChildOf(canvas)
+            Children [
+                @kit::title(title)
+                --
+                @FeathersNumberInput NumberInputValue::F32({value})
+                --
+                @kit::row("value", Port::output(NUMBER), BLUE)
+            ]
+        });
         if y < 200.0 {
-            commands.entity(node).try_insert(AutoFocus);
+            node.try_insert(AutoFocus);
         }
     }
-    commands.spawn((
-        kit::node(Vec2::new(400.0, 190.0)),
-        ChildOf(canvas),
-        children![
-            kit::title("Add"),
-            kit::input("a", NUMBER, BLUE),
-            kit::input("b", NUMBER, BLUE),
-            kit::output("sum", NUMBER, BLUE),
-            (
-                Sum,
-                Text::default(),
-                TextFont::from_font_size(15.0),
-                Node {
-                    margin: UiRect::horizontal(px(kit::PADDING)),
-                    ..default()
-                },
-            ),
-        ],
-    ));
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(400.0, 190.0)) ChildOf(canvas)
+        Children [
+            @kit::title("Add") -- @kit::row("a", Port::input(NUMBER), BLUE)
+            -- @kit::row("b", Port::input(NUMBER), BLUE) -- @kit::row("sum", Port::output(NUMBER), BLUE)
+            -- Sum Text TextFont { font_size: FontSize::Px(15.0) }
+        ]
+    });
     commands.spawn((
         Text::new(
             "Tab / Shift+Tab: focus | Enter: select | arrows: move | \

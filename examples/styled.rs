@@ -1,4 +1,4 @@
-//! The optional default look: kit nodes, Bézier wires, a grid and a selection
+//! The optional default look: kit node scenes, Bézier wires, a grid and a selection
 //! box, with Bevy's feathers controls inside the nodes. Type numbers into the
 //! Number nodes and a template into Format; Print shows the result live.
 //! Right-click adds a node; dropping a wire on empty canvas adds a node that
@@ -55,86 +55,60 @@ enum Kind {
 }
 
 /// A Number node's value, edited by its field.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Value(f32);
 
 /// A Format node's template, edited by its field: `{}` becomes the number.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Template(String);
 
 /// The text where a Print node shows its input.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Shows;
 
 fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entity {
-    let node = (kit::node(at), kind, ChildOf(canvas));
-    let margin = UiRect::horizontal(px(kit::PADDING));
-    match kind {
-        Kind::Number => {
-            let value = 1.5;
-            let node = commands
-                .spawn((node, Value(value), children![kit::title("Number")]))
-                .id();
-            commands
-                .spawn_scene(bsn! {
-                    @FeathersNumberInput
-                    NumberInputValue::F32({value})
-                    Node { margin: {margin} }
-                })
-                .try_insert(ChildOf(node));
-            commands.spawn((kit::output("value", NUMBER, BLUE), ChildOf(node)));
-            node
-        }
-        Kind::Add => commands
-            .spawn((
-                node,
-                children![
-                    kit::title("Add"),
-                    kit::input("a", NUMBER, BLUE),
-                    kit::input("b", NUMBER, BLUE),
-                    kit::output("sum", NUMBER, BLUE),
-                ],
-            ))
-            .id(),
-        Kind::Format => {
-            let template = "sum: {}";
-            let node = commands
-                .spawn((
-                    node,
-                    Template(template.into()),
-                    children![kit::title("Format")],
-                ))
-                .id();
-            commands
-                .spawn_scene(bsn! {
-                    @FeathersTextInputContainer
-                    Node { margin: {margin} }
-                    Children [ @FeathersTextInput EditableText::new(template) ]
-                })
-                .try_insert(ChildOf(node));
-            commands.spawn((kit::input("number", NUMBER, BLUE), ChildOf(node)));
-            commands.spawn((kit::output("text", TEXT, GREEN), ChildOf(node)));
-            node
-        }
-        Kind::Print => commands
-            .spawn((
-                node,
-                children![
-                    kit::title("Print"),
-                    kit::input("text", TEXT, GREEN),
-                    (
-                        Shows,
-                        Text::default(),
-                        TextFont::from_font_size(15.0),
-                        Node {
-                            margin,
-                            ..default()
-                        },
-                    ),
-                ],
-            ))
-            .id(),
-    }
+    let node = match kind {
+        Kind::Number => commands.spawn_scene(bsn! {
+            @kit::node(at) kind Value(1.5) ChildOf(canvas)
+            Children [
+                @kit::title("Number")
+                --
+                @FeathersNumberInput NumberInputValue::F32(1.5)
+                --
+                @kit::row("value", Port::output(NUMBER), BLUE)
+            ]
+        }),
+        Kind::Add => commands.spawn_scene(bsn! {
+            @kit::node(at) kind ChildOf(canvas)
+            Children [
+                @kit::title("Add") -- @kit::row("a", Port::input(NUMBER), BLUE)
+                -- @kit::row("b", Port::input(NUMBER), BLUE) -- @kit::row("sum", Port::output(NUMBER), BLUE)
+            ]
+        }),
+        Kind::Format => commands.spawn_scene(bsn! {
+            // A field-level override: wider than the kit's node, every
+            // other `Node` field as the kit sets it.
+            @kit::node(at) Node { min_width: px(220) }
+            kind Template("sum: {}") ChildOf(canvas)
+            Children [
+                @kit::title("Format")
+                --
+                @FeathersTextInputContainer Children [ @FeathersTextInput EditableText::new("sum: {}") ]
+                --
+                @kit::row("number", Port::input(NUMBER), BLUE)
+                --
+                @kit::row("text", Port::output(TEXT), GREEN)
+            ]
+        }),
+        Kind::Print => commands.spawn_scene(bsn! {
+            @kit::node(at) kind ChildOf(canvas)
+            Children [
+                @kit::title("Print") -- @kit::row("text", Port::input(TEXT), GREEN)
+                -- Shows Text TextFont { font_size: FontSize::Px(15.0) }
+            ]
+        }),
+    };
+    node.id()
 }
 
 fn setup(mut commands: Commands) {

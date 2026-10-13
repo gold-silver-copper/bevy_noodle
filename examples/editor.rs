@@ -78,41 +78,30 @@ struct Graph(Entity);
 struct HistoryText;
 
 /// A Number node's value: reflected, so snapshots keep it.
-#[derive(Component, Reflect, Clone, Copy)]
+#[derive(Component, Reflect, Clone, Copy, Default)]
 #[reflect(Component)]
 struct Value(f32);
 
 /// The text where an Add node shows its sum.
-#[derive(Component, Reflect, Default)]
+#[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component)]
 struct Sum;
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     commands.insert_resource(Graph(canvas));
     let a = spawn_number(&mut commands, canvas, Vec2::new(80.0, 120.0), 2.0);
     let b = spawn_number(&mut commands, canvas, Vec2::new(80.0, 300.0), 3.5);
     let add = commands
-        .spawn((
-            kit::node(Vec2::new(380.0, 190.0)),
-            ChildOf(canvas),
-            children![
-                kit::title("Add"),
-                kit::input("a", NUMBER, BLUE),
-                kit::input("b", NUMBER, BLUE),
-                kit::output("sum", NUMBER, BLUE),
-                (
-                    Sum,
-                    Text::default(),
-                    TextFont::from_font_size(15.0),
-                    Node {
-                        margin: UiRect::horizontal(px(kit::PADDING)),
-                        ..default()
-                    },
-                ),
-            ],
-        ))
+        .spawn_scene(bsn! {
+            @kit::node(Vec2::new(380.0, 190.0)) ChildOf(canvas)
+            Children [
+                @kit::title("Add") -- @kit::row("a", Port::input(NUMBER), BLUE)
+                -- @kit::row("b", Port::input(NUMBER), BLUE) -- @kit::row("sum", Port::output(NUMBER), BLUE)
+                -- Sum Text TextFont { font_size: FontSize::Px(15.0) }
+            ]
+        })
         .id();
     commands.queue(move |world: &mut World| {
         let connect = |In((a, b, add)): In<(Entity, Entity, Entity)>, graph: GraphQuery| {
@@ -144,29 +133,20 @@ fn setup(mut commands: Commands) {
 }
 
 fn spawn_number(commands: &mut Commands, canvas: Entity, at: Vec2, value: f32) -> Entity {
-    commands
-        .spawn((
-            kit::node(at),
-            Value(value),
-            ChildOf(canvas),
-            children![kit::title("Number"), kit::output("value", NUMBER, BLUE)],
-        ))
-        .id()
+    let scene = bsn! {
+        @kit::node(at) Value(value) ChildOf(canvas)
+        Children [ @kit::title("Number") -- @kit::row("value", Port::output(NUMBER), BLUE) ]
+    };
+    commands.spawn_scene(scene).id()
 }
 
 /// Every node that gets a `Value` (spawned, restored or pasted) gets a field
 /// under its title showing it.
 fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Commands) {
     for (node, value) in &nodes {
-        let margin = UiRect::horizontal(px(kit::PADDING));
         let value = value.0;
         let field = commands
-            .spawn_scene(bsn! {
-                @FeathersNumberInput
-                NumberInputValue::F32({value})
-                Node { margin: {margin} }
-            })
-            .try_insert(Transient)
+            .spawn_scene(bsn! { @FeathersNumberInput NumberInputValue::F32({value}) Transient })
             .id();
         commands.entity(node).insert_child(1, field);
     }

@@ -31,10 +31,10 @@ enum MathOp {
 struct NumberValue(f64);
 
 /// The text field of a Number node, and the result text of a Display node.
-#[derive(Component)]
-struct NumberField(Entity);
-#[derive(Component)]
-struct ResultText(Entity);
+#[derive(Component, Clone, Default)]
+struct NumberField;
+#[derive(Component, Clone, Default)]
+struct ResultText;
 
 fn main() {
     App::new()
@@ -49,7 +49,7 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    let canvas = commands.spawn(kit::canvas()).id();
+    let canvas = commands.spawn_scene(kit::canvas()).id();
     let nodes = [
         (MathOp::Number, 60.0, 60.0, 2.0),
         (MathOp::Number, 60.0, 220.0, 3.5),
@@ -86,81 +86,66 @@ fn wire_demo(
 
 /// A kit frame plus our own widgets and components.
 fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, value: f64) -> Entity {
-    let node = commands.spawn((kit::node(at), op, ChildOf(canvas))).id();
-    commands.spawn((kit::title(format!("{op:?}")), ChildOf(node)));
-    let row = match op {
+    let title = format!("{op:?}");
+    let rows: Box<dyn SceneList> = match op {
         MathOp::Number => {
-            commands.entity(node).try_insert(NumberValue(value));
             let mut text = EditableText::new(format!("{value}"));
             text.visible_width = Some(8.0);
-            commands.spawn((
-                NumberField(node),
+            let filter = EditableTextFilter::new(|c| c.is_ascii_digit() || matches!(c, '.' | '-'));
+            Box::new(bsn_list! {
+                NumberField
                 // A focusable control: presses and drags in it are its own.
-                TabIndex(0),
-                Node {
-                    padding: UiRect::axes(px(6), px(3)),
-                    margin: UiRect::horizontal(px(kit::PADDING)),
-                    border: UiRect::all(px(1)),
-                    ..default()
-                },
+                TabIndex(0)
+                Node { padding: UiRect::axes(px(6), px(3)), border: UiRect::all(px(1)) }
                 // The widget behavior; `EditableText` is only its state.
-                TextInput,
-                text,
-                EditableTextFilter::new(|c| c.is_ascii_digit() || matches!(c, '.' | '-')),
-                TextLayout::linebreak(LineBreak::NoWrap),
+                TextInput
+                text
+                filter
+                TextLayout::linebreak(LineBreak::NoWrap)
                 // Without a cursor style, Bevy draws no cursor or selection.
                 TextCursorStyle {
                     color: Color::WHITE,
-                    selection_color: BLUE.with_alpha(0.45),
+                    selection_color: {BLUE.with_alpha(0.45)},
                     unfocused_selection_color: Color::NONE,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb_u8(28, 29, 33)),
-                BorderColor::all(Color::srgb_u8(70, 73, 81)),
-                ChildOf(node),
-            ));
-            commands.spawn(kit::output("value", NUMBER, BLUE)).id()
+                }
+                BackgroundColor(Color::srgb_u8(28, 29, 33))
+                BorderColor::all(Color::srgb_u8(70, 73, 81))
+                --
+                @kit::row("value", Port::output(NUMBER), BLUE)
+            })
         }
+        // One port taking any number of inputs.
         MathOp::Add | MathOp::Multiply => {
-            // One port taking any number of inputs.
-            commands.spawn((
-                kit::input_with(
-                    "values",
-                    Port::input(NUMBER).with_capacity(Capacity::Unlimited),
-                    BLUE,
-                ),
-                ChildOf(node),
-            ));
-            commands.spawn(kit::output("result", NUMBER, BLUE)).id()
+            let values = Port::input(NUMBER).with_capacity(Capacity::Unlimited);
+            Box::new(bsn_list! {
+                @kit::row("values", values, BLUE) -- @kit::row("result", Port::output(NUMBER), BLUE)
+            })
         }
-        MathOp::Display => {
-            commands.spawn((kit::input("value", NUMBER, BLUE), ChildOf(node)));
-            commands
-                .spawn((
-                    ResultText(node),
-                    Text::new("–"),
-                    Node {
-                        margin: UiRect::horizontal(px(kit::PADDING)),
-                        ..default()
-                    },
-                    TextFont::from_font_size(20.0),
-                    TextColor(Color::srgb(0.6, 0.9, 0.65)),
-                ))
-                .id()
-        }
+        MathOp::Display => Box::new(bsn_list! {
+            @kit::row("value", Port::input(NUMBER), BLUE)
+            --
+            ResultText
+            Text("–")
+            TextFont { font_size: FontSize::Px(20.0) }
+            TextColor(Color::srgb(0.6, 0.9, 0.65))
+        }),
     };
-    commands.entity(node).add_child(row);
-    node
+    let scene = bsn! {
+        @kit::node(at) op NumberValue(value) ChildOf(canvas)
+        Children [ @kit::title(title) -- {rows} ]
+    };
+    commands.spawn_scene(scene).id()
 }
 
 fn read_number_fields(
-    fields: Query<(&NumberField, &EditableText)>,
+    fields: Query<(Entity, &EditableText), With<NumberField>>,
+    graph: GraphQuery,
     mut values: Query<&mut NumberValue>,
 ) {
     for (field, text) in &fields {
-        if let (Ok(parsed), Ok(mut value)) = (
+        if let (Ok(parsed), Some(mut value)) = (
             text.value().to_string().trim().parse(),
-            values.get_mut(field.0),
+            graph.node_of(field).and_then(|n| values.get_mut(n).ok()),
         ) {
             value.set_if_neq(NumberValue(parsed));
         }
@@ -173,13 +158,16 @@ fn evaluate(
     changed: Query<(), Changed<NumberValue>>,
     graph: GraphQuery,
     ops: Query<(&MathOp, Option<&NumberValue>)>,
-    mut results: Query<(&ResultText, &mut Text)>,
+    mut results: Query<(Entity, &mut Text), With<ResultText>>,
 ) {
     if edits.read().count() == 0 && changed.is_empty() {
         return;
     }
     for (result, mut text) in &mut results {
-        let shown = value_of(result.0, &graph, &ops, 0).map_or("–".into(), |v| v.to_string());
+        let node = graph.node_of(result);
+        let shown = node
+            .and_then(|n| value_of(n, &graph, &ops, 0))
+            .map_or("–".into(), |v| v.to_string());
         text.set_if_neq(Text(shown));
     }
 }
