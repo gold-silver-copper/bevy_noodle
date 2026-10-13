@@ -27,6 +27,9 @@ cargo run --example <name> --all-features
 
 <table>
 <tr>
+<td colspan="2"><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/shader_world.png" alt="shader_world"><br><b>shader_world</b>: a node graph that writes a shader, raymarching a landscape you fly over (use <code>--release</code>)</td>
+</tr>
+<tr>
 <td width="50%"><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/scene_builder_3d.png" alt="scene_builder_3d"><br><b>scene_builder_3d</b>: build a live 3D scene from a graph</td>
 <td width="50%"><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/edge_styles.png" alt="edge_styles"><br><b>edge_styles</b>: gradients, dashes and animated flow</td>
 </tr>
@@ -163,6 +166,8 @@ input, the usual first step of evaluating it.
 - `math_graph`, `styled` and `type_conversion` compute values through the
   graph; `math_graph` also rejects cycles in a `ConnectionCheck` observer.
 - `scene_builder_3d` builds 3D entities from the graph after every edit.
+- `shader_world` compiles the graph into a WGSL shader: each node is one
+  line of code, and rewiring regenerates a raymarched landscape.
 - `geometry_nodes` builds Blender-style geometry nodes in about 100 lines
   of node code: wires carry lists of points, one node queries entities
   already in the world, others change or filter every point, and the result

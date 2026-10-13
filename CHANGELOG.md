@@ -26,6 +26,9 @@
   points, including a node that queries entities already in the world,
   re-evaluated every frame. The README explains that evaluating a graph is
   the app's job.
+- `shader_world` example: the graph compiles into a WGSL shader that
+  raymarches a landscape you fly over. Rewiring regenerates the shader;
+  sliders are uniforms, so they reshape it live.
 
 ## 0.4.0 - 2026-10-11
 

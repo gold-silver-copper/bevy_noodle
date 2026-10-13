@@ -106,6 +106,10 @@ required-features = ["default_style"]
 name = "geometry_nodes"
 required-features = ["default_style"]
 
+[[example]]
+name = "shader_world"
+required-features = ["default_style"]
+
 [package.metadata.docs.rs]
 all-features = true
 
