@@ -43,28 +43,22 @@ fn setup(mut commands: Commands) {
     let canvas = commands.spawn_scene(kit::canvas()).id();
     let number = commands
         .spawn_scene(bsn! {
-            @kit::node(Vec2::new(60.0, 300.0))
-            ChildOf(canvas)
-            Children [ @kit::title("Number") -- @kit::output("value", NUMBER, BLUE) ]
+            @kit::node(Vec2::new(60.0, 300.0)) ChildOf(canvas)
+            Children [ @kit::title("Number") -- @kit::row("value", Port::output(NUMBER), BLUE) ]
         })
         .id();
     // An obstacle the edge is routed around.
     commands.spawn_scene(bsn! {
-        @kit::node(Vec2::new(420.0, 230.0))
-        ChildOf(canvas)
+        @kit::node(Vec2::new(420.0, 230.0)) ChildOf(canvas)
         Children [
-            @kit::title("Obstacle")
-            --
-            @kit::input("x", NUMBER, BLUE)
-            --
-            @kit::output("y", NUMBER, BLUE)
+            @kit::title("Obstacle") -- @kit::row("x", Port::input(NUMBER), BLUE)
+            -- @kit::row("y", Port::output(NUMBER), BLUE)
         ]
     });
     let display = commands
         .spawn_scene(bsn! {
-            @kit::node(Vec2::new(900.0, 300.0))
-            ChildOf(canvas)
-            Children [ @kit::title("Display") -- @kit::input("value", NUMBER, BLUE) ]
+            @kit::node(Vec2::new(900.0, 300.0)) ChildOf(canvas)
+            Children [ @kit::title("Display") -- @kit::row("value", Port::input(NUMBER), BLUE) ]
         })
         .id();
     let [first, second] = [Vec2::new(330.0, 150.0), Vec2::new(720.0, 150.0)]

@@ -60,20 +60,12 @@ enum Op {
     Print(Entity),
 }
 
-/// Lines content up with the node's rows.
-const MARGIN: UiRect = UiRect::horizontal(Val::Px(kit::PADDING));
-
 /// A nested canvas: a fixed-size viewport clipping its graph, zoomed out,
 /// with a darker grid. Each patch changes only the fields it names.
 fn nested() -> impl Scene {
     bsn! {
         @kit::canvas()
-        Node {
-            width: px(540),
-            height: px(240),
-            margin: MARGIN,
-            border_radius: BorderRadius::all(px(6)),
-        }
+        Node { width: px(540), height: px(240), border_radius: BorderRadius::all(px(6)) }
         CanvasView { zoom: 0.7 }
         CanvasGrid { background: Color::srgb_u8(30, 32, 37) }
     }
@@ -81,12 +73,20 @@ fn nested() -> impl Scene {
 
 /// A node on `canvas` computing `op`, with `rows` under its frame.
 fn node(commands: &mut Commands, canvas: Entity, op: Op, at: Vec2, rows: impl SceneList) -> Entity {
-    let scene = bsn! { @kit::node(at) op Children [ {rows} ] };
-    commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id()
+    let scene = bsn! { @kit::node(at) op ChildOf(canvas) Children [ {rows} ] };
+    commands.spawn_scene(scene).id()
+}
+
+fn number_in(label: &str) -> impl Scene {
+    kit::row(label, Port::input(NUMBER), BLUE)
+}
+
+fn number_out(label: &str) -> impl Scene {
+    kit::row(label, Port::output(NUMBER), BLUE)
 }
 
 fn number_field(value: f32) -> impl Scene {
-    bsn! { @FeathersNumberInput NumberInputValue::F32({value}) Node { margin: MARGIN } }
+    bsn! { @FeathersNumberInput NumberInputValue::F32({value}) }
 }
 
 fn setup(mut commands: Commands) {
@@ -100,13 +100,9 @@ fn setup(mut commands: Commands) {
         outer,
         Op::Group(inner),
         Vec2::new(280.0, 90.0),
-        bsn_list! {
-            @kit::title("Group") -- @kit::input("a", NUMBER, BLUE) -- @kit::input("b", NUMBER, BLUE)
-        },
+        bsn_list! { @kit::title("Group") -- @number_in("a") -- @number_in("b") },
     );
-    let result_row = commands
-        .spawn_scene(kit::output("result", NUMBER, BLUE))
-        .id();
+    let result_row = commands.spawn_scene(number_out("result")).id();
     commands.entity(group).add_children(&[inner, result_row]);
 
     let commands = &mut commands;
@@ -115,27 +111,21 @@ fn setup(mut commands: Commands) {
         outer,
         Op::Number(3.0),
         Vec2::new(40.0, 120.0),
-        bsn_list! {
-            @kit::title("Number") -- @number_field(3.0) -- @kit::output("value", NUMBER, BLUE)
-        },
+        bsn_list! { @kit::title("Number") -- @number_field(3.0) -- @number_out("value") },
     );
     let four = node(
         commands,
         outer,
         Op::Number(4.0),
         Vec2::new(40.0, 330.0),
-        bsn_list! {
-            @kit::title("Number") -- @number_field(4.0) -- @kit::output("value", NUMBER, BLUE)
-        },
+        bsn_list! { @kit::title("Number") -- @number_field(4.0) -- @number_out("value") },
     );
     let input = node(
         commands,
         inner,
         Op::In,
         Vec2::new(10.0, 110.0),
-        bsn_list! {
-            @kit::title("In") -- @kit::output("a", NUMBER, BLUE) -- @kit::output("b", NUMBER, BLUE)
-        },
+        bsn_list! { @kit::title("In") -- @number_out("a") -- @number_out("b") },
     );
     // A slider under the title sets the scale.
     let scale = node(
@@ -150,12 +140,9 @@ fn setup(mut commands: Commands) {
             SliderValue(2.0)
             SliderStep(0.25)
             SliderPrecision(2)
-            Node { margin: MARGIN }
             on(slider_self_update)
             --
-            @kit::input("x", NUMBER, BLUE)
-            --
-            @kit::output("k x", NUMBER, BLUE)
+            @number_in("x") -- @number_out("k x")
         },
     );
     let add = node(
@@ -163,39 +150,27 @@ fn setup(mut commands: Commands) {
         inner,
         Op::Add,
         Vec2::new(390.0, 140.0),
-        bsn_list! {
-            @kit::title("Add")
-            --
-            @kit::input("a", NUMBER, BLUE)
-            --
-            @kit::input("b", NUMBER, BLUE)
-            --
-            @kit::output("sum", NUMBER, BLUE)
-        },
+        bsn_list! { @kit::title("Add") -- @number_in("a") -- @number_in("b") -- @number_out("sum") },
     );
     let output = node(
         commands,
         inner,
         Op::Out,
         Vec2::new(600.0, 170.0),
-        bsn_list! { @kit::title("Out") -- @kit::input("result", NUMBER, BLUE) },
+        bsn_list! { @kit::title("Out") -- @number_in("result") },
     );
     let print = node(
         commands,
         outer,
         Op::Print(Entity::PLACEHOLDER),
         Vec2::new(950.0, 280.0),
-        bsn_list! { @kit::title("Print") -- @kit::input("value", NUMBER, BLUE) },
+        bsn_list! { @kit::title("Print") -- @number_in("value") },
     );
     let result = commands
         .spawn((
             Text::new("?"),
             TextColor(ORANGE),
             TextFont::from_font_size(22.0),
-            Node {
-                margin: MARGIN,
-                ..default()
-            },
             ChildOf(print),
         ))
         .id();

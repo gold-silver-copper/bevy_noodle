@@ -48,20 +48,15 @@ fn setup(mut commands: Commands) {
     ];
     let nodes = specs.map(|(title, inputs)| {
         let at = scrambled(title);
-        let inputs: Vec<_> = ["a", "b"]
+        let rows: Vec<_> = ["a", "b"]
             .into_iter()
             .take(inputs)
-            .map(|name| kit::input(name, NUMBER, BLUE))
+            .map(|name| kit::row(name, Port::input(NUMBER), BLUE))
+            .chain([kit::row("out", Port::output(NUMBER), BLUE)])
             .collect();
-        commands
-            .spawn_scene(bsn! {
-                @kit::node(at)
-                Children [
-                    @kit::title(title) -- {inputs} -- @kit::output("out", NUMBER, BLUE)
-                ]
-            })
-            .try_insert(ChildOf(canvas))
-            .id()
+        let scene =
+            bsn! { @kit::node(at) ChildOf(canvas) Children [ @kit::title(title) -- {rows} ] };
+        commands.spawn_scene(scene).id()
     });
     let [sum, a, scale, display, b, offset, c, clamp] = nodes;
     // (from, to, input).

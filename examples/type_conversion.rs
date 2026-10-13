@@ -53,31 +53,6 @@ enum Calc {
 #[derive(Component, Clone, Default)]
 struct Shows;
 
-/// A number node: its title, a field for its value, and its output. The
-/// value's variant (`I32`, `F32`) sets what the field edits.
-fn number(
-    at: Vec2,
-    title: &'static str,
-    calc: Calc,
-    value: NumberInputValue,
-    port_type: PortType,
-    color: Color,
-) -> impl Scene {
-    let margin = UiRect::horizontal(px(kit::PADDING));
-    bsn! {
-        @kit::node(at)
-        calc
-        Children [
-            @kit::title(title)
-            --
-            // Given at spawn, so the field starts with it.
-            @FeathersNumberInput ~{value} Node { margin: {margin} }
-            --
-            @kit::output("value", port_type, color)
-        ]
-    }
-}
-
 /// The connection made once laid out, to show the conversion.
 #[derive(Resource)]
 struct Demo {
@@ -89,47 +64,45 @@ struct Demo {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn_scene(kit::canvas()).id();
+    // The fields get their values at spawn, so they start with them; the
+    // value's variant (`I32`, `F32`) sets what a field edits.
     let int = commands
-        .spawn_scene(number(
-            Vec2::new(60.0, 100.0),
-            "Int",
-            Calc::Int(7),
-            NumberInputValue::I32(7),
-            INT,
-            GREEN,
-        ))
-        .try_insert(ChildOf(canvas))
+        .spawn_scene(bsn! {
+            @kit::node(Vec2::new(60.0, 100.0)) ~{Calc::Int(7)} ChildOf(canvas)
+            Children [
+                @kit::title("Int")
+                --
+                @FeathersNumberInput NumberInputValue::I32(7)
+                --
+                @kit::row("value", Port::output(INT), GREEN)
+            ]
+        })
         .id();
-    commands
-        .spawn_scene(number(
-            Vec2::new(60.0, 330.0),
-            "Float",
-            Calc::Float(2.5),
-            NumberInputValue::F32(2.5),
-            FLOAT,
-            BLUE,
-        ))
-        .try_insert(ChildOf(canvas));
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(60.0, 330.0)) ~{Calc::Float(2.5)} ChildOf(canvas)
+        Children [
+            @kit::title("Float")
+            --
+            @FeathersNumberInput NumberInputValue::F32(2.5)
+            --
+            @kit::row("value", Port::output(FLOAT), BLUE)
+        ]
+    });
     let multiply = commands
         .spawn_scene(bsn! {
-            @kit::node(Vec2::new(620.0, 200.0))
-            ~{Calc::Multiply}
+            @kit::node(Vec2::new(620.0, 200.0)) ~{Calc::Multiply} ChildOf(canvas)
             Children [
                 @kit::title("Multiply")
                 --
-                @kit::input("a", FLOAT, BLUE)
+                @kit::row("a", Port::input(FLOAT), BLUE)
                 --
-                @kit::input("b", FLOAT, BLUE)
+                @kit::row("b", Port::input(FLOAT), BLUE)
                 --
-                @kit::output("product", FLOAT, BLUE)
+                @kit::row("product", Port::output(FLOAT), BLUE)
                 --
-                Shows
-                Text
-                TextFont { font_size: FontSize::Px(15.0) }
-                Node { margin: UiRect::horizontal(px(kit::PADDING)) }
+                Shows Text TextFont { font_size: FontSize::Px(15.0) }
             ]
         })
-        .try_insert(ChildOf(canvas))
         .id();
     commands.insert_resource(Demo {
         canvas,
@@ -184,19 +157,16 @@ fn convert(mut request: On<EditRequested>, graph: GraphQuery, mut commands: Comm
     let at = (position(from) + position(to)) / 2.0 - Vec2::new(80.0, 40.0);
     let converter = commands
         .spawn_scene(bsn! {
-            @kit::node(at)
-            ~{Calc::ToFloat}
+            @kit::node(at) ~{Calc::ToFloat} ChildOf(canvas)
             Children [
                 @kit::title("int to float")
                 --
-                @kit::input("int", INT, GREEN)
+                @kit::row("int", Port::input(INT), GREEN)
                 --
-                @kit::output("float", FLOAT, BLUE)
+                @kit::row("float", Port::output(FLOAT), BLUE)
             ]
         })
-        .try_insert(ChildOf(canvas))
         .id();
-    let canvas = request.canvas;
     commands.queue(move |world: &mut World| {
         let ports = |In(n), graph: GraphQuery| {
             Some((graph.inputs_of(n).next()?, graph.outputs_of(n).next()?))

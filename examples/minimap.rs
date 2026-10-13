@@ -52,14 +52,10 @@ fn setup(mut commands: Commands) {
             let title = format!("Step {}", i + 1);
             commands
                 .spawn_scene(bsn! {
-                    @kit::node(at)
-                    ChildOf(canvas)
+                    @kit::node(at) ChildOf(canvas)
                     Children [
-                        @kit::title(title)
-                        --
-                        @kit::input("in", NUMBER, BLUE)
-                        --
-                        @kit::output("out", NUMBER, BLUE)
+                        @kit::title(title) -- @kit::row("in", Port::input(NUMBER), BLUE)
+                        -- @kit::row("out", Port::output(NUMBER), BLUE)
                     ]
                 })
                 .id()

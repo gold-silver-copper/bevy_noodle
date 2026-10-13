@@ -165,19 +165,15 @@ fn setup(
         Transform::from_xyz(0.0, -0.5, 0.0),
     ));
 
-    // The graph panel: a canvas like any other, with a translucent background.
-    let panel = Node {
-        width: px(640),
-        height: percent(100),
-        border: UiRect::right(px(1)),
-        overflow: Overflow::clip(),
-        ..default()
-    };
-    let background = BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82));
-    let border = BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1));
+    // The graph panel: a canvas like any other, with a translucent
+    // background. Each patch changes only the fields it names.
     let canvas = commands
-        .spawn_scene(kit::canvas())
-        .try_insert((panel, background, border))
+        .spawn_scene(bsn! {
+            @kit::canvas()
+            Node { width: px(640), border: UiRect::right(px(1)) }
+            BackgroundColor(Color::srgba(0.07, 0.08, 0.1, 0.82))
+            BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.1))
+        })
         .id();
     let coral = Hsla::hsl(5.0, 0.9, 0.65);
     let teal = Hsla::hsl(180.0, 0.6, 0.45);
@@ -244,40 +240,32 @@ fn spawn(commands: &mut Commands, canvas: Entity, kind: Kind, at: Vec2) -> Entit
         ),
         Kind::Scene => ("Scene", &[("objects", OBJECT, ORANGE)], &[]),
     };
-    let inputs: Vec<_> = inputs
+    let inputs = inputs.iter().map(|&(label, port_type, color)| {
+        let port = match kind {
+            Kind::Scene => Port::input(port_type).with_capacity(Capacity::Unlimited),
+            _ => Port::input(port_type),
+        };
+        kit::row(label, port, color)
+    });
+    let outputs = outputs
         .iter()
-        .map(|(label, port_type, color)| {
-            let port = match kind {
-                Kind::Scene => Port::input(*port_type).with_capacity(Capacity::Unlimited),
-                _ => Port::input(*port_type),
-            };
-            kit::input_with(*label, port, *color)
-        })
-        .collect();
-    let outputs: Vec<_> = outputs
-        .iter()
-        .map(|(label, port_type, color)| kit::output(*label, *port_type, *color))
-        .collect();
+        .map(|&(label, port_type, color)| kit::row(label, Port::output(port_type), color));
+    let rows: Vec<_> = inputs.chain(outputs).collect();
     let controls = controls(kind);
-    commands
-        .spawn_scene(bsn! {
-            @kit::node(at)
-            kind
-            Children [ @kit::title(title) -- {controls} -- {inputs} -- {outputs} ]
-        })
-        .try_insert(ChildOf(canvas))
-        .id()
+    let scene = bsn! {
+        @kit::node(at) kind ChildOf(canvas)
+        Children [ @kit::title(title) -- {controls} -- {rows} ]
+    };
+    commands.spawn_scene(scene).id()
 }
 
 /// The controls editing a node's value, under its title.
 fn controls(kind: Kind) -> Box<dyn SceneList> {
-    let margin = UiRect::horizontal(px(kit::PADDING));
     let slider = |min: f32, max: f32, value: f32| {
         Box::new(bsn_list! {
             @FeathersSlider { @min: min, @max: max }
             SliderValue({value})
             SliderPrecision(2)
-            Node { margin: {margin} }
             on(slider_self_update)
         })
     };
@@ -294,8 +282,7 @@ fn controls(kind: Kind) -> Box<dyn SceneList> {
             let [cube, sphere, torus] = items;
             Box::new(bsn_list! {
                 @FeathersMenu
-                Node { margin: {margin} }
-                Children [
+                    Children [
                     @FeathersMenuButton { @caption: bsn! { Text(name) ThemedText Caption } }
                     --
                     @FeathersMenuPopup
@@ -308,11 +295,10 @@ fn controls(kind: Kind) -> Box<dyn SceneList> {
             // A hue and saturation plane over a lightness slider.
             Box::new(bsn_list! {
                 @FeathersColorPlane::HueSaturation
-                Node { margin: {margin}, min_height: px(70) }
+                Node { min_height: px(70) }
                 --
                 @FeathersColorSlider { @channel: ColorChannel::HslLightness, @value: lightness }
-                Node { margin: {margin} }
-                on(slider_self_update)
+                    on(slider_self_update)
             })
         }
         Kind::Spin(speed) => slider(-4.0, 4.0, speed),
@@ -322,7 +308,6 @@ fn controls(kind: Kind) -> Box<dyn SceneList> {
             @FeathersNumberInput
             NumberInputValue::I32({count})
             HardLimit::i32(0..=64)
-            Node { margin: {margin} }
         }),
         Kind::Scene => Box::new(bsn_list! {}),
     }

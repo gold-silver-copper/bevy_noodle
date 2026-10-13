@@ -17,16 +17,15 @@
 //!     Children [
 //!         @kit::title("Add")
 //!         --
-//!         @kit::input("a", NUMBER, BLUE)
+//!         @kit::row("a", Port::input(NUMBER), BLUE)
 //!         --
-//!         @kit::output("sum", NUMBER, BLUE)
+//!         @kit::row("sum", Port::output(NUMBER), BLUE)
 //!     ]
 //! });
 //! ```
 //!
-//! A node is a column: its title, then rows. Any other content, such as
-//! feathers controls, can go between them; give it a horizontal margin of
-//! [`PADDING`] to line up with the rows.
+//! A node is a padded column: its title, then rows. Any other content, such
+//! as feathers controls, can go between them and lines up with the rows.
 
 use bevy::picking::Pickable;
 use bevy::picking::cursor::EntityCursor;
@@ -37,12 +36,12 @@ use super::{
     CanvasGrid, EdgeStyle, FocusOutline, PortColor, PortHighlight, SelectedBorderColor,
     SelectionBoxStyle,
 };
-use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection, PortType};
+use crate::components::{GraphNode, NodeCanvas, NodePosition, Port, PortDirection};
 use crate::interaction::CanvasInteraction;
 
 const BORDER: f32 = 1.5;
-/// Horizontal padding of rows inside a node.
-pub const PADDING: f32 = 10.0;
+/// Horizontal padding inside a node.
+const PADDING: f32 = 10.0;
 const PORT_RADIUS: f32 = 6.0;
 
 /// An interactive canvas filling its parent, with the whole default look.
@@ -61,8 +60,8 @@ pub fn canvas() -> impl Scene {
     }
 }
 
-/// A node frame at `position` whose border follows selection: a column of
-/// its title and rows, given as its `Children`.
+/// A node frame at `position` whose border follows selection: a padded
+/// column of its title and rows, given as its `Children`.
 pub fn node(position: Vec2) -> impl Scene {
     bsn! {
         GraphNode
@@ -71,7 +70,7 @@ pub fn node(position: Vec2) -> impl Scene {
             flex_direction: FlexDirection::Column,
             row_gap: px(6),
             min_width: px(160),
-            padding: UiRect::bottom(px(8)),
+            padding: UiRect::new(px(PADDING), px(PADDING), px(0), px(8)),
             border: UiRect::all(px(BORDER)),
             border_radius: BorderRadius::all(px(8)),
         }
@@ -83,7 +82,7 @@ pub fn node(position: Vec2) -> impl Scene {
     }
 }
 
-/// A title bar: one text entity with its own padding and background.
+/// A title bar spanning the node's width.
 pub fn title(text: impl Into<String>) -> impl Scene {
     let text = text.into();
     bsn! {
@@ -91,16 +90,17 @@ pub fn title(text: impl Into<String>) -> impl Scene {
         TextFont { font_size: FontSize::Px(14.0) }
         Node {
             padding: UiRect::axes(px(PADDING), px(5)),
-            margin: UiRect::bottom(px(2)),
+            // Out over the node's padding, to its border.
+            margin: UiRect::new(px(-PADDING), px(-PADDING), px(0), px(2)),
             border_radius: BorderRadius::top(px(6.5)),
         }
         BackgroundColor(Color::srgb_u8(60, 63, 71))
     }
 }
 
-/// A port dot sitting on the node's edge.
+/// A port dot centered on the node's border, on the side its direction faces.
 pub fn port(port: Port, color: Color) -> impl Scene {
-    // Centered on the frame's border; rows start at its inner edge.
+    // Centered on the frame's border; rows reach its inner edge.
     let inset = px(-(BORDER + PORT_RADIUS));
     let (left, right) = match port.direction {
         PortDirection::Input => (inset, Val::Auto),
@@ -127,8 +127,10 @@ pub fn port(port: Port, color: Color) -> impl Scene {
     }
 }
 
-/// A row: a label and a port on the edge its direction faces.
-fn row(label: String, kind: Port, color: Color) -> impl Scene {
+/// A row with a label and `port`, both on the side its direction faces:
+/// `row("a", Port::input(NUMBER), BLUE)`.
+pub fn row(label: impl Into<String>, kind: Port, color: Color) -> impl Scene {
+    let label = label.into();
     let justify = match kind.direction {
         PortDirection::Input => JustifyContent::FlexStart,
         PortDirection::Output => JustifyContent::FlexEnd,
@@ -138,6 +140,8 @@ fn row(label: String, kind: Port, color: Color) -> impl Scene {
             justify_content: justify,
             align_items: AlignItems::Center,
             min_height: px(22),
+            // Out over the node's padding, so the port reaches its border.
+            margin: UiRect::horizontal(px(-PADDING)),
             padding: UiRect::horizontal(px(PADDING)),
         }
         Children [
@@ -151,45 +155,20 @@ fn row(label: String, kind: Port, color: Color) -> impl Scene {
     }
 }
 
-/// An input row: a port on the left edge and a label.
-pub fn input(label: impl Into<String>, port_type: PortType, color: Color) -> impl Scene {
-    input_with(label, Port::input(port_type), color)
-}
-
-/// An input row with a custom [`Port`] (e.g. unlimited connections).
-pub fn input_with(label: impl Into<String>, input: Port, color: Color) -> impl Scene {
-    row(label.into(), input, color)
-}
-
-/// An output row: a label and a port on the right edge.
-pub fn output(label: impl Into<String>, port_type: PortType, color: Color) -> impl Scene {
-    row(label.into(), Port::output(port_type), color)
-}
-
 /// A row holding only a port: no label, so no text to lay out. For dense or
 /// very large graphs.
-fn dot_row(kind: Port, color: Color) -> impl Scene {
+pub fn dot(kind: Port, color: Color) -> impl Scene {
     bsn! {
-        Node { min_height: px(16) }
+        Node { min_height: px(16), margin: UiRect::horizontal(px(-PADDING)) }
         Children [ @port(kind, color) ]
     }
-}
-
-/// An input port on the left edge, without a label.
-pub fn input_dot(port_type: PortType, color: Color) -> impl Scene {
-    dot_row(Port::input(port_type), color)
-}
-
-/// An output port on the right edge, without a label.
-pub fn output_dot(port_type: PortType, color: Color) -> impl Scene {
-    dot_row(Port::output(port_type), color)
 }
 
 #[cfg(test)]
 #[allow(clippy::disallowed_methods, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::{GraphEdit, GraphQuery, GraphWorldExt, NoodleCorePlugin};
+    use crate::{GraphEdit, GraphQuery, GraphWorldExt, NoodleCorePlugin, PortType};
     use bevy::ecs::system::RunSystemOnce;
     use bevy::scene::ScenePlugin;
 
@@ -211,19 +190,14 @@ mod tests {
         let mut app = app();
         let w = app.world_mut();
         let plain = w.spawn_scene(node(Vec2::ZERO)).unwrap().id();
-        let wide = w
-            .spawn_scene(bsn! { @node(Vec2::ZERO) Node { min_width: px(240) } })
-            .unwrap()
-            .id();
+        let scene = bsn! { @node(Vec2::ZERO) Node { min_width: px(240) } };
+        let wide = w.spawn_scene(scene).unwrap().id();
         let (plain, wide) = (w.get::<Node>(plain).unwrap(), w.get::<Node>(wide).unwrap());
-        assert_eq!(wide.min_width, px(240));
-        assert_eq!(
-            Node {
-                min_width: plain.min_width,
-                ..wide.clone()
-            },
-            *plain
-        );
+        let expected = Node {
+            min_width: px(240),
+            ..plain.clone()
+        };
+        assert_eq!(*wide, expected);
     }
 
     #[test]
@@ -231,27 +205,18 @@ mod tests {
         let mut app = app();
         let w = app.world_mut();
         let canvas = w.spawn_scene(canvas()).unwrap().id();
-        let spawn = |w: &mut World, rows: Box<dyn SceneList>| {
-            let scene = bsn! { @node(Vec2::ZERO) Children [ @title("T") -- {rows} ] };
-            w.spawn_scene(scene).unwrap().insert(ChildOf(canvas)).id()
+        let mut spawn = |kind: Port| {
+            let scene = bsn! { @node(Vec2::ZERO) ChildOf(canvas) Children [ @row("p", kind, Color::WHITE) ] };
+            w.spawn_scene(scene).unwrap().id()
         };
-        let a = spawn(w, Box::new(bsn_list! { @output("out", NUM, Color::WHITE) }));
-        let b = spawn(w, Box::new(bsn_list! { @input("in", NUM, Color::WHITE) }));
+        let (a, b) = (spawn(Port::output(NUM)), spawn(Port::input(NUM)));
         app.update();
         let w = app.world_mut();
-        let ports = w
-            .run_system_once(move |graph: GraphQuery| {
-                let content = graph.content_of(canvas);
-                assert!(
-                    [a, b]
-                        .iter()
-                        .all(|n| graph.nodes_in(canvas).any(|m| m == *n))
-                );
-                assert!(content.is_some());
-                (graph.outputs_of(a).next(), graph.inputs_of(b).next())
-            })
-            .unwrap();
-        let (Some(from), Some(to)) = ports else {
+        let ports = w.run_system_once(move |graph: GraphQuery| {
+            assert_eq!(graph.nodes_in(canvas).count(), 2);
+            (graph.outputs_of(a).next(), graph.inputs_of(b).next())
+        });
+        let Ok((Some(from), Some(to))) = ports else {
             panic!("ports not found: {ports:?}");
         };
         assert!(

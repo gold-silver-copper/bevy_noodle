@@ -96,11 +96,7 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
                 NumberField
                 // A focusable control: presses and drags in it are its own.
                 TabIndex(0)
-                Node {
-                    padding: UiRect::axes(px(6), px(3)),
-                    margin: UiRect::horizontal(px(kit::PADDING)),
-                    border: UiRect::all(px(1)),
-                }
+                Node { padding: UiRect::axes(px(6), px(3)), border: UiRect::all(px(1)) }
                 // The widget behavior; `EditableText` is only its state.
                 TextInput
                 text
@@ -115,34 +111,30 @@ fn spawn_node(commands: &mut Commands, canvas: Entity, at: Vec2, op: MathOp, val
                 BackgroundColor(Color::srgb_u8(28, 29, 33))
                 BorderColor::all(Color::srgb_u8(70, 73, 81))
                 --
-                @kit::output("value", NUMBER, BLUE)
+                @kit::row("value", Port::output(NUMBER), BLUE)
             })
         }
         // One port taking any number of inputs.
-        MathOp::Add | MathOp::Multiply => Box::new(bsn_list! {
-            @kit::input_with("values", Port::input(NUMBER).with_capacity(Capacity::Unlimited), BLUE)
-            --
-            @kit::output("result", NUMBER, BLUE)
-        }),
+        MathOp::Add | MathOp::Multiply => {
+            let values = Port::input(NUMBER).with_capacity(Capacity::Unlimited);
+            Box::new(bsn_list! {
+                @kit::row("values", values, BLUE) -- @kit::row("result", Port::output(NUMBER), BLUE)
+            })
+        }
         MathOp::Display => Box::new(bsn_list! {
-            @kit::input("value", NUMBER, BLUE)
+            @kit::row("value", Port::input(NUMBER), BLUE)
             --
             ResultText
             Text("–")
-            Node { margin: UiRect::horizontal(px(kit::PADDING)) }
             TextFont { font_size: FontSize::Px(20.0) }
             TextColor(Color::srgb(0.6, 0.9, 0.65))
         }),
     };
-    commands
-        .spawn_scene(bsn! {
-            @kit::node(at)
-            op
-            NumberValue(value)
-            Children [ @kit::title(title) -- {rows} ]
-        })
-        .try_insert(ChildOf(canvas))
-        .id()
+    let scene = bsn! {
+        @kit::node(at) op NumberValue(value) ChildOf(canvas)
+        Children [ @kit::title(title) -- {rows} ]
+    };
+    commands.spawn_scene(scene).id()
 }
 
 fn read_number_fields(

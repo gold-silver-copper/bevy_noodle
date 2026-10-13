@@ -5,7 +5,7 @@
 //!
 //! Space pauses, Up/Down double or halve the target node count, C hands the
 //! camera back to you (then pan and zoom as usual), and T switches new nodes
-//! to unlabelled ports (`kit::input_dot`/`output_dot`): less text to lay out. Build with `--release`
+//! to unlabelled ports (`kit::dot`): less text to lay out. Build with `--release`
 //! for meaningful numbers. For per-system timings, run it with Bevy's
 //! `trace_tracy` feature and connect the Tracy profiler.
 //!
@@ -209,45 +209,37 @@ fn churn(
 /// Sources, operations and sinks over two port types, so some wiring fails.
 /// Without labels, ports are bare dots: less text for Bevy to lay out.
 fn spawn_node(commands: &mut Commands, canvas: Entity, kind: usize, at: Vec2, labels: bool) {
-    use PortDirection::{Input, Output};
+    let (i, o) = (Port::input, Port::output);
     let (title, ports): (&str, &[_]) = match kind {
         0 => (
             "Source",
-            &[
-                (Output, "number", NUMBER, BLUE),
-                (Output, "text", TEXT, GREEN),
-            ],
+            &[("number", o(NUMBER), BLUE), ("text", o(TEXT), GREEN)],
         ),
         1 => (
             "Operation",
             &[
-                (Input, "a", NUMBER, BLUE),
-                (Input, "b", NUMBER, BLUE),
-                (Output, "out", NUMBER, BLUE),
+                ("a", i(NUMBER), BLUE),
+                ("b", i(NUMBER), BLUE),
+                ("out", o(NUMBER), BLUE),
             ],
         ),
         _ => (
             "Sink",
-            &[
-                (Input, "number", NUMBER, BLUE),
-                (Input, "text", TEXT, GREEN),
-            ],
+            &[("number", i(NUMBER), BLUE), ("text", i(TEXT), GREEN)],
         ),
     };
     let rows: Vec<Box<dyn Scene>> = ports
         .iter()
-        .map(|&(direction, label, port_type, color)| -> Box<dyn Scene> {
-            match (direction, labels) {
-                (Input, true) => Box::new(kit::input(label, port_type, color)),
-                (Input, false) => Box::new(kit::input_dot(port_type, color)),
-                (Output, true) => Box::new(kit::output(label, port_type, color)),
-                (Output, false) => Box::new(kit::output_dot(port_type, color)),
+        .map(|&(label, port, color)| -> Box<dyn Scene> {
+            match labels {
+                true => Box::new(kit::row(label, port, color)),
+                false => Box::new(kit::dot(port, color)),
             }
         })
         .collect();
-    commands
-        .spawn_scene(bsn! { @kit::node(at) Children [ @kit::title(title) -- {rows} ] })
-        .try_insert(ChildOf(canvas));
+    commands.spawn_scene(
+        bsn! { @kit::node(at) ChildOf(canvas) Children [ @kit::title(title) -- {rows} ] },
+    );
 }
 
 /// Slowly drifts and breathes over the whole area.

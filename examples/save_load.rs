@@ -134,25 +134,19 @@ fn setup(mut commands: Commands) {
 
 fn spawn_number(commands: &mut Commands, canvas: Entity, value: f32, at: Vec2) -> Entity {
     let scene = bsn! {
-        @kit::node(at) Value(value)
-        Children [ @kit::title("Number") -- @kit::output("value", NUMBER, BLUE) ]
+        @kit::node(at) Value(value) ChildOf(canvas)
+        Children [ @kit::title("Number") -- @kit::row("value", Port::output(NUMBER), BLUE) ]
     };
-    commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id()
+    commands.spawn_scene(scene).id()
 }
 
 /// Every node that gets a `Value` (spawned or loaded) gets a field under its
 /// title showing it.
 fn add_fields(nodes: Query<(Entity, &Value), Added<Value>>, mut commands: Commands) {
     for (node, value) in &nodes {
-        let margin = UiRect::horizontal(px(kit::PADDING));
         let value = value.0;
         let field = commands
-            .spawn_scene(bsn! {
-                @FeathersNumberInput
-                NumberInputValue::F32({value})
-                Node { margin: {margin} }
-            })
-            .try_insert(Transient)
+            .spawn_scene(bsn! { @FeathersNumberInput NumberInputValue::F32({value}) Transient })
             .id();
         commands.entity(node).insert_child(1, field);
     }
@@ -176,20 +170,15 @@ fn not_typing(focus: Res<InputFocus>, fields: Query<(), With<EditableText>>) -> 
 fn spawn_sum(commands: &mut Commands, canvas: Entity, at: Vec2) -> Entity {
     let inputs = Port::input(NUMBER).with_capacity(Capacity::Unlimited);
     let scene = bsn! {
-        @kit::node(at)
-        Children [ @kit::title("Sum") -- @kit::input_with("values", inputs, BLUE) ]
+        @kit::node(at) ChildOf(canvas)
+        Children [ @kit::title("Sum") -- @kit::row("values", inputs, BLUE) ]
     };
-    let node = commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id();
-    let margin = UiRect::horizontal(px(kit::PADDING));
+    let node = commands.spawn_scene(scene).id();
     let result = commands
         .spawn((
             Text::new("= ?"),
             TextColor(ORANGE),
             TextFont::from_font_size(22.0),
-            Node {
-                margin,
-                ..default()
-            },
             ChildOf(node),
         ))
         .id();

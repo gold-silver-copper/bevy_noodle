@@ -67,42 +67,32 @@ fn setup(mut commands: Commands) {
         .spawn_scene(bsn! { @kit::canvas() CanvasKeyboard })
         .id();
     commands.insert_resource(Graph(canvas));
-    let margin = UiRect::horizontal(px(kit::PADDING));
     for (title, value, y) in [
         ("First number", 2.0_f32, 120.0),
         ("Second number", 3.0, 300.0),
     ] {
-        let scene = bsn! {
-            @kit::node(Vec2::new(80.0, y)) Value(value)
+        let mut node = commands.spawn_scene(bsn! {
+            @kit::node(Vec2::new(80.0, y)) Value(value) ChildOf(canvas)
             Children [
                 @kit::title(title)
                 --
-                @FeathersNumberInput NumberInputValue::F32({value}) Node { margin: margin }
+                @FeathersNumberInput NumberInputValue::F32({value})
                 --
-                @kit::output("value", NUMBER, BLUE)
+                @kit::row("value", Port::output(NUMBER), BLUE)
             ]
-        };
-        let node = commands.spawn_scene(scene).try_insert(ChildOf(canvas)).id();
+        });
         if y < 200.0 {
-            commands.entity(node).try_insert(AutoFocus);
+            node.try_insert(AutoFocus);
         }
     }
-    commands
-        .spawn_scene(bsn! {
-            @kit::node(Vec2::new(400.0, 190.0))
-            Children [
-                @kit::title("Add")
-                --
-                @kit::input("a", NUMBER, BLUE)
-                --
-                @kit::input("b", NUMBER, BLUE)
-                --
-                @kit::output("sum", NUMBER, BLUE)
-                --
-                Sum Text TextFont { font_size: FontSize::Px(15.0) } Node { margin: margin }
-            ]
-        })
-        .try_insert(ChildOf(canvas));
+    commands.spawn_scene(bsn! {
+        @kit::node(Vec2::new(400.0, 190.0)) ChildOf(canvas)
+        Children [
+            @kit::title("Add") -- @kit::row("a", Port::input(NUMBER), BLUE)
+            -- @kit::row("b", Port::input(NUMBER), BLUE) -- @kit::row("sum", Port::output(NUMBER), BLUE)
+            -- Sum Text TextFont { font_size: FontSize::Px(15.0) }
+        ]
+    });
     commands.spawn((
         Text::new(
             "Tab / Shift+Tab: focus | Enter: select | arrows: move | \

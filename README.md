@@ -93,14 +93,12 @@ fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     let canvas = commands.spawn_scene(kit::canvas()).id();
     commands.spawn_scene(bsn! {
-        @kit::node(Vec2::new(80.0, 120.0))
-        ChildOf(canvas)
-        Children [ @kit::title("Source") -- @kit::output("number", NUMBER, BLUE) ]
+        @kit::node(Vec2::new(80.0, 120.0)) ChildOf(canvas)
+        Children [ @kit::title("Source") -- @kit::row("number", Port::output(NUMBER), BLUE) ]
     });
     commands.spawn_scene(bsn! {
-        @kit::node(Vec2::new(420.0, 120.0))
-        ChildOf(canvas)
-        Children [ @kit::title("Sink") -- @kit::input("number", NUMBER, BLUE) ]
+        @kit::node(Vec2::new(420.0, 120.0)) ChildOf(canvas)
+        Children [ @kit::title("Sink") -- @kit::row("number", Port::input(NUMBER), BLUE) ]
     });
 }
 ```
@@ -112,7 +110,7 @@ Drag a node to move it. The grid and wires come from `default_style` and
 The `kit` functions return scenes for Bevy's `bsn!` macro. Patch single
 fields over their defaults, such as `@kit::node(at) Node { min_width: px(240) }`,
 and put your own content, such as feathers controls, among a node's
-`Children`. They are optional: nodes are plain Bevy UI entities with
+`Children`; it lines up with the rows. They are optional: nodes are plain Bevy UI entities with
 `GraphNode` and `Port` components, built any way you like
 (`examples/minimal.rs` uses no styling at all).
 
