@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use bevy::picking::cursor::CursorIconPlugin;
 use bevy::prelude::*;
 use bevy_noodle::prelude::*;
 use bevy_noodle::style::kit;
@@ -19,7 +20,8 @@ const SPACING: Vec2 = Vec2::new(205.0, 120.0);
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, NoodlePlugins, NoodleDefaultStylePlugin))
+        .add_plugins((DefaultPlugins, CursorIconPlugin))
+        .add_plugins((NoodlePlugins, NoodleDefaultStylePlugin))
         .insert_resource(ClearColor(Color::srgb_u8(24, 25, 29)))
         .add_systems(Startup, setup)
         .add_systems(Update, (keys, frame_all))
