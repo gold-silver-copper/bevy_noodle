@@ -70,7 +70,7 @@ Add these dependencies to your application's `Cargo.toml`:
 ```toml
 [dependencies]
 bevy = "0.20"
-bevy_noodle = { version = "0.4", features = ["default_style"] }
+bevy_noodle = { version = "0.5", features = ["default_style"] }
 ```
 
 Put this in `src/main.rs` and run `cargo run`:

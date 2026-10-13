@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-13
 
 ### Changed (breaking)
 - `NoodleDefaultStylePlugin` no longer adds Bevy's `CursorIconPlugin`, so it
