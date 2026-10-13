@@ -207,7 +207,7 @@ fn edit_float(change: On<ValueChange<f32>>, graph: GraphQuery, mut calcs: Query<
 /// What a node outputs, following its inputs back through the graph.
 fn value(node: Entity, graph: &GraphQuery, calcs: &Query<&Calc>, depth: u8) -> Option<f32> {
     let input = |i: usize| {
-        let peer = graph.peers_of(graph.inputs_of(node).nth(i)?).next()?;
+        let peer = graph.source_of(node, i)?;
         // Wires can form a loop; give up on a deep chain.
         value(graph.node_of(peer)?, graph, calcs, depth.checked_sub(1)?)
     };

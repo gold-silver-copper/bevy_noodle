@@ -102,6 +102,14 @@ required-features = ["default_style"]
 name = "auto_layout"
 required-features = ["default_style"]
 
+[[example]]
+name = "geometry_nodes"
+required-features = ["default_style"]
+
+[[example]]
+name = "shader_world"
+required-features = ["default_style"]
+
 [package.metadata.docs.rs]
 all-features = true
 

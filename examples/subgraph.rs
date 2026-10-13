@@ -208,33 +208,28 @@ fn show_results(graph: GraphQuery, ops: Query<(Entity, &Op)>, mut texts: Query<&
         if let Op::Print(text) = op
             && let Ok(mut text) = texts.get_mut(*text)
         {
-            let value = graph
-                .inputs_of(node)
-                .next()
-                .and_then(|input| input_value(&graph, &ops, input, 0));
+            let value = input_value(&graph, &ops, node, 0, 0);
             let shown = value.map_or("?".into(), |v| v.to_string());
             text.set_if_neq(Text(shown));
         }
     }
 }
 
-/// The value arriving at an input port: `None` if unconnected (or too deep,
-/// which also stops cycles).
+/// The value arriving at `node`'s input number `index`: `None` if
+/// unconnected (or too deep, which also stops cycles).
 fn input_value(
     graph: &GraphQuery,
     ops: &Query<(Entity, &Op)>,
-    input: Entity,
+    node: Entity,
+    index: usize,
     depth: u32,
 ) -> Option<f32> {
-    let output = graph.peers_of(input).next()?;
+    let output = graph.source_of(node, index)?;
     if depth > 64 {
         return None;
     }
     let node = graph.node_of(output)?;
-    let input_of = |node: Entity, i: usize| {
-        let port = graph.inputs_of(node).nth(i)?;
-        input_value(graph, ops, port, depth + 1)
-    };
+    let input_of = |node, i| input_value(graph, ops, node, i, depth + 1);
     let index = graph.outputs_of(node).position(|p| p == output)?;
     match ops.get(node).ok()?.1 {
         Op::Number(value) => Some(*value),

@@ -366,16 +366,6 @@ fn rebuild(
     }
 }
 
-/// The node feeding an input, if any.
-fn source<'a>(
-    graph: &GraphQuery,
-    kinds: &'a Query<(Entity, &Kind)>,
-    input: Entity,
-) -> Option<(Entity, &'a Kind)> {
-    let output = graph.peers_of(input).next()?;
-    kinds.get(graph.node_of(output)?).ok()
-}
-
 /// The objects an output produces.
 fn objects(
     graph: &GraphQuery,
@@ -386,8 +376,7 @@ fn objects(
     let Some((node, kind)) = graph.node_of(output).and_then(|n| kinds.get(n).ok()) else {
         return Vec::new();
     };
-    let inputs: Vec<Entity> = graph.inputs_of(node).collect();
-    let input = |i: usize| inputs.get(i).and_then(|p| source(graph, kinds, *p));
+    let input = |i| kinds.get(graph.node_of(graph.source_of(node, i)?)?).ok();
     match kind {
         Kind::Object(size) => {
             let Some((_, Kind::Shape(shape))) = input(0) else {
@@ -409,7 +398,7 @@ fn objects(
             }]
         }
         Kind::Ring(count) if depth < 8 => {
-            let Some(inner) = inputs.first().and_then(|p| graph.peers_of(*p).next()) else {
+            let Some(inner) = graph.source_of(node, 0) else {
                 return Vec::new();
             };
             let inner = objects(graph, kinds, inner, depth + 1);
