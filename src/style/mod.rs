@@ -587,38 +587,66 @@ mod tests {
         assert!(app.world().get::<EdgeHitbox>(edge).is_none());
     }
 
-    fn styled_app() -> App {
+    fn app() -> App {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
             AssetPlugin::default(),
             crate::NoodleCorePlugin,
         ))
-        .init_asset::<bevy::shader::Shader>()
-        .add_plugins(NoodleDefaultStylePlugin);
+        .init_asset::<bevy::shader::Shader>();
         app
     }
 
-    /// Feathers adds `CursorIconPlugin` unconditionally, after or before us.
+    fn styled_app() -> App {
+        let mut app = app();
+        app.add_plugins(NoodleDefaultStylePlugin);
+        app
+    }
+
+    /// Feathers adds `CursorIconPlugin` unconditionally, before or after us.
     #[test]
-    fn cursor_plugin_can_be_added_after_the_style() {
-        let mut app = styled_app();
-        app.add_plugins(CursorIconPlugin);
-        app.update();
-        assert!(app.world().contains_resource::<OverrideCursor>());
+    fn cursor_plugin_order_does_not_matter() {
+        let mut after = styled_app();
+        after.add_plugins(CursorIconPlugin);
+        let mut before = app();
+        before.add_plugins((CursorIconPlugin, NoodleDefaultStylePlugin));
+        for mut app in [after, before] {
+            app.update();
+            assert!(app.world().contains_resource::<OverrideCursor>());
+        }
     }
 
     #[test]
     fn dragging_a_wire_works_without_cursor_support() {
         let mut app = styled_app();
-        let w = app.world_mut();
+        spawn_wire(app.world_mut());
+        app.update();
+        assert!(!app.world().contains_resource::<OverrideCursor>());
+    }
+
+    fn spawn_wire(w: &mut World) -> Entity {
         let canvas = w.spawn((NodeCanvas, Node::default())).id();
         let node = w.spawn((GraphNode, ChildOf(canvas))).id();
         let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
         let pointer = Vec2::ZERO;
-        w.spawn((PendingWire { from, pointer }, WireOf(canvas)));
+        w.spawn((PendingWire { from, pointer }, WireOf(canvas)))
+            .id()
+    }
+
+    #[test]
+    fn dragging_a_wire_keeps_another_systems_override() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin))
+            .add_systems(Update, wire_cursor);
+        let wait = Some(EntityCursor::System(SystemCursorIcon::Wait));
+        app.insert_resource(OverrideCursor(wait.clone()));
+        let wire = spawn_wire(app.world_mut());
         app.update();
-        assert!(!app.world().contains_resource::<OverrideCursor>());
+        assert_eq!(app.world().resource::<OverrideCursor>().0, wait);
+        app.world_mut().despawn(wire);
+        app.update();
+        assert_eq!(app.world().resource::<OverrideCursor>().0, wait);
     }
 
     #[test]
@@ -627,13 +655,7 @@ mod tests {
         app.add_plugins((MinimalPlugins, crate::NoodleCorePlugin))
             .init_resource::<OverrideCursor>()
             .add_systems(Update, wire_cursor);
-        let w = app.world_mut();
-        let canvas = w.spawn((NodeCanvas, Node::default())).id();
-        let node = w.spawn((GraphNode, ChildOf(canvas))).id();
-        let from = w.spawn((Port::output(PortType::ANY), ChildOf(node))).id();
-        let pointer = Vec2::ZERO;
-        let wire = (PendingWire { from, pointer }, WireOf(canvas));
-        let wire = w.spawn(wire).id();
+        let wire = spawn_wire(app.world_mut());
         app.update();
         let crosshair = Some(EntityCursor::System(SystemCursorIcon::Crosshair));
         assert_eq!(app.world().resource::<OverrideCursor>().0, crosshair);
