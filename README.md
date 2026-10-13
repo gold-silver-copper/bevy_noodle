@@ -56,7 +56,7 @@ cargo run --example <name> --all-features
 </tr>
 <tr>
 <td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png" alt="minimal"><br><b>minimal</b>: plain Bevy UI, edges drawn as gizmos</td>
-<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/world_query.png" alt="world_query"><br><b>world_query</b>: filter and change world entities from a graph</td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/geometry_nodes.png" alt="geometry_nodes"><br><b>geometry_nodes</b>: Blender-style point nodes, including a world query</td>
 </tr>
 </table>
 
@@ -163,8 +163,10 @@ input, the usual first step of evaluating it.
 - `math_graph`, `styled` and `type_conversion` compute values through the
   graph; `math_graph` also rejects cycles in a `ConnectionCheck` observer.
 - `scene_builder_3d` builds 3D entities from the graph after every edit.
-- `world_query` goes the other way: nodes take entities already in the
-  world, filter them and change each one, every frame.
+- `geometry_nodes` builds Blender-style geometry nodes in about 100 lines
+  of node code: wires carry lists of points, one node queries entities
+  already in the world, others change or filter every point, and the result
+  is re-evaluated every frame.
 
 ## Features
 

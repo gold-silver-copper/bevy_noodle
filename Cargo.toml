@@ -103,7 +103,7 @@ name = "auto_layout"
 required-features = ["default_style"]
 
 [[example]]
-name = "world_query"
+name = "geometry_nodes"
 required-features = ["default_style"]
 
 [package.metadata.docs.rs]
