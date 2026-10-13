@@ -18,6 +18,14 @@
   `bevy_scene`. `SelectedBorderColor` and `PortColor` have defaults, so
   scenes can patch them.
 
+### Added
+- `GraphQuery::source_of(node, index)`: the output feeding a node's input,
+  the usual first step of evaluating it. The examples use it in place of
+  their own `inputs_of(..).nth(i)` / `peers_of(..).next()` walks.
+- `world_query` example: nodes take entities already in the world, filter
+  them and change each one, re-evaluated every frame. The README explains
+  that evaluating a graph is the app's job.
+
 ## 0.4.0 - 2026-10-11
 
 ### Changed (breaking)

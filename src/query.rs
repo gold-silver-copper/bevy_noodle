@@ -28,6 +28,9 @@ impl Connection {
 
 /// Read access to graph structure. Every lookup resolves to the nearest
 /// enclosing canvas or node, so graphs can sit side by side or nest.
+///
+/// It reads topology only: what nodes mean and how a graph evaluates belong
+/// to the app, in systems that walk it (see [`GraphQuery::source_of`]).
 #[derive(SystemParam)]
 pub struct GraphQuery<'w, 's> {
     parents: Query<'w, 's, &'static ChildOf>,
@@ -214,6 +217,13 @@ impl GraphQuery<'_, '_> {
         self.edges_of(port)
             .filter_map(|edge| self.edge_ports(edge))
             .map(move |ends| ends.other(port))
+    }
+
+    /// The output port feeding `node`'s input number `index` (in hierarchy
+    /// order), through its oldest edge: the usual first step of evaluating a
+    /// node. `None` if there is no such input or it is unconnected.
+    pub fn source_of(&self, node: Entity, index: usize) -> Option<Entity> {
+        self.peers_of(self.inputs_of(node).nth(index)?).next()
     }
 
     /// Checks a connection between ports `a` and `b` (either order) on

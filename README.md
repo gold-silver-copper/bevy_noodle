@@ -56,7 +56,7 @@ cargo run --example <name> --all-features
 </tr>
 <tr>
 <td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/minimal.png" alt="minimal"><br><b>minimal</b>: plain Bevy UI, edges drawn as gizmos</td>
-<td></td>
+<td><img src="https://raw.githubusercontent.com/gold-silver-copper/bevy_noodle/main/docs/world_query.png" alt="world_query"><br><b>world_query</b>: filter and change world entities from a graph</td>
 </tr>
 </table>
 
@@ -135,7 +135,7 @@ Edge                    relates an output port to an input port; has EdgeGeometr
 ```
 
 - **Read** with the `GraphQuery` system param (`nodes_in`, `edges_of`,
-  `peers_of`, …).
+  `peers_of`, `source_of`, …).
 - **Write** with `commands.graph_edit(canvas, GraphEdit::Connect { from, to })`;
   also `Disconnect`, `MoveNodes` and `Delete`. Nodes are just spawned, as
   children of the canvas.
@@ -149,6 +149,22 @@ Edge                    relates an output port to an input port; has EdgeGeometr
 - **Style** from `Selected`, the dragged wire's `WireCandidates` and `WireTarget`, and `SelectionBox`.
 - **Controls inside nodes** (sliders, text fields, menus) keep their own
   presses and drags.
+
+### Evaluating a graph is your app's job
+
+bevy_noodle stores and edits the graph; it never runs it. There is no
+execution engine, no value type, and no built-in node that queries the
+world or iterates a collection. Your app decides what its nodes mean,
+usually with a component on each node, and evaluates them in ordinary Bevy
+systems that walk `GraphQuery`, on whatever schedule fits: every frame, or
+on `EditApplied`. `source_of(node, i)` finds the output feeding a node's
+input, the usual first step of evaluating it.
+
+- `math_graph`, `styled` and `type_conversion` compute values through the
+  graph; `math_graph` also rejects cycles in a `ConnectionCheck` observer.
+- `scene_builder_3d` builds 3D entities from the graph after every edit.
+- `world_query` goes the other way: nodes take entities already in the
+  world, filter them and change each one, every frame.
 
 ## Features
 

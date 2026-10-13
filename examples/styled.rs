@@ -204,8 +204,7 @@ type Kinds = (
 /// What `node` outputs, following its inputs back through the graph.
 fn output(node: Entity, graph: &GraphQuery, kinds: &Query<Kinds>, depth: u8) -> Option<Data> {
     let input = |i: usize| {
-        let port = graph.inputs_of(node).nth(i)?;
-        let peer = graph.peers_of(port).next()?;
+        let peer = graph.source_of(node, i)?;
         // Wires can form a loop; give up on a deep chain.
         output(graph.node_of(peer)?, graph, kinds, depth.checked_sub(1)?)
     };
@@ -229,8 +228,7 @@ fn evaluate(
     mut shown: Query<(&mut Text, &ChildOf), With<Shows>>,
 ) {
     for (mut text, parent) in &mut shown {
-        let port = graph.inputs_of(parent.parent()).next();
-        let peer = port.and_then(|port| graph.peers_of(port).next());
+        let peer = graph.source_of(parent.parent(), 0);
         let data = peer.and_then(|p| output(graph.node_of(p)?, &graph, &kinds, 32));
         let shown = match data {
             Some(Data::Text(text)) => text,

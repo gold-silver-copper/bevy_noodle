@@ -20,6 +20,10 @@
 //! [`EdgeGeometry`], or enable the `default_style` feature. The `scene`
 //! feature adds graph snapshots (undo, save and load).
 //!
+//! Evaluating a graph is the app's job: Noodle has no execution engine and no
+//! built-in nodes. Give nodes your own components and walk [`GraphQuery`] in
+//! ordinary systems; [`GraphQuery::source_of`] finds what feeds an input.
+//!
 //! Events follow one rule. What observers answer is only triggered on the
 //! canvas: [`ConnectionCheck`] (connection rules, also asked by previews) and
 //! [`EditRequested`] (rewrite or veto an edit about to apply). What happened

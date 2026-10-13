@@ -298,6 +298,20 @@ fn selection_modes() {
 }
 
 #[test]
+fn source_of_follows_an_input_back_to_its_output() {
+    let mut app = app();
+    let w = app.world_mut();
+    let (c, content) = canvas(w, None);
+    let (_, a) = node(w, content, &[Port::output(NUM)]);
+    let (b, inputs) = node(w, content, &[Port::input(NUM), Port::input(NUM)]);
+    connect(w, c, a[0], inputs[1]);
+    assert_eq!(
+        query(w, |g| (0..3).map(|i| g.source_of(b, i)).collect::<Vec<_>>()),
+        [None, Some(a[0]), None]
+    );
+}
+
+#[test]
 fn graphs_are_independent_and_can_nest() {
     let mut app = app();
     let w = app.world_mut();
